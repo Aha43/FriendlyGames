@@ -6,6 +6,7 @@ You are the implementation agent. Codex supplies planning and independent review
 Begin with the active GitHub issue, implement its acceptance criteria, verify the
 result and open a PR. Explain any necessary deviation before expanding scope.
 
-The repository begins with planning documents only. Do not assume a framework,
-test runner, backend or deployment pipeline is already installed. The first
-implementation issue establishes the frontend and executable checks.
+The frontend is React, TypeScript and Vite, checked by ESLint, TypeScript and
+Vitest. CI runs lint, type checking, tests and production build on every PR; run
+them locally with `npm run check` (see the README). No backend, hosting or browser
+tests are installed yet; add them only when an issue calls for them.
