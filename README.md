@@ -75,6 +75,11 @@ supabase start
 npm run test:backend
 ```
 
+## Deployment
+
+Cloudflare Pages (site) and a hosted Supabase project (API and database). Setup, secrets,
+releasing, verification and rollback: [docs/deployment.md](docs/deployment.md).
+
 ## Third-party assets
 
 External code and artwork, their sources and licenses are recorded in
@@ -82,5 +87,5 @@ External code and artwork, their sources and licenses are recorded in
 
 ## Repository status
 
-Private prototype. No open-source license has been granted. Public visibility,
-licensing and production hosting are future owner decisions.
+Private prototype. No open-source license has been granted. Public visibility and
+licensing are future owner decisions.

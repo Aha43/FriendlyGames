@@ -76,6 +76,7 @@ export default function App() {
         <a href={PIECE_SET_LICENSE_URL}>{PIECE_SET_CREDIT}</a> ·{' '}
         <a href={`${import.meta.env.BASE_URL}licenses/chess.js.txt`}>Rules by chess.js, BSD license</a> · Park artwork
         original to FriendlyGames
+        {__BUILD_COMMIT__ && <span className="build"> · Build {__BUILD_COMMIT__.slice(0, 7)}</span>}
       </footer>
     </div>
   );

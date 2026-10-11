@@ -9,4 +9,8 @@ if (!databaseUrl) throw new Error('SUPABASE_DB_URL is not set');
 
 const sql = postgres(databaseUrl, { max: 5, prepare: false });
 
-Deno.serve((request) => handleRequest(request, sql));
+// Production sets ALLOWED_ORIGINS (comma-separated) to the site's origin; unset allows any origin.
+const allowedOrigins = Deno.env.get('ALLOWED_ORIGINS')?.split(',').map((o) => o.trim()).filter(Boolean) ?? null;
+const config = { allowedOrigins, commit: Deno.env.get('GAME_API_COMMIT') ?? null };
+
+Deno.serve((request) => handleRequest(request, sql, config));

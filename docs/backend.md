@@ -131,6 +131,7 @@ endpoints except `POST /players` need `X-Device-Credential`.
 
 | Method and path | Body | Success |
 |---|---|---|
+| `GET /health` | | `200 { ok: true, commit }` (no credential; checks the database) |
 | `POST /players` | `{ displayName, email }` | `201 { player: { id, displayName, email }, deviceCredential }` |
 | `GET /me` | | `200 { player: { id, displayName, email } }` |
 | `POST /games` | `{ friendEmail, requestId? }` | `201 { game, invitation: { token }, duplicate: false }`; a retry with the same `requestId` gets `200 { game, invitation, duplicate: true }` |
@@ -214,7 +215,6 @@ expose nothing; tests assert both roles are denied.
 
 - No rate limiting or abuse protection beyond unguessable secrets; acceptable for a
   friends-only prototype, to revisit before wider use.
-- CORS allows any origin. The API uses a custom header, not cookies, so this does not
-  let other sites act as a player.
-- Production deployment (#11): set no `GAME_DB_URL` there, confirm the `_shared` code is
-  bundled on the first deploy, and keep the service connection only in the function.
+- CORS: production allows only `ALLOWED_ORIGINS` (the site); locally any origin. The API
+  uses a custom header, not cookies, so CORS is defence in depth, not authentication.
+- Deployment: docs/deployment.md.
