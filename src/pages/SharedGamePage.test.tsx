@@ -1,0 +1,201 @@
+import { act, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError, gameApi, NetworkError, type SharedGame } from '../shared/gameApi';
+import type { Identity } from '../shared/identity';
+import SharedGamePage from './SharedGamePage';
+
+const identity: Identity = { playerId: 'p-arne', displayName: 'Arne', credential: 'C'.repeat(43) };
+const GAME_ID = '11111111-2222-3333-4444-555555555555';
+const START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+function game(overrides: Partial<SharedGame> = {}, moves: string[] = []): SharedGame {
+  return {
+    id: GAME_ID,
+    type: 'chess',
+    schemaVersion: 1,
+    status: 'active',
+    result: null,
+    termination: null,
+    revision: 1 + moves.length,
+    createdAt: '2026-10-11T10:00:00Z',
+    updatedAt: '2026-10-11T10:00:00Z',
+    players: { white: { id: 'p-arne', displayName: 'Arne' }, black: { id: 'p-harald', displayName: 'Harald' } },
+    yourSeat: 'white',
+    chess: { initialFen: START, moves, turn: moves.length % 2 === 0 ? 'white' : 'black' },
+    ...overrides,
+  };
+}
+
+const square = (name: string) =>
+  within(screen.getByRole('grid', { name: 'Chess board' })).getByRole('gridcell', { name: new RegExp(`^${name},`) });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+async function renderPage(initial: SharedGame) {
+  vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: initial });
+  const onIdentityRejected = vi.fn();
+  render(<SharedGamePage identity={identity} gameId={GAME_ID} onIdentityRejected={onIdentityRejected} />);
+  await screen.findByRole('grid', { name: 'Chess board' });
+  return { onIdentityRejected };
+}
+
+beforeEach(() => localStorage.clear());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+describe('shared game', () => {
+  it('sends a move with a request ID and the revision it was based on, showing it as unsaved until confirmed', async () => {
+    const user = userEvent.setup();
+    await renderPage(game());
+    expect(screen.getByRole('status')).toHaveTextContent('Your move');
+
+    const reply = deferred<{ game: SharedGame; duplicate: boolean }>();
+    const submit = vi.spyOn(gameApi, 'submitAction').mockReturnValue(reply.promise);
+    await user.click(square('e2'));
+    await user.click(square('e4'));
+
+    expect(submit).toHaveBeenCalledWith(identity.credential, GAME_ID, expect.stringMatching(/^[0-9a-f-]{36}$/), 1, {
+      type: 'move',
+      from: 'e2',
+      to: 'e4',
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('Saving your move…');
+    expect(square('e4')).toHaveAccessibleName('e4, white pawn, not saved yet');
+
+    await act(async () => reply.resolve({ game: game({}, ['e2e4']), duplicate: false }));
+    expect(screen.getByRole('status')).toHaveTextContent('Harald’s move');
+    expect(square('e4')).toHaveAccessibleName('e4, white pawn');
+  });
+
+  it('keeps the last confirmed position after a network failure and retries the same request', async () => {
+    const user = userEvent.setup();
+    await renderPage(game());
+    const submit = vi
+      .spyOn(gameApi, 'submitAction')
+      .mockRejectedValueOnce(new NetworkError('offline'))
+      .mockResolvedValueOnce({ game: game({}, ['e2e4']), duplicate: false });
+
+    await user.click(square('e2'));
+    await user.click(square('e4'));
+
+    expect(await screen.findByText(/Your move hasn’t been saved/)).toBeInTheDocument();
+    expect(square('e2')).toHaveAccessibleName('e2, white pawn');
+    expect(square('e4')).toHaveAccessibleName('e4, empty');
+    expect(screen.getByRole('status')).not.toHaveTextContent('Saving');
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(submit).toHaveBeenCalledTimes(2);
+    expect(submit.mock.calls[1]).toEqual(submit.mock.calls[0]); // same request ID and revision
+    expect(square('e4')).toHaveAccessibleName('e4, white pawn');
+    expect(screen.queryByText(/hasn’t been saved/)).not.toBeInTheDocument();
+  });
+
+  it('drops an unsaved move on Cancel and reloads the game', async () => {
+    const user = userEvent.setup();
+    await renderPage(game());
+    vi.spyOn(gameApi, 'submitAction').mockRejectedValueOnce(new NetworkError('offline'));
+    await user.click(square('e2'));
+    await user.click(square('e4'));
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByText(/hasn’t been saved/)).not.toBeInTheDocument();
+    expect(gameApi.getGame).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows the newer game when the move was based on a stale revision', async () => {
+    const user = userEvent.setup();
+    await renderPage(game());
+    const newer = game({}, ['d2d4']); // e.g. played from another tab
+    vi.spyOn(gameApi, 'submitAction').mockRejectedValue(
+      new ApiError(409, 'stale_revision', 'The game has changed.', newer),
+    );
+    await user.click(square('e2'));
+    await user.click(square('e4'));
+
+    expect(await screen.findByText('The game changed before your move was saved. Here’s the latest position.')).toBeInTheDocument();
+    expect(square('d4')).toHaveAccessibleName('d4, white pawn');
+    expect(square('e4')).toHaveAccessibleName('e4, empty');
+    expect(screen.getByRole('status')).toHaveTextContent('Harald’s move');
+  });
+
+  it('polls for the opponent’s move while visible', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval'] });
+    await renderPage(game({}, ['e2e4']));
+    expect(screen.getByRole('status')).toHaveTextContent('Harald’s move');
+
+    vi.mocked(gameApi.getGame).mockResolvedValue({ game: game({}, ['e2e4', 'e7e5']) });
+    await act(async () => vi.advanceTimersByTime(4_000));
+    expect(await screen.findByText('Your move')).toBeInTheDocument();
+    expect(square('e5')).toHaveAccessibleName('e5, black pawn');
+  });
+
+  it('says when the server cannot be reached and keeps the last saved position', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval'] });
+    await renderPage(game({}, ['e2e4']));
+    vi.mocked(gameApi.getGame).mockRejectedValue(new NetworkError('offline'));
+    await act(async () => vi.advanceTimersByTime(4_000));
+    expect(await screen.findByText('Can’t reach the game server. Showing the last saved position.')).toBeInTheDocument();
+    expect(square('e4')).toHaveAccessibleName('e4, white pawn');
+  });
+
+  it('explains why a piece cannot be moved when it is not your turn', async () => {
+    const user = userEvent.setup();
+    await renderPage(game({}, ['e2e4']));
+    await user.click(square('d2'));
+    expect(screen.getByText('It’s Harald’s move.')).toBeInTheDocument();
+    await user.click(square('e7'));
+    expect(screen.getByText('You play White.')).toBeInTheDocument();
+  });
+
+  it('shows the board from Black’s side to the Black player', async () => {
+    await renderPage(game({ yourSeat: 'black' }, ['e2e4']));
+    const cells = within(screen.getByRole('grid', { name: 'Chess board' })).getAllByRole('gridcell');
+    expect(cells[0]).toHaveAccessibleName('h1, white rook');
+    expect(cells[63]).toHaveAccessibleName('a8, black rook');
+    expect(screen.getByRole('status')).toHaveTextContent('Your move');
+  });
+
+  it('asks before resigning and sends the resignation', async () => {
+    const user = userEvent.setup();
+    await renderPage(game());
+    const submit = vi.spyOn(gameApi, 'submitAction').mockResolvedValue({
+      game: game({ status: 'finished', result: 'black', termination: 'resignation', revision: 2 }),
+      duplicate: false,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Resign…' }));
+    expect(screen.getByText('Resign this game? Harald wins.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Keep playing' }));
+    expect(submit).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Resign…' }));
+    await user.click(screen.getByRole('button', { name: 'Resign' }));
+    expect(submit).toHaveBeenCalledWith(identity.credential, GAME_ID, expect.any(String), 1, { type: 'resign' });
+    expect(await screen.findByText('You resigned. Harald wins')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resign…' })).not.toBeInTheDocument();
+  });
+
+  it('shows the invitation link to the creator while waiting', async () => {
+    localStorage.setItem('friendlygames.invitations', JSON.stringify({ [GAME_ID]: 'T'.repeat(43) }));
+    await renderPage(game({ status: 'waiting', revision: 0, players: { white: { id: 'p-arne', displayName: 'Arne' }, black: null } }));
+    expect(screen.getByRole('status')).toHaveTextContent('Waiting for your friend to join');
+    expect(screen.getByLabelText('Invitation link')).toHaveValue(`http://localhost:3000/#/join/${'T'.repeat(43)}`);
+  });
+
+  it('reports a rejected identity', async () => {
+    vi.spyOn(gameApi, 'getGame').mockRejectedValue(new ApiError(401, 'unauthenticated', 'no'));
+    const onIdentityRejected = vi.fn();
+    render(<SharedGamePage identity={identity} gameId={GAME_ID} onIdentityRejected={onIdentityRejected} />);
+    await vi.waitFor(() => expect(onIdentityRejected).toHaveBeenCalled());
+  });
+});

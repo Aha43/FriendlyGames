@@ -151,6 +151,21 @@ Errors are `{ "error": { "code", "message", … } }`:
 | 413 | `too_large` |
 | 422 | `illegal_move` |
 
+## Web client
+
+- Routes are hash-based (`#/`, `#/game/<id>`, `#/join/<token>`, `#/local`). The part
+  after `#` is never sent to a server, so invitation tokens stay out of hosting and
+  server logs; after joining, the join URL is replaced in browser history.
+- The device credential and the creator's unredeemed invitation tokens live in
+  `localStorage`; the app never logs them, and Playwright runs without traces,
+  screenshots or HTML reports so they do not end up in test artifacts.
+- A shared game polls every 4 seconds while visible and refreshes on return to the page.
+  A move shows as "saving" until the server confirms it. On a network or server failure
+  the board returns to the last confirmed position and offers Retry, which resends the
+  same request ID and revision, so a request that did arrive is not applied twice.
+- A stale revision (another tab or device moved first) replaces the board with the
+  server's game and says so. There is no offline move queue.
+
 ## Data model
 
 Migrations live in `supabase/migrations/`.

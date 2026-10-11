@@ -1,13 +1,17 @@
 import { useRef, type KeyboardEvent } from 'react';
-import { FILES, pieceName, type Board } from '@shared/chess/board.ts';
+import { FILES, pieceName, type Board, type Color } from '@shared/chess/board.ts';
 import { pieceImage } from './pieceSet';
 
 interface ChessBoardProps {
   board: Board;
+  /** The side shown at the bottom. */
+  orientation?: Color;
   selected: string | null;
   /** Squares the selected piece can move to. */
   targets: ReadonlySet<string>;
   lastMove: { from: string; to: string } | null;
+  /** A move shown on the board but not yet confirmed as saved. */
+  pendingMove?: { from: string; to: string } | null;
   checkSquare: string | null;
   /** The square that holds keyboard focus (roving tabindex). */
   focusSquare: string;
@@ -30,9 +34,11 @@ function squareAt(file: number, rank: number) {
 
 export default function ChessBoard({
   board,
+  orientation = 'w',
   selected,
   targets,
   lastMove,
+  pendingMove = null,
   checkSquare,
   focusSquare,
   disabled = false,
@@ -41,13 +47,17 @@ export default function ChessBoard({
   onCancel,
 }: ChessBoardProps) {
   const squareRefs = useRef(new Map<string, HTMLDivElement>());
+  // Board rows run rank 8 → 1; with Black at the bottom both rows and files are reversed.
+  const order = orientation === 'w' ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0];
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>, square: string) {
     const arrow = ARROWS[event.key];
     if (arrow) {
       event.preventDefault();
-      const file = Math.min(7, Math.max(0, FILES.indexOf(square[0] as (typeof FILES)[number]) + arrow[0]));
-      const rank = Math.min(8, Math.max(1, Number(square[1]) + arrow[1]));
+      // Arrows follow the screen: with Black at the bottom, "up" is towards rank 1.
+      const flip = orientation === 'w' ? 1 : -1;
+      const file = Math.min(7, Math.max(0, FILES.indexOf(square[0] as (typeof FILES)[number]) + arrow[0] * flip));
+      const rank = Math.min(8, Math.max(1, Number(square[1]) + arrow[1] * flip));
       const next = squareAt(file, rank);
       onFocusSquare(next);
       squareRefs.current.get(next)?.focus();
@@ -61,17 +71,20 @@ export default function ChessBoard({
 
   return (
     <div className={`board${disabled ? ' board-disabled' : ''}`} role="grid" aria-label="Chess board">
-      {board.map((rankSquares, r) => (
+      {order.map((r, rowIndex) => (
         <div className="board-row" role="row" key={r}>
-          {rankSquares.map((piece, c) => {
+          {order.map((c, colIndex) => {
+            const piece = board[r][c];
             const square = squareAt(c, 8 - r);
             const isTarget = targets.has(square);
+            const isPending = square === pendingMove?.from || square === pendingMove?.to;
             const label = [
               square,
               piece ? pieceName(piece) : 'empty',
               square === selected && 'selected',
               isTarget && (piece ? 'capture' : 'legal move'),
               square === checkSquare && 'in check',
+              square === pendingMove?.to && 'not saved yet',
             ]
               .filter(Boolean)
               .join(', ');
@@ -80,6 +93,7 @@ export default function ChessBoard({
               (r + c) % 2 === 1 ? 'square-dark' : 'square-light',
               square === selected && 'square-selected',
               (square === lastMove?.from || square === lastMove?.to) && 'square-last',
+              isPending && 'square-pending',
               square === checkSquare && 'square-check',
               isTarget && (piece ? 'square-capture' : 'square-target'),
             ]
@@ -105,12 +119,12 @@ export default function ChessBoard({
                 }}
                 onKeyDown={(event) => handleKeyDown(event, square)}
               >
-                {c === 0 && (
+                {colIndex === 0 && (
                   <span className="coord coord-rank" aria-hidden="true">
                     {8 - r}
                   </span>
                 )}
-                {r === 7 && (
+                {rowIndex === 7 && (
                   <span className="coord coord-file" aria-hidden="true">
                     {FILES[c]}
                   </span>
