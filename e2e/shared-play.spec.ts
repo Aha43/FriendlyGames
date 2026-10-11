@@ -22,6 +22,11 @@ test('two players create, join, play, refresh, recover from a failed send and re
   const options: BrowserContextOptions = { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch, baseURL };
   const arneContext = await browser.newContext(options);
   const haraldContext = await browser.newContext(options);
+  // Harald's browser behaves like a phone on the dev server's LAN address (plain HTTP, not a
+  // secure context), where crypto.randomUUID does not exist.
+  await haraldContext.addInitScript(() => {
+    Object.defineProperty(crypto, 'randomUUID', { value: undefined });
+  });
   const arne = await arneContext.newPage();
   const harald = await haraldContext.newPage();
   const run = `${Date.now()}-${testInfo.project.name}`;

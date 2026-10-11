@@ -11,6 +11,7 @@ import { badgeFor } from '../shared/badges';
 import { describeGame, opponentName, other } from '../shared/describe';
 import { ApiError, gameApi, NetworkError, type GameAction, type Seat, type SharedGame } from '../shared/gameApi';
 import { forgetInvitation, invitationFor, type Identity } from '../shared/identity';
+import { newRequestId } from '../shared/requestId';
 
 const POLL_MS = 4_000;
 
@@ -119,7 +120,7 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
 
   function act(action: GameAction) {
     if (!game || pending) return;
-    send({ requestId: crypto.randomUUID(), expectedRevision: game.revision, action, failure: null });
+    send({ requestId: newRequestId(), expectedRevision: game.revision, action, failure: null });
   }
 
   const confirmed: GameRecord | null = useMemo(
