@@ -42,3 +42,49 @@ test('play a local game, refresh, and start over', async ({ page }) => {
   await expect(status).toHaveText('Arne to move');
   await expect(square(page, 'e2')).toHaveAccessibleName('e2, white pawn');
 });
+
+test('promotion dialog holds keyboard focus and hands it back to the board', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() =>
+    localStorage.setItem(
+      'friendlygames.localChess',
+      JSON.stringify({ schemaVersion: 1, initialFen: '8/P6k/8/3p4/8/8/6K1/8 w - - 0 1', moves: [] }),
+    ),
+  );
+  await page.reload();
+
+  await square(page, 'a7').click();
+  await square(page, 'a8').click();
+  const dialog = page.getByRole('dialog', { name: 'Promote pawn to' });
+  await expect(dialog.getByRole('button', { name: 'Queen' })).toBeFocused();
+
+  // Tab cycles through the five buttons and stays inside, both ways.
+  for (let i = 0; i < 7; i++) {
+    await page.keyboard.press('Tab');
+    expect(await dialog.evaluate((d) => d.contains(document.activeElement))).toBe(true);
+  }
+  for (let i = 0; i < 7; i++) {
+    await page.keyboard.press('Shift+Tab');
+    expect(await dialog.evaluate((d) => d.contains(document.activeElement))).toBe(true);
+  }
+
+  // Clicking the page behind does not reach it, and Tab still stays in the dialog.
+  await page.getByRole('heading', { name: 'Chess history' }).click({ force: true });
+  await page.keyboard.press('Tab');
+  expect(await dialog.evaluate((d) => d.contains(document.activeElement))).toBe(true);
+  await expect(page.getByRole('button', { name: 'New game' })).not.toBeFocused();
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(square(page, 'a7')).toBeFocused();
+
+  // Promote from the keyboard and keep playing.
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Enter');
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(square(page, 'a8')).toHaveAccessibleName('a8, white queen');
+  await expect(square(page, 'a8')).toBeFocused();
+  await expect(page.getByRole('status')).toHaveText('Harald to move');
+});

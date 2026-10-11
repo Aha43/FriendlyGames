@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Color } from '../chess/board';
 import {
   applyMove,
@@ -55,8 +55,24 @@ export default function ChessTable({ players }: ChessTableProps) {
   const [focusSquare, setFocusSquare] = useState('e2');
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmingNewGame, setConfirmingNewGame] = useState(false);
+  // Square to move keyboard focus back to once the promotion dialog has closed.
+  const restoreFocusTo = useRef<string | null>(null);
+  const boardFrameRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => saveGame(record), [record]);
+
+  useEffect(() => {
+    if (pendingPromotion || !restoreFocusTo.current) return;
+    boardFrameRef.current?.querySelector<HTMLElement>(`[data-square="${restoreFocusTo.current}"]`)?.focus();
+    restoreFocusTo.current = null;
+  }, [pendingPromotion]);
+
+  function closePromotion(focusOn: string) {
+    setPendingPromotion(null);
+    setSelected(null);
+    setFocusSquare(focusOn);
+    restoreFocusTo.current = focusOn;
+  }
 
   const chess = useMemo(() => replay(record), [record]);
   const status = gameStatus(chess);
@@ -113,7 +129,7 @@ export default function ChessTable({ players }: ChessTableProps) {
     <>
       <section className="table" aria-label={`Chess: ${players.w} vs ${players.b}`}>
         <PlayerPlate name={players.b} color="b" badge={badgeFor('b', status)} />
-        <div className="board-frame">
+        <div className="board-frame" ref={boardFrameRef}>
           <ChessBoard
             board={board}
             selected={selected}
@@ -129,11 +145,11 @@ export default function ChessTable({ players }: ChessTableProps) {
           {pendingPromotion && (
             <PromotionPicker
               color={chess.turn()}
-              onChoose={(piece) => move(pendingPromotion.from, pendingPromotion.to, piece)}
-              onCancel={() => {
-                setPendingPromotion(null);
-                setSelected(null);
+              onChoose={(piece) => {
+                restoreFocusTo.current = pendingPromotion.to;
+                move(pendingPromotion.from, pendingPromotion.to, piece);
               }}
+              onCancel={() => closePromotion(pendingPromotion.from)}
             />
           )}
         </div>

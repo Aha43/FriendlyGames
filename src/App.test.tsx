@@ -104,6 +104,94 @@ describe('App', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  describe('promotion dialog from the keyboard', () => {
+    // White pawn on a7 about to promote; black king h7 and pawn d5, white king g2.
+    beforeEach(() =>
+      localStorage.setItem('friendlygames.localChess', JSON.stringify(newGame('8/P6k/8/3p4/8/8/6K1/8 w - - 0 1'))),
+    );
+
+    /** Tab onto the board (focus starts on e2), walk to a7 and push the pawn to a8. */
+    async function openPicker(user: ReturnType<typeof userEvent.setup>) {
+      await user.tab();
+      await user.keyboard('{ArrowLeft>4/}{ArrowUp>5/}');
+      expect(square('a7')).toHaveFocus();
+      await user.keyboard('{Enter}{ArrowUp}{Enter}');
+      return screen.getByRole('dialog', { name: 'Promote pawn to' });
+    }
+
+    it('keeps Tab and Shift+Tab inside the dialog', async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      const dialog = await openPicker(user);
+      const button = (name: string) => within(dialog).getByRole('button', { name });
+
+      expect(button('Queen')).toHaveFocus();
+      for (const name of ['Rook', 'Bishop', 'Knight', 'Cancel', 'Queen']) {
+        await user.tab();
+        expect(button(name)).toHaveFocus();
+      }
+      await user.tab({ shift: true });
+      expect(button('Cancel')).toHaveFocus();
+      await user.tab({ shift: true });
+      expect(button('Knight')).toHaveFocus();
+
+      // Everything behind the dialog is inert while it is open, and released afterwards.
+      const newGameButton = screen.getByRole('button', { name: 'New game' });
+      expect(newGameButton.closest('[inert]')).not.toBeNull();
+      expect(board().closest('[inert]')).not.toBeNull();
+      expect(dialog.closest('[inert]')).toBeNull();
+      await user.keyboard('{Escape}');
+      expect(document.querySelector('[inert]')).toBeNull();
+    });
+
+    it('returns focus to the promoted square and keyboard play continues', async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      const dialog = await openPicker(user);
+      await user.tab({ shift: true });
+      await user.tab({ shift: true });
+      expect(within(dialog).getByRole('button', { name: 'Knight' })).toHaveFocus();
+      await user.keyboard('{Enter}');
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(square('a8')).toHaveAccessibleName('a8, white knight');
+      expect(square('a8')).toHaveFocus();
+      expect(status()).toHaveTextContent('Harald to move');
+
+      // Black replies from the keyboard: king h7 → h6.
+      await user.keyboard('{ArrowRight>7/}{ArrowDown}{Enter}{ArrowDown}{Enter}');
+      expect(square('h6')).toHaveAccessibleName('h6, black king');
+      expect(square('h6')).toHaveFocus();
+      expect(status()).toHaveTextContent('Arne to move');
+    });
+
+    it('cancels with Escape, returns focus to the pawn and can promote again', async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await openPicker(user);
+      await user.keyboard('{Escape}');
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(square('a7')).toHaveAccessibleName('a7, white pawn');
+      expect(square('a7')).toHaveFocus();
+      expect(status()).toHaveTextContent('Arne to move');
+
+      await user.keyboard('{Enter}{ArrowUp}{Enter}');
+      expect(screen.getByRole('dialog', { name: 'Promote pawn to' })).toBeInTheDocument();
+      await user.keyboard('{Enter}');
+      expect(square('a8')).toHaveAccessibleName('a8, white queen');
+      expect(square('a8')).toHaveFocus();
+    });
+
+    it('returns focus to the pawn when cancelled with the Cancel button', async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      const dialog = await openPicker(user);
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      expect(square('a7')).toHaveFocus();
+    });
+  });
+
   it('keeps the game across a refresh and starts a new one on request', async () => {
     const user = userEvent.setup();
     const { unmount } = render(<App />);
