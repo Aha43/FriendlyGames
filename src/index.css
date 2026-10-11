@@ -268,17 +268,38 @@ h2 {
 
 .coord {
   position: absolute;
-  font-size: clamp(0.55rem, 1.6vw, 0.72rem);
-  font-weight: 600;
+  font-size: clamp(0.66rem, 2.2vw, 0.82rem);
+  font-weight: 700;
   line-height: 1;
   pointer-events: none;
   z-index: 1;
 }
 
-.coord-rank { top: 3px; left: 3px; }
-.coord-file { bottom: 3px; right: 4px; }
-.square-light .coord { color: var(--square-dark); }
-.square-dark .coord { color: var(--square-light); }
+.coord-rank { top: 3px; left: 4px; }
+.coord-file { bottom: 2px; right: 4px; }
+/* One deep brown on every square: ≥ 5.2:1 contrast on light, dark, last-move, selected
+   and check squares (WCAG AA for small text; the previous colours were 2.3:1). */
+.coord { color: #2e1a0b; }
+
+.board-wrap { position: relative; }
+
+.square { -webkit-touch-callout: none; }
+
+/* Name of the square under a finger, shown above it. */
+.square-name {
+  position: absolute;
+  z-index: 4;
+  transform: translate(-50%, calc(-100% - 6px));
+  padding: 0.2rem 0.55rem;
+  border-radius: 8px;
+  background: rgba(43, 29, 16, 0.92);
+  color: #fffaf0;
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1.2;
+  pointer-events: none;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
 
 /* ---------- players ---------- */
 
