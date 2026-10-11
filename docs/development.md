@@ -14,9 +14,8 @@ the next issue. Merge only with owner authorization.
 
 ## Checks
 
-The first implementation issue installs executable checks. Until then there is no
-application build or test suite. After scaffolding, CI should gate PRs with lint,
-type checking, unit/integration tests and production build. Add a focused browser
+CI gates PRs with lint, type checking, unit/component tests and production build;
+run them locally with `npm run check` (commands are listed in the README). Add a focused browser
 journey for the playing flow. The multiplayer milestone also needs real backend
 verification through two independent player sessions.
 
