@@ -28,6 +28,24 @@ export interface SharedGame {
   players: Record<Seat, PlayerSummary | null>;
   yourSeat: Seat;
   chess: { initialFen: string; moves: string[]; turn: Seat };
+  /** The game started from this one with "Play again", if any. */
+  rematchGameId: string | null;
+}
+
+export interface HistoryEntry {
+  gameType: 'chess';
+  opponent: PlayerSummary;
+  wins: number;
+  draws: number;
+  losses: number;
+  games: {
+    id: string;
+    finishedAt: string;
+    outcome: 'win' | 'loss' | 'draw';
+    termination: NonNullable<SharedGame['termination']>;
+    yourSeat: Seat;
+    moveCount: number;
+  }[];
 }
 
 export type GameAction =
@@ -99,6 +117,11 @@ export const gameApi = {
     }),
   me: (credential: string) => request<{ player: PlayerSummary & { email: string } }>('GET', '/me', credential),
   listGames: (credential: string) => request<{ games: SharedGame[] }>('GET', '/games', credential),
+  /** Finished games per opponent with an exact tally. */
+  history: (credential: string) => request<{ history: HistoryEntry[] }>('GET', '/history', credential),
+  /** A new game with the same two players, colours swapped. Both players asking get the same game. */
+  rematch: (credential: string, id: string) =>
+    request<{ game: SharedGame; duplicate: boolean }>('POST', `/games/${encodeURIComponent(id)}/rematch`, credential),
   getGame: (credential: string, id: string) =>
     request<{ game: SharedGame }>('GET', `/games/${encodeURIComponent(id)}`, credential),
   /** Retrying with the same requestId finds the same game; `invitation` is null once the friend has joined. */

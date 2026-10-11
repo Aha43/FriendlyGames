@@ -22,6 +22,7 @@ function game(overrides: Partial<SharedGame> = {}): SharedGame {
     players: { white: { id: 'p-arne', displayName: 'Arne' }, black: { id: 'p-harald', displayName: 'Harald' } },
     yourSeat: 'white',
     chess: { initialFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', moves: [], turn: 'white' },
+    rematchGameId: null,
     ...overrides,
   };
 }
@@ -90,7 +91,48 @@ describe('onboarding', () => {
 });
 
 describe('lobby', () => {
-  beforeEach(signIn);
+  beforeEach(() => {
+    signIn();
+    vi.spyOn(gameApi, 'history').mockResolvedValue({ history: [] });
+  });
+
+  it('shows the real chess history with an exact tally per friend', async () => {
+    vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+    vi.mocked(gameApi.history).mockResolvedValue({
+      history: [
+        {
+          gameType: 'chess',
+          opponent: { id: 'p-harald', displayName: 'Harald' },
+          wins: 2,
+          draws: 1,
+          losses: 1,
+          games: [
+            { id: GAME_ID, finishedAt: '2026-10-11T12:00:00Z', outcome: 'win', termination: 'resignation', yourSeat: 'black', moveCount: 1 },
+            { id: '22222222-2222-3333-4444-555555555555', finishedAt: '2026-10-10T12:00:00Z', outcome: 'loss', termination: 'checkmate', yourSeat: 'white', moveCount: 4 },
+          ],
+        },
+      ],
+    });
+    render(<App />);
+    const tally = await screen.findByLabelText('Tally with Harald');
+    expect(within(tally).getByText('You').nextSibling).toHaveTextContent('2');
+    expect(within(tally).getByText('Draws').nextSibling).toHaveTextContent('1');
+    expect(within(tally).getByText('Harald').nextSibling).toHaveTextContent('1');
+    const games = within(screen.getByRole('list', { name: 'Finished games with Harald' })).getAllByRole('link');
+    expect(games[0]).toHaveTextContent('11 Oct 2026');
+    expect(games[0]).toHaveTextContent('You won by resignation · 1 moves');
+    expect(games[0]).toHaveAttribute('href', `#/game/${GAME_ID}`);
+    expect(games[1]).toHaveTextContent('Harald won by checkmate · 4 moves');
+    expect(screen.queryByText('Sample data')).not.toBeInTheDocument();
+  });
+
+  it('still lists games when the history cannot be loaded', async () => {
+    vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [game()] });
+    vi.mocked(gameApi.history).mockRejectedValue(new NetworkError('offline'));
+    render(<App />);
+    expect(await screen.findByRole('list', { name: 'Games in progress' })).toHaveTextContent('vs Harald');
+    expect(screen.getByText(/Couldn’t load everything/)).toBeInTheDocument();
+  });
 
   it('lists games with whose move it is', async () => {
     vi.spyOn(gameApi, 'listGames').mockResolvedValue({
@@ -112,9 +154,7 @@ describe('lobby', () => {
     expect(links[0]).toHaveTextContent('Your move');
     expect(links[0]).toHaveAttribute('href', `#/game/${GAME_ID}`);
     expect(links[1]).toHaveTextContent('Harald’s move');
-    expect(within(screen.getByRole('list', { name: 'Finished games' })).getByRole('link')).toHaveTextContent(
-      'Checkmate. You win',
-    );
+    expect(links).toHaveLength(2); // finished games appear in the history instead
   });
 
   it('creates a game and offers the invitation link to copy', async () => {
@@ -216,6 +256,7 @@ describe('identity', () => {
   it('offers a fresh start when the server no longer knows this device', async () => {
     const user = userEvent.setup();
     signIn();
+    vi.spyOn(gameApi, 'history').mockRejectedValue(new ApiError(401, 'unauthenticated', 'no'));
     vi.spyOn(gameApi, 'listGames').mockRejectedValue(new ApiError(401, 'unauthenticated', 'no'));
     render(<App />);
     expect(await screen.findByRole('heading', { name: 'We don’t recognise this device any more' })).toBeInTheDocument();

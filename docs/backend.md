@@ -88,6 +88,19 @@ are deferred beyond Sprint 2. The app must explain this limit plainly (#9).
 - Every game read and action requires being a participant. For anyone else, a game is
   indistinguishable from a missing one (`404 game_not_found`).
 
+## History and rematches
+
+- `GET /history` lists the player's finished chess games per opponent, newest first,
+  with a tally computed over all of them (not a page of recent games). Only the
+  player's own games appear; scores are per game type.
+- `POST /games/:id/rematch` ("Play again") starts a new, active game for the same two
+  players with colours swapped. No invitation is needed. `games.rematch_of` is unique,
+  so whichever player asks first creates it and the other is given the same game; each
+  game view carries `rematchGameId`.
+- Finished games are archived records: a database trigger
+  (`keep_finished_games_unchanged`) rejects any update to a game whose status is
+  `finished`, so neither a bug nor a direct SQL update can rewrite history.
+
 ## Actions, revisions and retries
 
 Each game has a `revision` that increases by one with every change (join, move,
@@ -125,6 +138,8 @@ endpoints except `POST /players` need `X-Device-Credential`.
 | `POST /invitations/redeem` | `{ token }` | `200 { game }` |
 | `GET /games` | | `200 { games: [game…] }` (newest activity first, at most 200) |
 | `GET /games/:id` | | `200 { game }` |
+| `GET /history` | | `200 { history: [{ gameType, opponent, wins, draws, losses, games: [{ id, finishedAt, outcome, termination, yourSeat, moveCount }] }] }` |
+| `POST /games/:id/rematch` | | `201 { game, duplicate: false }`, or `200 { game, duplicate: true }` if it already exists |
 | `POST /games/:id/actions` | `{ requestId, expectedRevision, action }` | `200 { game, duplicate }` |
 
 `action` is `{ "type": "move", "from": "e2", "to": "e4", "promotion"?: "q"|"r"|"b"|"n" }`
@@ -144,7 +159,8 @@ A **game** looks like:
   "createdAt": "…", "updatedAt": "…",
   "players": { "white": { "id": "…", "displayName": "Arne" }, "black": null },
   "yourSeat": "white",
-  "chess": { "initialFen": "…", "moves": ["e2e4", "c7c5"], "turn": "white" }
+  "chess": { "initialFen": "…", "moves": ["e2e4", "c7c5"], "turn": "white" },
+  "rematchGameId": null
 }
 ```
 
@@ -156,7 +172,7 @@ Errors are `{ "error": { "code", "message", … } }`:
 | 401 | `unauthenticated` (missing or unknown credential) |
 | 403 | `not_creator` |
 | 404 | `not_found`, `game_not_found`, `invitation_not_found` |
-| 409 | `stale_revision` (includes `game`), `not_your_turn`, `not_started`, `game_finished`, `invitation_used`, `already_participant`, `request_id_reused` |
+| 409 | `stale_revision` (includes `game`), `not_your_turn`, `not_started`, `not_finished`, `game_finished`, `invitation_used`, `already_participant`, `request_id_reused` |
 | 413 | `too_large` |
 | 422 | `illegal_move` |
 
@@ -185,7 +201,7 @@ Migrations live in `supabase/migrations/`.
 |---|---|
 | `players` | id, display name, credential hash |
 | `player_contacts` | private email per player |
-| `games` | envelope: type, schema version, status, result, termination, revision, timestamps, `payload` (`{ initialFen, moves }`) |
+| `games` | envelope: type, schema version, status, result, termination, revision, timestamps, `payload` (`{ initialFen, moves }`), `create_request_id`, `rematch_of` |
 | `game_participants` | game, player, seat (unique per game and per player) |
 | `game_invitations` | token hash, seat, invited email, redemption |
 | `game_actions` | every accepted move/resignation with request ID and resulting revision |

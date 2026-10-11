@@ -10,7 +10,8 @@ evokes friends meeting at a table in a park, with a seasonal backdrop and a clea
 comfortable board. Finished games become shared history.
 
 Two friends can play chess from their own devices at a table in an autumn park:
-name-and-email onboarding, manually shared invitation links, and server-checked moves.
+name-and-email onboarding, manually shared invitation links, server-checked moves, and a
+shared history of finished games with a win/draw tally, replay and "play again".
 Local play on one device remains available separately.
 
 - [Product brief](docs/product-brief.md)
