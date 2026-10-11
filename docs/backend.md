@@ -74,6 +74,13 @@ are deferred beyond Sprint 2. The app must explain this limit plainly (#9).
 
 - Creating a game seats the creator as White and returns an **invitation token** once.
   The token is stored hashed, beside the friend's email (private metadata).
+- Creation takes an optional client `requestId`. If the response is lost after the
+  server committed, retrying with the same ID returns the same game instead of a second
+  one. Because only the token's hash is stored, the retry cannot return the lost token:
+  it issues a new one and the old link stops working (`invitation` is `null` once the
+  friend has joined). `POST /games/:id/invitation` does the same for the creator at any
+  time while nobody has joined, e.g. from a device that never received the link. Issuing
+  and redeeming lock the same invitation row, so they cannot interleave.
 - The creator shares the token as a link by hand. Possession of it lets one player
   claim the Black seat, once. The seat claim is serialised with a row lock, so two
   racing players cannot both get it. The same player redeeming again gets the game back;
@@ -113,7 +120,8 @@ endpoints except `POST /players` need `X-Device-Credential`.
 |---|---|---|
 | `POST /players` | `{ displayName, email }` | `201 { player: { id, displayName, email }, deviceCredential }` |
 | `GET /me` | | `200 { player: { id, displayName, email } }` |
-| `POST /games` | `{ friendEmail }` | `201 { game, invitation: { token } }` |
+| `POST /games` | `{ friendEmail, requestId? }` | `201 { game, invitation: { token }, duplicate: false }`; a retry with the same `requestId` gets `200 { game, invitation, duplicate: true }` |
+| `POST /games/:id/invitation` | | `200 { game, invitation: { token } }` (creator only, game still waiting) |
 | `POST /invitations/redeem` | `{ token }` | `200 { game }` |
 | `GET /games` | | `200 { games: [game…] }` (newest activity first, at most 200) |
 | `GET /games/:id` | | `200 { game }` |
@@ -146,10 +154,28 @@ Errors are `{ "error": { "code", "message", … } }`:
 |---|---|
 | 400 | `bad_request` (invalid body or fields) |
 | 401 | `unauthenticated` (missing or unknown credential) |
+| 403 | `not_creator` |
 | 404 | `not_found`, `game_not_found`, `invitation_not_found` |
 | 409 | `stale_revision` (includes `game`), `not_your_turn`, `not_started`, `game_finished`, `invitation_used`, `already_participant`, `request_id_reused` |
 | 413 | `too_large` |
 | 422 | `illegal_move` |
+
+## Web client
+
+- Routes are hash-based (`#/`, `#/game/<id>`, `#/join/<token>`, `#/local`). The part
+  after `#` is never sent to a server, so invitation tokens stay out of hosting and
+  server logs; after joining, the join URL is replaced in browser history.
+- The device credential and the creator's unredeemed invitation tokens live in
+  `localStorage`; the app never logs them, and Playwright runs without traces,
+  screenshots or HTML reports so they do not end up in test artifacts.
+- A shared game polls every 4 seconds while visible and refreshes on return to the page.
+  A move shows as "saving" until the server confirms it. On a network or server failure
+  the outcome is unknown: the page says it couldn't confirm whether the move was saved,
+  shows the last confirmed position and offers Retry, which resends the same request ID
+  and revision, so a request that did arrive is not applied twice. Game creation works
+  the same way.
+- A stale revision (another tab or device moved first) replaces the board with the
+  server's game and says so. There is no offline move queue.
 
 ## Data model
 

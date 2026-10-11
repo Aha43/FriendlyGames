@@ -8,9 +8,9 @@ async function move(page: Page, from: string, to: string) {
 }
 
 test('play a local game, refresh, and start over', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#/local');
   const status = page.getByRole('status');
-  await expect(status).toHaveText('Arne to move');
+  await expect(status).toHaveText('White to move');
 
   // The board is fully visible and the page never scrolls sideways.
   const box = (await page.getByRole('grid', { name: 'Chess board' }).boundingBox())!;
@@ -31,20 +31,20 @@ test('play a local game, refresh, and start over', async ({ page }) => {
   await expect(page.getByText('That move isn’t allowed.')).toBeVisible();
 
   await move(page, 'h5', 'f7');
-  await expect(status).toHaveText('Checkmate. Arne wins');
+  await expect(status).toHaveText('Checkmate. White wins');
 
   await page.reload();
-  await expect(status).toHaveText('Checkmate. Arne wins');
+  await expect(status).toHaveText('Checkmate. White wins');
   await expect(square(page, 'f7')).toHaveAccessibleName('f7, white queen');
   await expect(page.getByRole('list', { name: 'Moves' })).toContainText('Qxf7#');
 
   await page.getByRole('button', { name: 'New game' }).click();
-  await expect(status).toHaveText('Arne to move');
+  await expect(status).toHaveText('White to move');
   await expect(square(page, 'e2')).toHaveAccessibleName('e2, white pawn');
 });
 
 test('promotion dialog holds keyboard focus and hands it back to the board', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/#/local');
   await page.evaluate(() =>
     localStorage.setItem(
       'friendlygames.localChess',
@@ -86,5 +86,5 @@ test('promotion dialog holds keyboard focus and hands it back to the board', asy
   await page.keyboard.press('Enter');
   await expect(square(page, 'a8')).toHaveAccessibleName('a8, white queen');
   await expect(square(page, 'a8')).toBeFocused();
-  await expect(page.getByRole('status')).toHaveText('Harald to move');
+  await expect(page.getByRole('status')).toHaveText('Black to move');
 });

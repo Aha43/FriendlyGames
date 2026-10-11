@@ -1,23 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+// Local play: both sides on this device, kept in this browser only.
+import { useEffect, useMemo, useState } from 'react';
 import type { Color } from '@shared/chess/board.ts';
-import {
-  applyMove,
-  boardOf,
-  gameStatus,
-  kingSquare,
-  lastMove,
-  legalTargets,
-  moveList,
-  newGame,
-  replay,
-  type GameRecord,
-  type GameStatus,
-  type PromotionPiece,
-} from '@shared/chess/game.ts';
+import { applyMove, gameStatus, newGame, replay, type GameRecord, type GameStatus } from '@shared/chess/game.ts';
 import { loadGame, saveGame } from '../chess/storage';
-import ChessBoard from './ChessBoard';
-import PlayerPlate, { type PlateBadge } from './PlayerPlate';
-import PromotionPicker from './PromotionPicker';
+import MoveList from './MoveList';
+import PlayBoard from './PlayBoard';
+import PlayerPlate from './PlayerPlate';
+import { badgeFor } from '../shared/badges';
 
 const DRAW_TEXT = {
   stalemate: 'Draw by stalemate',
@@ -41,86 +30,22 @@ function statusText(status: GameStatus, players: Record<Color, string>): string 
   }
 }
 
-function badgeFor(color: Color, status: GameStatus): PlateBadge {
-  if (status.kind === 'draw') return 'draw';
-  if (status.kind === 'checkmate') return status.winner === color ? 'won' : null;
-  if (status.turn !== color) return null;
-  return status.check ? 'check' : 'to-move';
-}
-
 export default function ChessTable({ players }: ChessTableProps) {
   const [record, setRecord] = useState<GameRecord>(() => loadGame() ?? newGame());
-  const [selected, setSelected] = useState<string | null>(null);
-  const [pendingPromotion, setPendingPromotion] = useState<{ from: string; to: string } | null>(null);
-  const [focusSquare, setFocusSquare] = useState('e2');
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmingNewGame, setConfirmingNewGame] = useState(false);
-  // Square to move keyboard focus back to once the promotion dialog has closed.
-  const restoreFocusTo = useRef<string | null>(null);
-  const boardFrameRef = useRef<HTMLDivElement>(null);
+  const [boardKey, setBoardKey] = useState(0);
 
   useEffect(() => saveGame(record), [record]);
 
-  useEffect(() => {
-    if (pendingPromotion || !restoreFocusTo.current) return;
-    boardFrameRef.current?.querySelector<HTMLElement>(`[data-square="${restoreFocusTo.current}"]`)?.focus();
-    restoreFocusTo.current = null;
-  }, [pendingPromotion]);
-
-  function closePromotion(focusOn: string) {
-    setPendingPromotion(null);
-    setSelected(null);
-    setFocusSquare(focusOn);
-    restoreFocusTo.current = focusOn;
-  }
-
   const chess = useMemo(() => replay(record), [record]);
   const status = gameStatus(chess);
-  const board = boardOf(chess);
-  const targets = useMemo(() => (selected ? legalTargets(chess, selected) : new Map()), [chess, selected]);
-  const checkSquare = status.kind === 'checkmate' || (status.kind === 'playing' && status.check)
-    ? kingSquare(chess, chess.turn())
-    : null;
-  const moves = moveList(chess);
-
-  function move(from: string, to: string, promotion?: PromotionPiece) {
-    const next = applyMove(record, from, to, promotion);
-    setSelected(null);
-    setPendingPromotion(null);
-    if (next) {
-      setRecord(next);
-      setNotice(null);
-      setFocusSquare(to);
-    } else {
-      setNotice('That move isn’t allowed.');
-    }
-  }
-
-  function activate(square: string) {
-    if (status.kind !== 'playing' || pendingPromotion) return;
-    const piece = chess.get(square as 'a1');
-
-    if (selected && targets.has(square)) {
-      if (targets.get(square)?.promotion) setPendingPromotion({ from: selected, to: square });
-      else move(selected, square);
-    } else if (piece?.color === status.turn) {
-      setSelected(square === selected ? null : square);
-      setNotice(null);
-    } else if (selected) {
-      setSelected(null);
-      setNotice('That move isn’t allowed.');
-    } else if (piece) {
-      setNotice(`It’s ${players[status.turn]}’s turn.`);
-    }
-  }
 
   function startNewGame() {
     setRecord(newGame());
-    setSelected(null);
-    setPendingPromotion(null);
     setNotice(null);
     setConfirmingNewGame(false);
-    setFocusSquare('e2');
+    setBoardKey((k) => k + 1); // reset selection and focus
   }
 
   const gameInProgress = status.kind === 'playing' && record.moves.length > 0;
@@ -129,30 +54,18 @@ export default function ChessTable({ players }: ChessTableProps) {
     <>
       <section className="table" aria-label={`Chess: ${players.w} vs ${players.b}`}>
         <PlayerPlate name={players.b} color="b" badge={badgeFor('b', status)} />
-        <div className="board-frame" ref={boardFrameRef}>
-          <ChessBoard
-            board={board}
-            selected={selected}
-            targets={new Set(targets.keys())}
-            lastMove={lastMove(chess)}
-            checkSquare={checkSquare}
-            focusSquare={focusSquare}
-            disabled={status.kind !== 'playing'}
-            onFocusSquare={setFocusSquare}
-            onActivate={activate}
-            onCancel={() => setSelected(null)}
-          />
-          {pendingPromotion && (
-            <PromotionPicker
-              color={chess.turn()}
-              onChoose={(piece) => {
-                restoreFocusTo.current = pendingPromotion.to;
-                move(pendingPromotion.from, pendingPromotion.to, piece);
-              }}
-              onCancel={() => closePromotion(pendingPromotion.from)}
-            />
-          )}
-        </div>
+        <PlayBoard
+          key={boardKey}
+          record={record}
+          movable="both"
+          onMove={(from, to, promotion) => {
+            const next = applyMove(record, from, to, promotion);
+            if (next) setRecord(next);
+            else setNotice('That move isn’t allowed.');
+          }}
+          onNotice={setNotice}
+          explainBlocked={() => `It’s ${players[chess.turn()]}’s turn.`}
+        />
         <PlayerPlate name={players.w} color="w" badge={badgeFor('w', status)} />
       </section>
 
@@ -164,20 +77,7 @@ export default function ChessTable({ players }: ChessTableProps) {
           {notice}
         </p>
 
-        <h2 className="panel-title">Moves</h2>
-        {moves.length === 0 ? (
-          <p className="moves-empty">No moves yet. White starts.</p>
-        ) : (
-          <ol className="moves" aria-label="Moves">
-            {moves.map((row) => (
-              <li key={row.number}>
-                <span className="moves-number">{row.number}.</span>
-                <span>{row.white ?? '…'}</span>
-                <span>{row.black ?? ''}</span>
-              </li>
-            ))}
-          </ol>
-        )}
+        <MoveList chess={chess} />
 
         {confirmingNewGame ? (
           <div className="confirm" role="group" aria-label="Confirm new game">

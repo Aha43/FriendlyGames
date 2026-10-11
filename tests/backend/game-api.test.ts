@@ -340,3 +340,103 @@ describe('direct database access by API roles', () => {
     });
   }
 });
+
+describe('recovering a game whose creation response was lost', () => {
+  const create = (requestId: string, friendEmail = harald.email) =>
+    call('POST', '/games', { credential: arne.credential, body: { friendEmail, requestId } });
+
+  it('finds the same game on a retry with the same request ID, with a fresh working link', async () => {
+    const requestId = randomUUID();
+    const first = await create(requestId);
+    expect(first.status).toBe(201);
+    expect(first.body.duplicate).toBe(false);
+
+    const retry = await create(requestId);
+    expect(retry.status).toBe(200);
+    expect(retry.body.duplicate).toBe(true);
+    expect(retry.body.game.id).toBe(first.body.game.id);
+    expect(retry.body.invitation.token).not.toBe(first.body.invitation.token);
+
+    const [count] = await sql`select count(*)::int as n from games where create_request_id = ${requestId}`;
+    expect(count.n).toBe(1);
+
+    // Only the newest link works.
+    const stale = await call('POST', '/invitations/redeem', {
+      credential: harald.credential,
+      body: { token: first.body.invitation.token },
+    });
+    expect(stale.status).toBe(404);
+    const joined = await call('POST', '/invitations/redeem', {
+      credential: harald.credential,
+      body: { token: retry.body.invitation.token },
+    });
+    expect(joined.status).toBe(200);
+    expect(joined.body.game.id).toBe(first.body.game.id);
+
+    // After the friend has joined, a late retry still finds the game but issues no link.
+    const late = await create(requestId);
+    expect(late.status).toBe(200);
+    expect(late.body.game).toMatchObject({ id: first.body.game.id, status: 'active' });
+    expect(late.body.invitation).toBeNull();
+  });
+
+  it('creates one game for concurrent copies of a request', async () => {
+    const requestId = randomUUID();
+    const results = await Promise.all([1, 2, 3].map(() => create(requestId)));
+    expect(new Set(results.map((r) => r.body.game.id)).size).toBe(1);
+    expect(results.filter((r) => r.status === 201)).toHaveLength(1);
+    const [count] = await sql`select count(*)::int as n from games where create_request_id = ${requestId}`;
+    expect(count.n).toBe(1);
+  });
+
+  it('keeps request IDs per creator', async () => {
+    const requestId = randomUUID();
+    const mine = await create(requestId);
+    const theirs = await call('POST', '/games', {
+      credential: outsider.credential,
+      body: { friendEmail: harald.email, requestId },
+    });
+    expect(theirs.status).toBe(201);
+    expect(theirs.body.game.id).not.toBe(mine.body.game.id);
+  });
+
+  it('lets only the creator replace the link of a game nobody has joined', async () => {
+    const created = await create(randomUUID());
+    const gameId = created.body.game.id;
+
+    const outsiderTry = await call('POST', `/games/${gameId}/invitation`, { credential: outsider.credential });
+    expect(outsiderTry.status).toBe(404);
+
+    const renewed = await call('POST', `/games/${gameId}/invitation`, { credential: arne.credential });
+    expect(renewed.status).toBe(200);
+    expect(renewed.body.invitation.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(renewed.body.invitation.token).not.toBe(created.body.invitation.token);
+    expect(
+      (await call('POST', '/invitations/redeem', { credential: harald.credential, body: { token: created.body.invitation.token } }))
+        .status,
+    ).toBe(404);
+    expect(
+      (await call('POST', '/invitations/redeem', { credential: harald.credential, body: { token: renewed.body.invitation.token } }))
+        .status,
+    ).toBe(200);
+
+    const afterJoin = await call('POST', `/games/${gameId}/invitation`, { credential: arne.credential });
+    expect(afterJoin.status).toBe(409);
+    expect(afterJoin.body.error.code).toBe('invitation_used');
+    const byBlack = await call('POST', `/games/${gameId}/invitation`, { credential: harald.credential });
+    expect(byBlack.status).toBe(403);
+  });
+
+  it('serialises a link replacement racing a join: the joiner either gets in or the old link is dead', async () => {
+    for (let i = 0; i < 5; i++) {
+      const created = await create(randomUUID());
+      const joiner = await newPlayer(`Joiner${i}`);
+      const [renewed, joined] = await Promise.all([
+        call('POST', `/games/${created.body.game.id}/invitation`, { credential: arne.credential }),
+        call('POST', '/invitations/redeem', { credential: joiner.credential, body: { token: created.body.invitation.token } }),
+      ]);
+      if (joined.status === 200) expect(renewed.status).toBe(409);
+      else expect([joined.status, renewed.status]).toEqual([404, 200]);
+    }
+  });
+});

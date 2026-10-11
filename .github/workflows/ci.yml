@@ -34,13 +34,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run e2e
-      - uses: actions/upload-artifact@v7
-        if: ${{ failure() }}
+      # Shared-play journeys run two browser contexts against a fresh local backend.
+      - uses: supabase/setup-cli@v1
         with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 7
+          version: 2.105.0
+      - run: supabase start
+      # No report or trace upload: they would contain device credentials and invitation tokens.
+      - run: npm run e2e
 
   # Real-backend integration tests: a fresh local Supabase stack with the repository's
   # migrations applied and the game-api function served. No cloud project or secrets involved.

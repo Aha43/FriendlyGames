@@ -1,231 +1,233 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
-import { newGame } from '@shared/chess/game.ts';
+import { ApiError, gameApi, NetworkError, type SharedGame } from './shared/gameApi';
 
-const board = () => screen.getByRole('grid', { name: 'Chess board' });
-const square = (name: string) => within(board()).getByRole('gridcell', { name: new RegExp(`^${name},`) });
-const status = () => screen.getByRole('status');
+const CREDENTIAL = 'C'.repeat(43);
+const TOKEN = 'T'.repeat(43);
+const GAME_ID = '11111111-2222-3333-4444-555555555555';
 
-async function clickMoves(user: ReturnType<typeof userEvent.setup>, ...moves: string[]) {
-  for (const m of moves) {
-    await user.click(square(m.slice(0, 2)));
-    await user.click(square(m.slice(2, 4)));
-  }
+function game(overrides: Partial<SharedGame> = {}): SharedGame {
+  return {
+    id: GAME_ID,
+    type: 'chess',
+    schemaVersion: 1,
+    status: 'active',
+    result: null,
+    termination: null,
+    revision: 1,
+    createdAt: '2026-10-11T10:00:00Z',
+    updatedAt: '2026-10-11T10:00:00Z',
+    players: { white: { id: 'p-arne', displayName: 'Arne' }, black: { id: 'p-harald', displayName: 'Harald' } },
+    yourSeat: 'white',
+    chess: { initialFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', moves: [], turn: 'white' },
+    ...overrides,
+  };
 }
 
-beforeEach(() => localStorage.clear());
+function signIn() {
+  localStorage.setItem(
+    'friendlygames.identity',
+    JSON.stringify({ playerId: 'p-arne', displayName: 'Arne', credential: CREDENTIAL }),
+  );
+}
 
-describe('App', () => {
-  it('sets the table with both players, the starting position and whose turn it is', () => {
-    render(<App />);
-    expect(screen.getByRole('heading', { level: 1, name: 'FriendlyGames' })).toBeInTheDocument();
-    const table = screen.getByRole('region', { name: 'Chess: Arne vs Harald' });
-    expect(within(table).getByText('Arne')).toBeInTheDocument();
-    expect(within(table).getByText('Harald')).toBeInTheDocument();
-    expect(status()).toHaveTextContent('Arne to move');
+const consoleCalls: unknown[][] = [];
 
-    const squares = within(board()).getAllByRole('gridcell');
-    expect(squares).toHaveLength(64);
-    expect(squares[0]).toHaveAccessibleName('a8, black rook');
-    expect(squares[63]).toHaveAccessibleName('h1, white rook');
-    expect(board().querySelectorAll('img.piece')).toHaveLength(32);
-  });
+beforeEach(() => {
+  localStorage.clear();
+  window.location.hash = '';
+  consoleCalls.length = 0;
+  for (const method of ['log', 'info', 'warn', 'error', 'debug'] as const) {
+    vi.spyOn(console, method).mockImplementation((...args) => void consoleCalls.push(args));
+  }
+});
 
-  it('moves a piece by tapping it and then a highlighted legal square', async () => {
+afterEach(() => {
+  // Device credentials and invitation tokens must never reach logs.
+  const logged = JSON.stringify(consoleCalls);
+  expect(logged).not.toContain(CREDENTIAL);
+  expect(logged).not.toContain(TOKEN);
+  vi.restoreAllMocks();
+});
+
+describe('onboarding', () => {
+  it('creates a player, remembers the device and opens the lobby', async () => {
     const user = userEvent.setup();
+    const create = vi.spyOn(gameApi, 'createPlayer').mockResolvedValue({
+      player: { id: 'p-arne', displayName: 'Arne', email: 'arne@example.test' },
+      deviceCredential: CREDENTIAL,
+    });
+    vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
     render(<App />);
-    await user.click(square('e2'));
-    expect(square('e2')).toHaveAccessibleName('e2, white pawn, selected');
-    expect(square('e3')).toHaveAccessibleName('e3, empty, legal move');
-    expect(square('e4')).toHaveAccessibleName('e4, empty, legal move');
-    expect(square('e5')).toHaveAccessibleName('e5, empty');
 
-    await user.click(square('e4'));
-    expect(square('e4')).toHaveAccessibleName('e4, white pawn');
-    expect(square('e2')).toHaveAccessibleName('e2, empty');
-    expect(status()).toHaveTextContent('Harald to move');
-    expect(within(screen.getByRole('list', { name: 'Moves' })).getByText('e4')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Welcome to the park' })).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Your name'), 'Arne');
+    await user.type(screen.getByLabelText('Your email'), 'arne@example.test');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(create).toHaveBeenCalledWith('Arne', 'arne@example.test');
+    expect(await screen.findByRole('heading', { name: 'Your games' })).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('friendlygames.identity')!)).toEqual({
+      playerId: 'p-arne',
+      displayName: 'Arne',
+      credential: CREDENTIAL,
+    });
   });
 
-  it('rejects an illegal move and keeps the position', async () => {
-    const user = userEvent.setup();
+  it('explains that the identity lives on this device only', () => {
     render(<App />);
-    await user.click(square('e2'));
-    await user.click(square('e5'));
-    expect(screen.getByText('That move isn’t allowed.')).toBeInTheDocument();
-    expect(square('e2')).toHaveAccessibleName('e2, white pawn');
-    expect(status()).toHaveTextContent('Arne to move');
-
-    await user.click(square('e7'));
-    expect(screen.getByText('It’s Arne’s turn.')).toBeInTheDocument();
-    expect(square('e7')).toHaveAccessibleName('e7, black pawn');
+    expect(screen.getByText(/If this browser’s data is cleared, or you use another device, you start as a new player/)).toBeInTheDocument();
+    expect(screen.getByText(/Typing the same email again doesn’t restore them/)).toBeInTheDocument();
   });
 
-  it('plays moves from the keyboard', async () => {
-    const user = userEvent.setup();
+  it('asks an invited player to introduce themselves first', () => {
+    window.location.hash = `#/join/${TOKEN}`;
     render(<App />);
-    await user.tab();
-    expect(square('e2')).toHaveFocus();
-    await user.keyboard('{Enter}{ArrowUp}{ArrowUp}{Enter}');
-    expect(square('e4')).toHaveAccessibleName('e4, white pawn');
-    expect(status()).toHaveTextContent('Harald to move');
-
-    await user.keyboard('{ArrowUp}{ArrowUp}{ArrowUp}{Enter}{Escape}');
-    expect(square('e7')).toHaveAccessibleName('e7, black pawn');
-    expect(square('e6')).toHaveAccessibleName('e6, empty');
+    expect(screen.getByRole('heading', { name: 'You’re invited to a game' })).toBeInTheDocument();
   });
+});
 
-  it('shows check and checkmate, then stops play', async () => {
-    const user = userEvent.setup();
+describe('lobby', () => {
+  beforeEach(signIn);
+
+  it('lists games with whose move it is', async () => {
+    vi.spyOn(gameApi, 'listGames').mockResolvedValue({
+      games: [
+        game(),
+        game({ id: '22222222-2222-3333-4444-555555555555', chess: { ...game().chess, moves: ['e2e4'], turn: 'black' } }),
+        game({
+          id: '33333333-2222-3333-4444-555555555555',
+          status: 'finished',
+          result: 'white',
+          termination: 'checkmate',
+        }),
+      ],
+    });
     render(<App />);
-    await clickMoves(user, 'f2f3', 'e7e5', 'g2g4');
-    await clickMoves(user, 'd8h4');
-    expect(status()).toHaveTextContent('Checkmate. Harald wins');
-    expect(square('e1')).toHaveAccessibleName('e1, white king, in check');
-    expect(screen.getByText('Winner')).toBeInTheDocument();
-
-    await user.click(square('a2'));
-    expect(square('a2')).toHaveAccessibleName('a2, white pawn');
-  });
-
-  it('asks which piece to promote to', async () => {
-    localStorage.setItem(
-      'friendlygames.localChess',
-      JSON.stringify(newGame('8/P6k/8/8/8/8/6K1/8 w - - 0 1')),
+    const inProgress = await screen.findByRole('list', { name: 'Games in progress' });
+    const links = within(inProgress).getAllByRole('link');
+    expect(links[0]).toHaveTextContent('vs Harald');
+    expect(links[0]).toHaveTextContent('Your move');
+    expect(links[0]).toHaveAttribute('href', `#/game/${GAME_ID}`);
+    expect(links[1]).toHaveTextContent('Harald’s move');
+    expect(within(screen.getByRole('list', { name: 'Finished games' })).getByRole('link')).toHaveTextContent(
+      'Checkmate. You win',
     );
+  });
+
+  it('creates a game and offers the invitation link to copy', async () => {
     const user = userEvent.setup();
+    vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+    const create = vi.spyOn(gameApi, 'createGame').mockResolvedValue({
+      game: game({ status: 'waiting', revision: 0 }),
+      invitation: { token: TOKEN },
+      duplicate: false,
+    });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     render(<App />);
-    await clickMoves(user, 'a7a8');
-    const dialog = screen.getByRole('dialog', { name: 'Promote pawn to' });
-    expect(within(dialog).getByRole('button', { name: 'Queen' })).toHaveFocus();
-    await user.click(within(dialog).getByRole('button', { name: 'Knight' }));
-    expect(square('a8')).toHaveAccessibleName('a8, white knight');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Friend’s email'), 'harald@example.test');
+    await user.click(screen.getByRole('button', { name: 'Create game' }));
+
+    expect(create).toHaveBeenCalledWith(CREDENTIAL, 'harald@example.test', expect.stringMatching(/^[0-9a-f-]{36}$/));
+    const link = `http://localhost:3000/#/join/${TOKEN}`;
+    expect(await screen.findByLabelText('Invitation link')).toHaveValue(link);
+    await user.click(screen.getByRole('button', { name: 'Copy link' }));
+    expect(writeText).toHaveBeenCalledWith(link);
+    expect(screen.getByRole('button', { name: 'Copied!' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Go to the table' })).toHaveAttribute('href', `#/game/${GAME_ID}`);
   });
 
-  describe('promotion dialog from the keyboard', () => {
-    // White pawn on a7 about to promote; black king h7 and pawn d5, white king g2.
-    beforeEach(() =>
-      localStorage.setItem('friendlygames.localChess', JSON.stringify(newGame('8/P6k/8/3p4/8/8/6K1/8 w - - 0 1'))),
-    );
-
-    /** Tab onto the board (focus starts on e2), walk to a7 and push the pawn to a8. */
-    async function openPicker(user: ReturnType<typeof userEvent.setup>) {
-      await user.tab();
-      await user.keyboard('{ArrowLeft>4/}{ArrowUp>5/}');
-      expect(square('a7')).toHaveFocus();
-      await user.keyboard('{Enter}{ArrowUp}{Enter}');
-      return screen.getByRole('dialog', { name: 'Promote pawn to' });
-    }
-
-    it('keeps Tab and Shift+Tab inside the dialog', async () => {
-      const user = userEvent.setup();
-      render(<App />);
-      const dialog = await openPicker(user);
-      const button = (name: string) => within(dialog).getByRole('button', { name });
-
-      expect(button('Queen')).toHaveFocus();
-      for (const name of ['Rook', 'Bishop', 'Knight', 'Cancel', 'Queen']) {
-        await user.tab();
-        expect(button(name)).toHaveFocus();
-      }
-      await user.tab({ shift: true });
-      expect(button('Cancel')).toHaveFocus();
-      await user.tab({ shift: true });
-      expect(button('Knight')).toHaveFocus();
-
-      // Everything behind the dialog is inert while it is open, and released afterwards.
-      const newGameButton = screen.getByRole('button', { name: 'New game' });
-      expect(newGameButton.closest('[inert]')).not.toBeNull();
-      expect(board().closest('[inert]')).not.toBeNull();
-      expect(dialog.closest('[inert]')).toBeNull();
-      await user.keyboard('{Escape}');
-      expect(document.querySelector('[inert]')).toBeNull();
-    });
-
-    it('returns focus to the promoted square and keyboard play continues', async () => {
-      const user = userEvent.setup();
-      render(<App />);
-      const dialog = await openPicker(user);
-      await user.tab({ shift: true });
-      await user.tab({ shift: true });
-      expect(within(dialog).getByRole('button', { name: 'Knight' })).toHaveFocus();
-      await user.keyboard('{Enter}');
-
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-      expect(square('a8')).toHaveAccessibleName('a8, white knight');
-      expect(square('a8')).toHaveFocus();
-      expect(status()).toHaveTextContent('Harald to move');
-
-      // Black replies from the keyboard: king h7 → h6.
-      await user.keyboard('{ArrowRight>7/}{ArrowDown}{Enter}{ArrowDown}{Enter}');
-      expect(square('h6')).toHaveAccessibleName('h6, black king');
-      expect(square('h6')).toHaveFocus();
-      expect(status()).toHaveTextContent('Arne to move');
-    });
-
-    it('cancels with Escape, returns focus to the pawn and can promote again', async () => {
-      const user = userEvent.setup();
-      render(<App />);
-      await openPicker(user);
-      await user.keyboard('{Escape}');
-
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-      expect(square('a7')).toHaveAccessibleName('a7, white pawn');
-      expect(square('a7')).toHaveFocus();
-      expect(status()).toHaveTextContent('Arne to move');
-
-      await user.keyboard('{Enter}{ArrowUp}{Enter}');
-      expect(screen.getByRole('dialog', { name: 'Promote pawn to' })).toBeInTheDocument();
-      await user.keyboard('{Enter}');
-      expect(square('a8')).toHaveAccessibleName('a8, white queen');
-      expect(square('a8')).toHaveFocus();
-    });
-
-    it('returns focus to the pawn when cancelled with the Cancel button', async () => {
-      const user = userEvent.setup();
-      render(<App />);
-      const dialog = await openPicker(user);
-      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-      expect(square('a7')).toHaveFocus();
-    });
-  });
-
-  it('keeps the game across a refresh and starts a new one on request', async () => {
+  it('says creation is unconfirmed when the answer is lost, and retries the same request', async () => {
     const user = userEvent.setup();
-    const { unmount } = render(<App />);
-    await clickMoves(user, 'e2e4', 'c7c5');
-    unmount();
-
+    vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+    const create = vi
+      .spyOn(gameApi, 'createGame')
+      .mockRejectedValueOnce(new NetworkError('lost'))
+      .mockResolvedValueOnce({ game: game({ status: 'waiting', revision: 0 }), invitation: { token: TOKEN }, duplicate: true });
     render(<App />);
-    expect(square('e4')).toHaveAccessibleName('e4, white pawn');
-    expect(square('c5')).toHaveAccessibleName('c5, black pawn');
-    expect(status()).toHaveTextContent('Arne to move');
 
-    await user.click(screen.getByRole('button', { name: 'New game' }));
-    await user.click(screen.getByRole('button', { name: 'Keep playing' }));
-    expect(square('e4')).toHaveAccessibleName('e4, white pawn');
+    await user.type(screen.getByLabelText('Friend’s email'), 'harald@example.test');
+    await user.click(screen.getByRole('button', { name: 'Create game' }));
+    expect(await screen.findByText(/Couldn’t confirm whether the game was created/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing was created/)).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'New game' }));
-    await user.click(screen.getByRole('button', { name: 'Start over' }));
-    expect(square('e2')).toHaveAccessibleName('e2, white pawn');
-    expect(screen.getByText('No moves yet. White starts.')).toBeInTheDocument();
-    expect(JSON.parse(localStorage.getItem('friendlygames.localChess')!).moves).toEqual([]);
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[1]).toEqual(create.mock.calls[0]); // same request ID: the server finds the game
+    expect(await screen.findByLabelText('Invitation link')).toHaveValue(`http://localhost:3000/#/join/${TOKEN}`);
   });
 
-  it('labels the history and tally as sample data', () => {
+  it('uses a new request ID when the friend’s email is changed after an unconfirmed attempt', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+    const create = vi.spyOn(gameApi, 'createGame').mockRejectedValue(new NetworkError('lost'));
     render(<App />);
-    const history = screen.getByRole('complementary', { name: 'Chess history' });
-    expect(within(history).getByText('Sample data')).toBeInTheDocument();
-    expect(within(history).getByRole('list', { name: 'Sample completed games' }).children).toHaveLength(6);
+    await user.type(screen.getByLabelText('Friend’s email'), 'harald@example.test');
+    await user.click(screen.getByRole('button', { name: 'Create game' }));
+    await screen.findByText(/Couldn’t confirm/);
+    await user.clear(screen.getByLabelText('Friend’s email'));
+    await user.type(screen.getByLabelText('Friend’s email'), 'other@example.test');
+    await user.click(screen.getByRole('button', { name: 'Create game' }));
+    expect(create.mock.calls[1][2]).not.toBe(create.mock.calls[0][2]);
   });
 
-  it('credits third-party work and links the licenses', () => {
+  it('joins from a pasted invitation link', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+    const redeem = vi.spyOn(gameApi, 'redeemInvitation').mockResolvedValue({ game: game({ yourSeat: 'black' }) });
+    vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: game({ yourSeat: 'black' }) });
     render(<App />);
-    const credit = screen.getByRole('link', { name: 'Chess pieces by Cburnett, BSD license' });
-    expect(credit).toHaveAttribute('href', '/licenses/cburnett-chess-pieces.txt');
-    const rules = screen.getByRole('link', { name: 'Rules by chess.js, BSD license' });
-    expect(rules).toHaveAttribute('href', '/licenses/chess.js.txt');
+
+    await user.type(screen.getByLabelText('Paste an invitation link'), `https://friends.example/#/join/${TOKEN}`);
+    await user.click(screen.getByRole('button', { name: 'Join' }));
+
+    expect(await screen.findByRole('grid', { name: 'Chess board' })).toBeInTheDocument();
+    expect(redeem).toHaveBeenCalledWith(CREDENTIAL, TOKEN);
+    expect(window.location.hash).toBe(`#/game/${GAME_ID}`);
+  });
+});
+
+describe('joining', () => {
+  beforeEach(signIn);
+
+  it('redeems the invitation once and replaces the link in history', async () => {
+    window.location.hash = `#/join/${TOKEN}`;
+    const redeem = vi.spyOn(gameApi, 'redeemInvitation').mockResolvedValue({ game: game({ yourSeat: 'black' }) });
+    vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: game({ yourSeat: 'black' }) });
+    render(<App />);
+    expect(await screen.findByRole('grid', { name: 'Chess board' })).toBeInTheDocument();
+    expect(redeem).toHaveBeenCalledTimes(1);
+    expect(window.location.hash).toBe(`#/game/${GAME_ID}`);
+  });
+
+  it('explains an invitation that was already used', async () => {
+    window.location.hash = `#/join/${TOKEN}`;
+    vi.spyOn(gameApi, 'redeemInvitation').mockRejectedValue(new ApiError(409, 'invitation_used', 'used'));
+    render(<App />);
+    expect(await screen.findByText('This invitation has already been used by someone else.')).toBeInTheDocument();
+  });
+});
+
+describe('identity', () => {
+  it('offers a fresh start when the server no longer knows this device', async () => {
+    const user = userEvent.setup();
+    signIn();
+    vi.spyOn(gameApi, 'listGames').mockRejectedValue(new ApiError(401, 'unauthenticated', 'no'));
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'We don’t recognise this device any more' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Start as a new player' }));
+    expect(screen.getByRole('heading', { name: 'Welcome to the park' })).toBeInTheDocument();
+    expect(localStorage.getItem('friendlygames.identity')).toBeNull();
+  });
+
+  it('keeps local play available without an identity', () => {
+    window.location.hash = '#/local';
+    render(<App />);
+    expect(screen.getByRole('region', { name: 'Chess: White vs Black' })).toBeInTheDocument();
+    expect(screen.getByText('Sample data')).toBeInTheDocument();
   });
 });

@@ -9,8 +9,9 @@ return to ongoing games or start a new chess game with a friend. The playing pag
 evokes friends meeting at a table in a park, with a seasonal backdrop and a clear,
 comfortable board. Finished games become shared history.
 
-The app is a locally playable chess table in an autumn park, with sample history.
-Both players share one device for now; cross-device play is Sprint 2.
+Two friends can play chess from their own devices at a table in an autumn park:
+name-and-email onboarding, manually shared invitation links, and server-checked moves.
+Local play on one device remains available separately.
 
 - [Product brief](docs/product-brief.md)
 - [First sprint](docs/sprint-01.md)
@@ -25,10 +26,15 @@ Requires Node.js 24 (see `.nvmrc`) and npm.
 
 ```bash
 npm ci              # install exact dependencies from package-lock.json
+supabase start      # local game backend (needs Docker); see docs/backend.md
 npm run dev         # start the Vite dev server at http://localhost:5173
 npm run build       # production build into dist/
 npm run preview     # serve the production build locally
 ```
+
+The app talks to the game API at `VITE_GAME_API_URL` (see `.env.example`). Unset, it uses
+the local stack on the same host as the page, so a phone on the same Wi-Fi works with
+`npm run dev -- --host`. Local play (`#/local`) needs no backend.
 
 ## Checks
 
@@ -44,7 +50,8 @@ npm run build       # production build
 `npm run check` runs all four in order. `npm run test:watch` runs Vitest in watch mode.
 
 Browser journeys (Playwright, desktop and phone) build the app and run against
-`vite preview`; CI runs them as a separate job:
+`vite preview`; the shared-play journeys also need `supabase start`. CI runs them as
+a separate job:
 
 ```bash
 npx playwright install chromium   # once per machine
