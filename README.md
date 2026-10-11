@@ -14,6 +14,8 @@ Both players share one device for now; cross-device play is Sprint 2.
 
 - [Product brief](docs/product-brief.md)
 - [First sprint](docs/sprint-01.md)
+- [Sprint 2 — Across the table from Harald](docs/sprint-02.md)
+- [Future park ideas](docs/future-ideas.md)
 - [Development workflow](docs/development.md)
 - [Agent guidance](AGENTS.md)
 
