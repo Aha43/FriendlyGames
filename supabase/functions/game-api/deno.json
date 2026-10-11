@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "chess.js": "npm:chess.js@1.4.0",
+    "postgres": "npm:postgres@3.4.9"
+  }
+}

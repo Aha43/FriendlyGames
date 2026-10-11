@@ -1,6 +1,6 @@
 // The piece artwork in one place so the set can be swapped later.
 // Cburnett pieces, used under the BSD license: see docs/third-party-assets.md.
-import type { Piece } from '../chess/board';
+import type { Piece } from '@shared/chess/board.ts';
 import wK from '../assets/pieces/cburnett/wK.svg';
 import wQ from '../assets/pieces/cburnett/wQ.svg';
 import wR from '../assets/pieces/cburnett/wR.svg';

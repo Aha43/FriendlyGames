@@ -1,4 +1,4 @@
-import type { Color } from '../chess/board';
+import type { Color } from '@shared/chess/board.ts';
 
 export type PlateBadge = 'to-move' | 'check' | 'won' | 'draw' | null;
 

@@ -1,4 +1,4 @@
-import { applyMove, gameStatus, legalTargets, moveList, newGame, replay, type GameRecord } from './game';
+import { applyMove, gameStatus, legalTargets, moveList, newGame, outcomeOf, replay, type GameRecord } from './game.ts';
 
 /** Play moves given as "e2e4" strings, failing the test if any is rejected. */
 function play(record: GameRecord, ...moves: string[]): GameRecord {
@@ -69,6 +69,12 @@ describe('local chess rules', () => {
     expect(play(start, 'a7a8n').moves).toEqual(['a7a8n']);
   });
 
+  it('requires a promotion piece exactly when a pawn promotes', () => {
+    const start = newGame('8/P6k/8/8/8/8/6K1/8 w - - 0 1');
+    expect(applyMove(start, 'a7', 'a8')).toBeNull();
+    expect(applyMove(newGame(), 'e2', 'e4', 'q')).toBeNull();
+  });
+
   it('detects check', () => {
     const game = play(newGame(), 'e2e4', 'f7f6', 'd1h5');
     expect(gameStatus(replay(game))).toEqual({ kind: 'playing', turn: 'b', check: true });
@@ -105,5 +111,15 @@ describe('local chess rules', () => {
     const game = play(newGame(), 'e2e4', 'e7e5');
     expect(replay({ ...game }).fen()).toBe(replay(game).fen());
     expect(() => replay({ ...game, moves: ['e2e4', 'e2e4'] })).toThrow();
+  });
+});
+
+describe('outcomeOf', () => {
+  it('maps finished positions to a recorded result', () => {
+    const mate = play(newGame(), 'f2f3', 'e7e5', 'g2g4', 'd8h4');
+    expect(outcomeOf(gameStatus(replay(mate)))).toEqual({ result: 'black', termination: 'checkmate' });
+    const stalemate = play(newGame('7k/8/6K1/8/8/8/8/5Q2 w - - 0 1'), 'f1f7');
+    expect(outcomeOf(gameStatus(replay(stalemate)))).toEqual({ result: 'draw', termination: 'stalemate' });
+    expect(outcomeOf(gameStatus(replay(newGame())))).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 // Local chess game: the record we keep (initial position + ordered moves) and
 // the rules applied to it. Rules come from chess.js; nothing here touches the UI.
 import { Chess, DEFAULT_POSITION, type Square } from 'chess.js';
-import type { Board, Color, PieceType } from './board';
+import type { Board, Color, PieceType } from './board.ts';
 
 export type PromotionPiece = 'q' | 'r' | 'b' | 'n';
 
@@ -47,6 +47,8 @@ export function applyMove(
   if (gameStatus(chess).kind !== 'playing') return null;
   try {
     const move = chess.move({ from, to, promotion });
+    // chess.js ignores a promotion piece on an ordinary move; treat it as a malformed move instead.
+    if (promotion && !move.isPromotion()) return null;
     return { ...record, moves: [...record.moves, move.lan] };
   } catch {
     return null;
@@ -107,4 +109,14 @@ export function lastMove(chess: Chess): { from: string; to: string } | null {
   const history = chess.history({ verbose: true });
   const move = history[history.length - 1];
   return move ? { from: move.from, to: move.to } : null;
+}
+
+export type GameResult = 'white' | 'black' | 'draw';
+export type Termination = 'checkmate' | 'resignation' | DrawReason;
+
+/** The recorded result of a finished position, or null while play continues. */
+export function outcomeOf(status: GameStatus): { result: GameResult; termination: Termination } | null {
+  if (status.kind === 'checkmate') return { result: status.winner === 'w' ? 'white' : 'black', termination: 'checkmate' };
+  if (status.kind === 'draw') return { result: 'draw', termination: status.reason };
+  return null;
 }

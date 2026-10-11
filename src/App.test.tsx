@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
-import { newGame } from './chess/game';
+import { newGame } from '@shared/chess/game.ts';
 
 const board = () => screen.getByRole('grid', { name: 'Chess board' });
 const square = (name: string) => within(board()).getByRole('gridcell', { name: new RegExp(`^${name},`) });

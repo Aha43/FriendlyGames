@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import type { Color } from '../chess/board';
-import type { PromotionPiece } from '../chess/game';
+import type { Color } from '@shared/chess/board.ts';
+import type { PromotionPiece } from '@shared/chess/game.ts';
 import { pieceImage } from './pieceSet';
 
 const CHOICES: { type: PromotionPiece; name: string }[] = [

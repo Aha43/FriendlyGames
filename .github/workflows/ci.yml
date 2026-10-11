@@ -41,3 +41,22 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  # Real-backend integration tests: a fresh local Supabase stack with the repository's
+  # migrations applied and the game-api function served. No cloud project or secrets involved.
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.105.0
+      - run: supabase start
+      - run: npm run test:backend
+      - if: ${{ failure() }}
+        run: docker logs supabase_edge_runtime_friendlygames 2>&1 | tail -100

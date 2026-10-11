@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Color } from '../chess/board';
+import type { Color } from '@shared/chess/board.ts';
 import {
   applyMove,
   boardOf,
@@ -13,7 +13,7 @@ import {
   type GameRecord,
   type GameStatus,
   type PromotionPiece,
-} from '../chess/game';
+} from '@shared/chess/game.ts';
 import { loadGame, saveGame } from '../chess/storage';
 import ChessBoard from './ChessBoard';
 import PlayerPlate, { type PlateBadge } from './PlayerPlate';
