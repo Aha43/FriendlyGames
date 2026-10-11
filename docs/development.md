@@ -16,7 +16,9 @@ the next issue. Merge only with owner authorization.
 
 CI gates PRs with lint, type checking, unit/component tests and production build;
 run them locally with `npm run check` (commands are listed in the README). A
-separate CI job runs the Playwright journeys (`npm run e2e`) on desktop and phone. Add a focused browser
+separate CI job runs the Playwright journeys (`npm run e2e`) on desktop and phone.
+Another job starts a fresh local Supabase stack, applies the migrations and runs the
+backend integration tests (`npm run test:backend`); see docs/backend.md. Add a focused browser
 journey for the playing flow. The multiplayer milestone also needs real backend
 verification through two independent player sessions.
 

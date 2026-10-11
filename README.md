@@ -57,6 +57,16 @@ Proposed starting point: React, TypeScript and Vite, with Supabase for the share
 backend, following the useful parts of NamWeb. Confirm dependencies and hosting
 when scaffolding; keep the initial application small.
 
+## Shared-game backend
+
+A Supabase database and Edge Function for playing across devices. Setup, API and
+identity limits: [docs/backend.md](docs/backend.md). With Docker running:
+
+```bash
+supabase start
+npm run test:backend
+```
+
 ## Third-party assets
 
 External code and artwork, their sources and licenses are recorded in

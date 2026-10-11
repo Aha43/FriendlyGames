@@ -1,5 +1,5 @@
 // Keeps the local game across a refresh. Sprint 2 replaces this with the shared backend.
-import { replay, type GameRecord } from './game';
+import { replay, type GameRecord } from '@shared/chess/game.ts';
 
 const KEY = 'friendlygames.localChess';
 

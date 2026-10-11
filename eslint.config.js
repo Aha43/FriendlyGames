@@ -23,7 +23,12 @@ export default tseslint.config(
     },
   },
   {
-    files: ['vite.config.ts', 'eslint.config.js', 'playwright.config.ts', 'e2e/**/*.ts'],
+    files: ['vite.config.ts', 'vitest.backend.config.ts', 'eslint.config.js', 'playwright.config.ts', 'e2e/**/*.ts', 'tests/**/*.ts'],
     languageOptions: { globals: globals.node },
+  },
+  {
+    // Backend tests read API responses as loosely typed JSON on purpose.
+    files: ['tests/backend/**/*.ts'],
+    rules: { '@typescript-eslint/no-explicit-any': 'off' },
   },
 );

@@ -1,5 +1,5 @@
 import { useRef, type KeyboardEvent } from 'react';
-import { FILES, pieceName, type Board } from '../chess/board';
+import { FILES, pieceName, type Board } from '@shared/chess/board.ts';
 import { pieceImage } from './pieceSet';
 
 interface ChessBoardProps {

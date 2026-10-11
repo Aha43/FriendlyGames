@@ -12,7 +12,17 @@ from, who made it, the license it is used under and what that license requires.
 | License | BSD-2-Clause (`node_modules/chess.js/LICENSE`) |
 | Obligations | Keep the copyright notice with source; reproduce it with binary distributions |
 | How we comply | Copy of the license in [`public/licenses/chess.js.txt`](../public/licenses/chess.js.txt), shipped with every build and linked from the page footer. Refresh it when upgrading chess.js |
-| Used for | Move legality, check/checkmate and draw detection in `src/chess/game.ts` |
+| Used for | Move legality, check/checkmate and draw detection in `supabase/functions/_shared/chess/game.ts`, in the browser and in the `game-api` Edge Function |
+
+## Database client — postgres.js
+
+| | |
+|---|---|
+| Package | [`postgres`](https://github.com/porsager/postgres) 3.4.9 (npm, pinned exactly) |
+| Author | Rasmus Porsager |
+| License | Unlicense (public domain dedication) |
+| Obligations | None |
+| Used for | Server-side only: the `game-api` Edge Function's database connection, and the backend integration tests. Never shipped to the browser |
 
 ## Chess pieces — Cburnett set
 

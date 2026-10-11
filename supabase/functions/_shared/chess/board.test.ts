@@ -1,4 +1,4 @@
-import { pieceName } from './board';
+import { pieceName } from './board.ts';
 
 describe('pieceName', () => {
   it('names a piece by colour and type', () => {

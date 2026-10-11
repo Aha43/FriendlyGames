@@ -1,4 +1,4 @@
-import { applyMove, newGame } from './game';
+import { applyMove, newGame } from '@shared/chess/game.ts';
 import { loadGame, saveGame } from './storage';
 
 describe('local game storage', () => {
