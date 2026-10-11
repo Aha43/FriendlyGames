@@ -9,7 +9,7 @@ return to ongoing games or start a new chess game with a friend. The playing pag
 evokes friends meeting at a table in a park, with a seasonal backdrop and a clear,
 comfortable board. Finished games become shared history.
 
-This repository contains the runnable frontend foundation; the chess table follows.
+The app shows the autumn park chess table with sample history; local play follows.
 
 - [Product brief](docs/product-brief.md)
 - [First sprint](docs/sprint-01.md)
@@ -45,6 +45,11 @@ npm run build       # production build
 Proposed starting point: React, TypeScript and Vite, with Supabase for the shared
 backend, following the useful parts of NamWeb. Confirm dependencies and hosting
 when scaffolding; keep the initial application small.
+
+## Third-party assets
+
+External code and artwork, their sources and licenses are recorded in
+[docs/third-party-assets.md](docs/third-party-assets.md).
 
 ## Repository status
 
