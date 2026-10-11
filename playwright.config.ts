@@ -6,6 +6,8 @@ export default defineConfig({
   testDir: 'e2e',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
+  // One retry in CI; a test that passes only on retry is reported as flaky, not hidden.
+  retries: process.env.CI ? 1 : 0,
   // No traces, videos, screenshots or HTML reports: they would record request headers, bodies and
   // URLs, which carry device credentials and invitation tokens.
   reporter: 'list',

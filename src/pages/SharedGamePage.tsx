@@ -12,8 +12,11 @@ import { describeGame, opponentName, other } from '../shared/describe';
 import { ApiError, gameApi, NetworkError, type GameAction, type Seat, type SharedGame } from '../shared/gameApi';
 import { forgetInvitation, invitationFor, rememberInvitation, type Identity } from '../shared/identity';
 import { newRequestId } from '../shared/requestId';
+import { navigate } from '../shared/route';
 
 const POLL_MS = 4_000;
+
+const finishedDate = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
 const colorOf = (seat: Seat): Color => (seat === 'white' ? 'w' : 'b');
 
@@ -38,6 +41,9 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
   const [pending, setPending] = useState<Pending | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmingResign, setConfirmingResign] = useState(false);
+  // Reviewing a finished game: the number of moves (plies) shown, or null for the final position.
+  const [viewPly, setViewPly] = useState<number | null>(null);
+  const [rematchBusy, setRematchBusy] = useState(false);
   const sending = useRef(false);
 
   /** Accept a confirmed game from the server, never going back to an older revision. */
@@ -58,13 +64,14 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
     }
   }, [identity.credential, gameId, accept, onIdentityRejected]);
 
-  const finished = game?.status === 'finished';
+  // A finished game only changes when someone starts a rematch.
+  const settled = game?.status === 'finished' && game.rematchGameId !== null;
 
   // Load, then poll while the page is visible and the game can still change.
   useEffect(() => {
     const first = setTimeout(refresh, 0);
     const timer = setInterval(() => {
-      if (document.visibilityState === 'visible' && !finished && !sending.current) refresh();
+      if (document.visibilityState === 'visible' && !settled && !sending.current) refresh();
     }, POLL_MS);
     const onReturn = () => document.visibilityState === 'visible' && refresh();
     document.addEventListener('visibilitychange', onReturn);
@@ -77,7 +84,7 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
       window.removeEventListener('focus', onReturn);
       window.removeEventListener('online', onReturn);
     };
-  }, [refresh, finished]);
+  }, [refresh, settled]);
 
   async function send(next: Pending) {
     sending.current = true;
@@ -129,9 +136,10 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
   );
   const pendingMove = pending && !pending.failure && pending.action.type === 'move' ? pending.action : null;
   const shown = useMemo(() => {
+    if (confirmed && viewPly !== null) return { ...confirmed, moves: confirmed.moves.slice(0, viewPly) };
     if (!confirmed || !pendingMove) return confirmed;
     return applyMove(confirmed, pendingMove.from, pendingMove.to, pendingMove.promotion) ?? confirmed;
-  }, [confirmed, pendingMove]);
+  }, [confirmed, pendingMove, viewPly]);
 
   if (missing) {
     return (
@@ -162,12 +170,14 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
   const opponent = opponentName(game);
   const myTurn = game.status === 'active' && game.chess.turn === me && !pending;
   const status = gameStatus(replay(shown));
+  // Plates show the game's real state, even while an earlier position is being reviewed.
+  const plateStatus = viewPly === null ? status : gameStatus(replay(confirmed));
   const token = game.status === 'waiting' ? invitationFor(game.id) : null;
 
   function badge(seat: Seat): PlateBadge {
     if (game!.status === 'waiting') return null;
     if (game!.termination === 'resignation') return game!.result === seat ? 'won' : null;
-    return badgeFor(colorOf(seat), status);
+    return badgeFor(colorOf(seat), plateStatus);
   }
 
   function explainBlocked(color: Color): string {
@@ -242,7 +252,50 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
             <RenewInvitation identity={identity} gameId={game.id} onIdentityRejected={onIdentityRejected} />
           ) : null)}
 
-        <MoveList chess={replay(confirmed)} />
+        {game.status === 'finished' ? (
+          <>
+            <p className="finished-date">Finished {finishedDate.format(new Date(game.updatedAt))}</p>
+            <Review
+              ply={viewPly ?? confirmed.moves.length}
+              total={confirmed.moves.length}
+              onShow={(ply) => setViewPly(ply === confirmed.moves.length ? null : ply)}
+            />
+            <MoveList
+              chess={replay(confirmed)}
+              currentPly={viewPly ?? confirmed.moves.length}
+              onSelectPly={(ply) => setViewPly(ply === confirmed.moves.length ? null : ply)}
+            />
+            {game.rematchGameId ? (
+              <a className="button button-primary" href={`#/game/${game.rematchGameId}`}>
+                Go to the rematch
+              </a>
+            ) : (
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={rematchBusy}
+                onClick={async () => {
+                  setRematchBusy(true);
+                  setNotice(null);
+                  try {
+                    const { game: next } = await gameApi.rematch(identity.credential, game.id);
+                    navigate(`#/game/${next.id}`);
+                  } catch (e) {
+                    if (e instanceof ApiError && e.status === 401) return onIdentityRejected();
+                    // Safe to press again: there is at most one rematch per game.
+                    setNotice('Couldn’t start a new game: the game server didn’t answer. Try again.');
+                  } finally {
+                    setRematchBusy(false);
+                  }
+                }}
+              >
+                {rematchBusy ? 'Setting up…' : `Play again (you take ${me === 'white' ? 'Black' : 'White'})`}
+              </button>
+            )}
+          </>
+        ) : (
+          <MoveList chess={replay(confirmed)} />
+        )}
 
         {game.status === 'active' &&
           (confirmingResign ? (
@@ -323,6 +376,32 @@ function RenewInvitation({
         {busy ? 'Making a link…' : 'Make a new invitation link'}
       </button>
       {error && <p className="form-error">{error}</p>}
+    </div>
+  );
+}
+
+/** Step through a finished game's positions. */
+function Review({ ply, total, onShow }: { ply: number; total: number; onShow: (ply: number) => void }) {
+  const position = ply === 0 ? 'Start position' : ply === total ? `Final position, after move ${Math.ceil(ply / 2)}` : `After move ${Math.ceil(ply / 2)} (${ply % 2 === 1 ? 'White' : 'Black'})`;
+  return (
+    <div className="review" role="group" aria-label="Review the game">
+      <div className="button-row">
+        <button type="button" className="button" aria-label="Start position" disabled={ply === 0} onClick={() => onShow(0)}>
+          ⏮
+        </button>
+        <button type="button" className="button" aria-label="Previous move" disabled={ply === 0} onClick={() => onShow(ply - 1)}>
+          ◀
+        </button>
+        <button type="button" className="button" aria-label="Next move" disabled={ply === total} onClick={() => onShow(ply + 1)}>
+          ▶
+        </button>
+        <button type="button" className="button" aria-label="Final position" disabled={ply === total} onClick={() => onShow(total)}>
+          ⏭
+        </button>
+      </div>
+      <p className="review-position" aria-live="polite">
+        {position}
+      </p>
     </div>
   );
 }

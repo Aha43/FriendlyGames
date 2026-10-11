@@ -34,6 +34,8 @@ export interface GameView {
   players: Record<Seat, Player | null>;
   yourSeat: Seat;
   chess: { initialFen: string; moves: string[]; turn: Seat };
+  /** The game started from this one with "Play again", if any. */
+  rematchGameId: string | null;
 }
 
 class ApiError extends Error {
@@ -72,13 +74,14 @@ export async function handleRequest(request: Request, sql: Sql): Promise<Respons
   try {
     const path = new URL(request.url).pathname.replace(/^.*?\/game-api/, '') || '/';
     const route = `${request.method} ${path.replace(/\/+$/, '') || '/'}`;
-    const gameMatch = path.match(/^\/games\/([^/]+)(\/actions|\/invitation)?\/?$/);
+    const gameMatch = path.match(/^\/games\/([^/]+)(\/actions|\/invitation|\/rematch)?\/?$/);
 
     if (route === 'POST /players') return json(201, await createPlayer(sql, await readBody(request)));
 
     const player = await authenticate(sql, request);
     if (route === 'GET /me') return json(200, { player: await loadMe(sql, player.id) });
     if (route === 'GET /games') return json(200, { games: await loadViews(sql, player.id) });
+    if (route === 'GET /history') return json(200, { history: await loadHistory(sql, player.id) });
     if (route === 'POST /games') {
       const { status, body } = await createGame(sql, player, await readBody(request));
       return json(status, body);
@@ -86,6 +89,10 @@ export async function handleRequest(request: Request, sql: Sql): Promise<Respons
     if (route === 'POST /invitations/redeem') return json(200, await redeemInvitation(sql, player, await readBody(request)));
     if (gameMatch && !gameMatch[2] && request.method === 'GET') {
       return json(200, { game: await loadView(sql, player.id, gameMatch[1]) });
+    }
+    if (gameMatch && gameMatch[2] === '/rematch' && request.method === 'POST') {
+      const { status, body } = await startRematch(sql, player, gameMatch[1]);
+      return json(status, body);
     }
     if (gameMatch && gameMatch[2] === '/invitation' && request.method === 'POST') {
       return json(200, await regenerateInvitation(sql, player, gameMatch[1]));
@@ -195,6 +202,7 @@ interface GameRow {
   updated_at: Date;
   your_seat: Seat;
   participants: { seat: Seat; id: string; displayName: string }[];
+  rematch_id: string | null;
 }
 
 function toView(row: GameRow): GameView {
@@ -214,6 +222,7 @@ function toView(row: GameRow): GameView {
     players,
     yourSeat: row.your_seat,
     chess: { ...row.payload, turn: replay(record).turn() === 'w' ? 'white' : 'black' },
+    rematchGameId: row.rematch_id,
   };
 }
 
@@ -224,7 +233,8 @@ async function loadViews(sql: Db, playerId: string, gameId: string | null = null
            g.created_at, g.updated_at, me.seat as your_seat,
            (select json_agg(json_build_object('seat', p.seat, 'id', p.player_id, 'displayName', pl.display_name))
               from game_participants p join players pl on pl.id = p.player_id
-             where p.game_id = g.id) as participants
+             where p.game_id = g.id) as participants,
+           (select r.id from games r where r.rematch_of = g.id) as rematch_id
       from games g
       join game_participants me on me.game_id = g.id and me.player_id = ${playerId}
      where ${gameId}::uuid is null or g.id = ${gameId}::uuid
@@ -345,6 +355,103 @@ async function redeemInvitation(sql: Sql, player: Player, body: Record<string, u
     return invitation.game_id as string;
   });
   return { game: await loadView(sql, player.id, gameId) };
+}
+
+// ---------- history and rematches ----------
+
+export interface HistoryEntry {
+  gameType: 'chess';
+  opponent: Player;
+  wins: number;
+  draws: number;
+  losses: number;
+  games: {
+    id: string;
+    finishedAt: string;
+    outcome: 'win' | 'loss' | 'draw';
+    termination: Termination;
+    yourSeat: Seat;
+    moveCount: number;
+  }[];
+}
+
+/** Finished games per opponent, newest first, with an exact tally. Only the player's own games. */
+async function loadHistory(sql: Sql, playerId: string): Promise<HistoryEntry[]> {
+  const rows = await sql`
+    select g.id, g.result, g.termination, g.updated_at as finished_at, me.seat as your_seat,
+           jsonb_array_length(g.payload -> 'moves') as move_count,
+           opp.player_id as opponent_id, pl.display_name as opponent_name
+      from games g
+      join game_participants me on me.game_id = g.id and me.player_id = ${playerId}
+      join game_participants opp on opp.game_id = g.id and opp.player_id <> ${playerId}
+      join players pl on pl.id = opp.player_id
+     where g.status = 'finished' and g.game_type = 'chess'
+     order by g.updated_at desc, g.id`;
+
+  const byOpponent = new Map<string, HistoryEntry>();
+  for (const row of rows) {
+    let entry = byOpponent.get(row.opponent_id);
+    if (!entry) {
+      entry = {
+        gameType: 'chess',
+        opponent: { id: row.opponent_id, displayName: row.opponent_name },
+        wins: 0,
+        draws: 0,
+        losses: 0,
+        games: [],
+      };
+      byOpponent.set(row.opponent_id, entry);
+    }
+    const outcome = row.result === 'draw' ? 'draw' : row.result === row.your_seat ? 'win' : 'loss';
+    entry[outcome === 'win' ? 'wins' : outcome === 'loss' ? 'losses' : 'draws']++;
+    entry.games.push({
+      id: row.id,
+      finishedAt: (row.finished_at as Date).toISOString(),
+      outcome,
+      termination: row.termination,
+      yourSeat: row.your_seat,
+      moveCount: row.move_count,
+    });
+  }
+  return [...byOpponent.values()];
+}
+
+/**
+ * "Play again": a new game between the same two players, colours swapped, no invitation needed.
+ * Each finished game has at most one rematch, so a second request (from either player) finds it.
+ */
+async function startRematch(sql: Sql, player: Player, gameId: string) {
+  if (!UUID.test(gameId)) throw new ApiError(404, 'game_not_found', 'Game not found.');
+  const { initialFen, moves } = newGame();
+
+  const started = await sql.begin(async (tx) => {
+    const [source] = await tx`
+      select g.status from games g
+        join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
+       where g.id = ${gameId}`;
+    if (!source) throw new ApiError(404, 'game_not_found', 'Game not found.');
+    if (source.status !== 'finished') throw new ApiError(409, 'not_finished', 'This game is still going.');
+
+    const [game] = await tx`
+      insert into games (game_type, status, payload, created_by, rematch_of)
+      values ('chess', 'active', ${tx.json({ initialFen, moves })}, ${player.id}, ${gameId})
+      on conflict (rematch_of) do nothing
+      returning id`;
+    if (!game) {
+      const [existing] = await tx`select id from games where rematch_of = ${gameId}`;
+      return { gameId: existing.id as string, duplicate: true };
+    }
+    await tx`
+      insert into game_participants (game_id, player_id, seat)
+      select ${game.id}, player_id, case seat when 'white' then 'black' else 'white' end
+        from game_participants where game_id = ${gameId}`;
+    return { gameId: game.id as string, duplicate: false };
+  });
+
+  return {
+    status: started.duplicate ? 200 : 201,
+    body: { game: await loadView(sql, player.id, started.gameId), duplicate: started.duplicate },
+  };
 }
 
 type Action = { type: 'move'; from: string; to: string; promotion?: PromotionPiece } | { type: 'resign' };

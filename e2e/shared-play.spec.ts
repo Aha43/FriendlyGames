@@ -195,3 +195,82 @@ test('the creator can make a new invitation link from a device without one', asy
   await arneContext.close();
   await haraldContext.close();
 });
+
+test('finished games become shared history: checkmate, resignation, review and play again', async ({ browser }, testInfo) => {
+  const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch, baseURL } = testInfo.project.use;
+  const options: BrowserContextOptions = { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch, baseURL };
+  const arneContext = await browser.newContext(options);
+  const haraldContext = await browser.newContext(options);
+  const arne = await arneContext.newPage();
+  const harald = await haraldContext.newPage();
+  const run = `${Date.now()}-${testInfo.project.name}`;
+
+  await arne.goto('/');
+  await onboard(arne, 'Arne', `arne-${run}@example.test`);
+  await arne.getByLabel('Friend’s email').fill(`harald-${run}@example.test`);
+  await arne.getByRole('button', { name: 'Create game' }).click();
+  const link = await arne.getByLabel('Invitation link', { exact: true }).inputValue();
+  await arne.getByRole('link', { name: 'Go to the table' }).click();
+  await harald.goto(link);
+  await onboard(harald, 'Harald', `harald-${run}@example.test`);
+  await expect(arne.getByRole('status')).toHaveText('Your move', SYNC);
+
+  // Game 1: Harald mates Arne.
+  await move(arne, 'f2', 'f3');
+  await expect(harald.getByRole('status')).toHaveText('Your move', SYNC);
+  await move(harald, 'e7', 'e5');
+  await expect(arne.getByRole('status')).toHaveText('Your move', SYNC);
+  await move(arne, 'g2', 'g4');
+  await expect(harald.getByRole('status')).toHaveText('Your move', SYNC);
+  await move(harald, 'd8', 'h4');
+  await expect(harald.getByRole('status')).toHaveText('Checkmate. You win');
+  await expect(arne.getByRole('status')).toHaveText('Checkmate. Harald wins', SYNC);
+  const firstGame = arne.url();
+
+  // Arne asks to play again; Harald is offered the same new game, now as White.
+  await arne.getByRole('button', { name: 'Play again (you take Black)' }).click();
+  await expect(arne.getByRole('status')).toHaveText('Harald’s move');
+  await expect(harald.getByRole('link', { name: 'Go to the rematch' })).toBeVisible(SYNC);
+  await harald.getByRole('link', { name: 'Go to the rematch' }).click();
+  expect(harald.url()).toBe(arne.url());
+  await expect(harald.getByRole('status')).toHaveText('Your move');
+
+  // Game 2: Harald opens and then resigns.
+  await move(harald, 'e2', 'e4');
+  await expect(harald.getByRole('status')).toHaveText('Arne’s move');
+  await harald.getByRole('button', { name: 'Resign…' }).click();
+  await harald.getByRole('button', { name: 'Resign', exact: true }).click();
+  await expect(arne.getByRole('status')).toHaveText('Harald resigned. You win', SYNC);
+
+  // After a refresh, both histories show both games and an exact tally.
+  for (const [page, opponent] of [[arne, 'Harald'], [harald, 'Arne']] as const) {
+    await page.goto('/');
+    await page.reload();
+    const tally = page.getByLabel(`Tally with ${opponent}`);
+    await expect(tally).toContainText('You1');
+    await expect(tally).toContainText('Draws0');
+    await expect(tally).toContainText(`${opponent}1`);
+    const games = page.getByRole('list', { name: `Finished games with ${opponent}` }).getByRole('link');
+    await expect(games).toHaveCount(2);
+  }
+  const arneGames = arne.getByRole('list', { name: 'Finished games with Harald' }).getByRole('link');
+  await expect(arneGames.nth(0)).toContainText('You won by resignation · 1 moves');
+  await expect(arneGames.nth(1)).toContainText('Harald won by checkmate · 4 moves');
+
+  // Reopen the first game: read-only, unchanged, and every position can be inspected.
+  await arneGames.nth(1).click();
+  expect(arne.url()).toBe(firstGame);
+  await expect(arne.getByRole('status')).toHaveText('Checkmate. Harald wins');
+  await expect(arne.getByRole('list', { name: 'Moves' })).toHaveText(/1\.f3e52\.g4Qh4#/);
+  await expect(arne.getByRole('link', { name: 'Go to the rematch' })).toBeVisible();
+  await arne.getByRole('button', { name: 'Previous move' }).click();
+  await expect(square(arne, 'h4')).toHaveAccessibleName('h4, empty');
+  await arne.getByRole('button', { name: 'Move 1, White: f3' }).click();
+  await expect(square(arne, 'f3')).toHaveAccessibleName('f3, white pawn');
+  await expect(square(arne, 'e5')).toHaveAccessibleName('e5, empty');
+  await square(arne, 'e2').click();
+  await expect(square(arne, 'e2')).toHaveAccessibleName('e2, white pawn'); // nothing selectable
+
+  await arneContext.close();
+  await haraldContext.close();
+});

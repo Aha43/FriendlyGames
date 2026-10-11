@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import ChessHistory from '../components/ChessHistory';
 import InvitationShare from '../components/InvitationShare';
 import { describeGame, opponentName } from '../shared/describe';
-import { ApiError, gameApi, NetworkError, type SharedGame } from '../shared/gameApi';
+import { ApiError, gameApi, NetworkError, type HistoryEntry, type SharedGame } from '../shared/gameApi';
 import { forgetInvitation, rememberInvitation, tokenFromInvitation, type Identity } from '../shared/identity';
 import { navigate } from '../shared/route';
 import { newRequestId } from '../shared/requestId';
@@ -15,18 +16,24 @@ interface LobbyProps {
 
 export default function Lobby({ identity, onIdentityRejected }: LobbyProps) {
   const [games, setGames] = useState<SharedGame[] | null>(null);
+  const [history, setHistory] = useState<HistoryEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    try {
-      const { games } = await gameApi.listGames(identity.credential);
-      setGames(games);
-      setLoadError(null);
-      for (const game of games) if (game.status !== 'waiting') forgetInvitation(game.id);
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 401) onIdentityRejected();
-      else setLoadError('Couldn’t load your games. Showing what we had; we’ll keep trying.');
+    // Games and history load independently, so one failing does not hide the other.
+    const [games, history] = await Promise.allSettled([
+      gameApi.listGames(identity.credential),
+      gameApi.history(identity.credential),
+    ]);
+    if (games.status === 'fulfilled') {
+      setGames(games.value.games);
+      for (const game of games.value.games) if (game.status !== 'waiting') forgetInvitation(game.id);
     }
+    if (history.status === 'fulfilled') setHistory(history.value.history);
+
+    const failure = [games, history].find((r) => r.status === 'rejected')?.reason;
+    if (failure instanceof ApiError && failure.status === 401) onIdentityRejected();
+    else setLoadError(failure ? 'Couldn’t load everything. Showing what we had; we’ll keep trying.' : null);
   }, [identity.credential, onIdentityRejected]);
 
   useEffect(() => {
@@ -44,7 +51,6 @@ export default function Lobby({ identity, onIdentityRejected }: LobbyProps) {
   }, [refresh]);
 
   const ongoing = games?.filter((g) => g.status !== 'finished') ?? [];
-  const finished = games?.filter((g) => g.status === 'finished') ?? [];
 
   return (
     <div className="page">
@@ -54,13 +60,9 @@ export default function Lobby({ identity, onIdentityRejected }: LobbyProps) {
         {games === null && !loadError && <p className="muted">Looking for your games…</p>}
         {games !== null && ongoing.length === 0 && <p className="muted">No games in progress. Start one below.</p>}
         {ongoing.length > 0 && <GameLinks games={ongoing} label="Games in progress" />}
-        {finished.length > 0 && (
-          <>
-            <h3 className="panel-title">Finished</h3>
-            <GameLinks games={finished} label="Finished games" />
-          </>
-        )}
       </section>
+
+      {history && <ChessHistory history={history} />}
 
       <NewGame identity={identity} onCreated={refresh} onIdentityRejected={onIdentityRejected} />
       <JoinByLink />

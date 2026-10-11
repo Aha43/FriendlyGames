@@ -23,6 +23,7 @@ function game(overrides: Partial<SharedGame> = {}, moves: string[] = []): Shared
     players: { white: { id: 'p-arne', displayName: 'Arne' }, black: { id: 'p-harald', displayName: 'Harald' } },
     yourSeat: 'white',
     chess: { initialFen: START, moves, turn: moves.length % 2 === 0 ? 'white' : 'black' },
+    rematchGameId: null,
     ...overrides,
   };
 }
@@ -202,6 +203,73 @@ describe('shared game', () => {
     await user.click(screen.getByRole('button', { name: 'Make a new invitation link' }));
     expect(renew).toHaveBeenCalledWith(identity.credential, GAME_ID);
     expect(await screen.findByLabelText('Invitation link')).toHaveValue(`http://localhost:3000/#/join/${'N'.repeat(43)}`);
+  });
+
+  describe('a finished game', () => {
+    const FOOLS_MATE = ['f2f3', 'e7e5', 'g2g4', 'd8h4'];
+    const finished = (overrides: Partial<SharedGame> = {}) =>
+      game({ status: 'finished', result: 'black', termination: 'checkmate', updatedAt: '2026-10-08T18:30:00Z', ...overrides }, FOOLS_MATE);
+
+    it('opens read-only with the result and date', async () => {
+      const user = userEvent.setup();
+      await renderPage(finished());
+      expect(screen.getByRole('status')).toHaveTextContent('Checkmate. Harald wins');
+      expect(screen.getByText('Finished 8 October 2026')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Resign…' })).not.toBeInTheDocument();
+      await user.click(square('a2'));
+      expect(square('a2')).toHaveAccessibleName('a2, white pawn');
+      expect(screen.getByRole('grid', { name: 'Chess board' })).toHaveClass('board-disabled');
+    });
+
+    it('steps through every position with the review buttons and the move list', async () => {
+      const user = userEvent.setup();
+      await renderPage(finished());
+      expect(screen.getByText('Final position, after move 2')).toBeInTheDocument();
+      expect(square('h4')).toHaveAccessibleName('h4, black queen');
+
+      await user.click(screen.getByRole('button', { name: 'Previous move' }));
+      expect(square('h4')).toHaveAccessibleName('h4, empty');
+      // The plates keep showing the result, not whose move it was in the reviewed position.
+      expect(screen.getByText('Winner')).toBeInTheDocument();
+      expect(screen.queryByText('To move')).not.toBeInTheDocument();
+      expect(square('d8')).toHaveAccessibleName('d8, black queen');
+      expect(screen.getByText('After move 2 (White)')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Start position' }));
+      expect(screen.getByText('Start position', { selector: 'p' })).toBeInTheDocument();
+      expect(square('f2')).toHaveAccessibleName('f2, white pawn');
+      expect(screen.getByRole('button', { name: 'Previous move' })).toBeDisabled();
+
+      await user.click(screen.getByRole('button', { name: 'Move 1, Black: e5' }));
+      expect(square('e5')).toHaveAccessibleName('e5, black pawn');
+      expect(square('g4')).toHaveAccessibleName('g4, empty');
+      expect(screen.getByRole('button', { name: 'Move 1, Black: e5' })).toHaveAttribute('aria-current', 'step');
+
+      await user.click(screen.getByRole('button', { name: 'Final position' }));
+      expect(square('h4')).toHaveAccessibleName('h4, black queen');
+      expect(screen.getByRole('button', { name: 'Next move' })).toBeDisabled();
+    });
+
+    it('starts a rematch with the same friend and opens it', async () => {
+      const user = userEvent.setup();
+      await renderPage(finished());
+      const rematch = vi.spyOn(gameApi, 'rematch').mockResolvedValue({
+        game: game({ id: '99999999-2222-3333-4444-555555555555', yourSeat: 'black', revision: 0 }),
+        duplicate: false,
+      });
+      await user.click(screen.getByRole('button', { name: 'Play again (you take Black)' }));
+      expect(rematch).toHaveBeenCalledWith(identity.credential, GAME_ID);
+      expect(window.location.hash).toBe('#/game/99999999-2222-3333-4444-555555555555');
+    });
+
+    it('links to the rematch once one exists', async () => {
+      await renderPage(finished({ rematchGameId: '99999999-2222-3333-4444-555555555555' }));
+      expect(screen.getByRole('link', { name: 'Go to the rematch' })).toHaveAttribute(
+        'href',
+        '#/game/99999999-2222-3333-4444-555555555555',
+      );
+      expect(screen.queryByRole('button', { name: /Play again/ })).not.toBeInTheDocument();
+    });
   });
 
   it('reports a rejected identity', async () => {

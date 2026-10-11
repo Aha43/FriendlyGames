@@ -906,3 +906,72 @@ h2 {
   .topbar-game { display: none; }
   .topbar-nav { gap: 0.6rem; font-size: 0.85rem; }
 }
+
+/* ---------- real history ---------- */
+
+.history-friend + .history-friend { margin-top: 1.25rem; }
+
+.history-friend .tally { margin-top: 0.25rem; }
+
+.games li { list-style: none; }
+
+.game-link-plain {
+  color: inherit;
+  text-decoration: none;
+  border-radius: 8px;
+}
+
+.game-link-plain:hover { background: rgba(217, 162, 58, 0.12); }
+
+.game-link-plain:focus-visible {
+  outline: 3px solid #2f6fd6;
+  outline-offset: 1px;
+}
+
+.game-result-loss { color: var(--rust); }
+
+/* ---------- reviewing a finished game ---------- */
+
+.finished-date {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.review .button-row { margin-top: 0; }
+
+.review .button {
+  min-width: 2.75rem; /* comfortable touch target */
+  padding: 0.45rem 0.7rem;
+}
+
+.review-position {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.move-button {
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 0 0.25rem;
+  color: inherit;
+  cursor: pointer;
+}
+
+.move-button:hover { background: rgba(217, 162, 58, 0.18); }
+.move-button[aria-current='step'] { background: var(--gold); color: #3a2410; font-weight: 600; }
+
+.move-button:focus-visible {
+  outline: 3px solid #2f6fd6;
+  outline-offset: 1px;
+}
+
+.history-friend .game {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.history-friend .game time { white-space: nowrap; }
