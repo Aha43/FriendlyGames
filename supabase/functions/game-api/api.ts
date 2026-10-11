@@ -72,19 +72,25 @@ export async function handleRequest(request: Request, sql: Sql): Promise<Respons
   try {
     const path = new URL(request.url).pathname.replace(/^.*?\/game-api/, '') || '/';
     const route = `${request.method} ${path.replace(/\/+$/, '') || '/'}`;
-    const gameMatch = path.match(/^\/games\/([^/]+)(\/actions)?\/?$/);
+    const gameMatch = path.match(/^\/games\/([^/]+)(\/actions|\/invitation)?\/?$/);
 
     if (route === 'POST /players') return json(201, await createPlayer(sql, await readBody(request)));
 
     const player = await authenticate(sql, request);
     if (route === 'GET /me') return json(200, { player: await loadMe(sql, player.id) });
     if (route === 'GET /games') return json(200, { games: await loadViews(sql, player.id) });
-    if (route === 'POST /games') return json(201, await createGame(sql, player, await readBody(request)));
+    if (route === 'POST /games') {
+      const { status, body } = await createGame(sql, player, await readBody(request));
+      return json(status, body);
+    }
     if (route === 'POST /invitations/redeem') return json(200, await redeemInvitation(sql, player, await readBody(request)));
     if (gameMatch && !gameMatch[2] && request.method === 'GET') {
       return json(200, { game: await loadView(sql, player.id, gameMatch[1]) });
     }
-    if (gameMatch && gameMatch[2] && request.method === 'POST') {
+    if (gameMatch && gameMatch[2] === '/invitation' && request.method === 'POST') {
+      return json(200, await regenerateInvitation(sql, player, gameMatch[1]));
+    }
+    if (gameMatch && gameMatch[2] === '/actions' && request.method === 'POST') {
       return json(200, await submitAction(sql, player, gameMatch[1], await readBody(request)));
     }
     throw new ApiError(404, 'not_found', 'No such endpoint.');
@@ -236,22 +242,73 @@ async function loadView(sql: Db, playerId: string, gameId: string): Promise<Game
 
 async function createGame(sql: Sql, player: Player, body: Record<string, unknown>) {
   const friendEmail = requireEmail(body, 'friendEmail');
-  const token = newSecret();
-  const tokenHash = await hashHex(token);
+  const requestId = body.requestId ?? null;
+  if (requestId !== null && (typeof requestId !== 'string' || !UUID.test(requestId))) {
+    throw new ApiError(400, 'bad_request', '"requestId" must be a UUID.');
+  }
   const { initialFen, moves } = newGame();
 
-  const gameId = await sql.begin(async (tx) => {
+  const created = await sql.begin(async (tx) => {
+    // A request ID makes creation retryable: a second request with it finds the first game.
     const [game] = await tx`
-      insert into games (game_type, status, payload, created_by)
-      values ('chess', 'waiting', ${tx.json({ initialFen, moves })}, ${player.id})
+      insert into games (game_type, status, payload, created_by, create_request_id)
+      values ('chess', 'waiting', ${tx.json({ initialFen, moves })}, ${player.id}, ${requestId})
+      on conflict (created_by, create_request_id) do nothing
       returning id`;
+    if (!game) {
+      const [earlier] = await tx`
+        select id from games where created_by = ${player.id} and create_request_id = ${requestId}`;
+      // The first response (and its token) may have been lost: issue a fresh link if still unused.
+      return { gameId: earlier.id as string, token: await reissueInvitation(tx, earlier.id), duplicate: true };
+    }
+
+    const token = newSecret();
     await tx`insert into game_participants (game_id, player_id, seat) values (${game.id}, ${player.id}, 'white')`;
     await tx`
       insert into game_invitations (game_id, token_hash, seat, invited_email)
-      values (${game.id}, decode(${tokenHash}, 'hex'), 'black', ${friendEmail})`;
-    return game.id as string;
+      values (${game.id}, decode(${await hashHex(token)}, 'hex'), 'black', ${friendEmail})`;
+    return { gameId: game.id as string, token, duplicate: false };
   });
-  // The invitation token is returned once, to the creator, for sharing by hand.
+
+  // Invitation tokens are only ever returned to the creator, for sharing by hand.
+  return {
+    status: created.duplicate ? 200 : 201,
+    body: {
+      game: await loadView(sql, player.id, created.gameId),
+      invitation: created.token ? { token: created.token } : null,
+      duplicate: created.duplicate,
+    },
+  };
+}
+
+/**
+ * Replace a game's unused invitation with a new one and return its token; null once redeemed.
+ * The earlier link stops working. Locks the invitation row, as redeeming does, so the two serialise.
+ */
+async function reissueInvitation(tx: TransactionSql, gameId: string): Promise<string | null> {
+  const [invitation] = await tx`
+    select redeemed_by from game_invitations where game_id = ${gameId} for update`;
+  if (!invitation || invitation.redeemed_by) return null;
+  const token = newSecret();
+  await tx`
+    update game_invitations set token_hash = decode(${await hashHex(token)}, 'hex'), created_at = now()
+     where game_id = ${gameId}`;
+  return token;
+}
+
+/** A new invitation link for the creator of a game nobody has joined yet. */
+async function regenerateInvitation(sql: Sql, player: Player, gameId: string) {
+  if (!UUID.test(gameId)) throw new ApiError(404, 'game_not_found', 'Game not found.');
+  const [game] = await sql`
+    select g.created_by from games g
+      join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
+     where g.id = ${gameId}`;
+  if (!game) throw new ApiError(404, 'game_not_found', 'Game not found.');
+  if (game.created_by !== player.id) {
+    throw new ApiError(403, 'not_creator', 'Only the player who created the game can invite.');
+  }
+  const token = await sql.begin((tx) => reissueInvitation(tx, gameId));
+  if (!token) throw new ApiError(409, 'invitation_used', 'Your friend has already joined.');
   return { game: await loadView(sql, player.id, gameId), invitation: { token } };
 }
 

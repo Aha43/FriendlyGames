@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
-import { ApiError, gameApi, type SharedGame } from './shared/gameApi';
+import { ApiError, gameApi, NetworkError, type SharedGame } from './shared/gameApi';
 
 const CREDENTIAL = 'C'.repeat(43);
 const TOKEN = 'T'.repeat(43);
@@ -123,6 +123,7 @@ describe('lobby', () => {
     const create = vi.spyOn(gameApi, 'createGame').mockResolvedValue({
       game: game({ status: 'waiting', revision: 0 }),
       invitation: { token: TOKEN },
+      duplicate: false,
     });
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
@@ -131,13 +132,47 @@ describe('lobby', () => {
     await user.type(screen.getByLabelText('Friend’s email'), 'harald@example.test');
     await user.click(screen.getByRole('button', { name: 'Create game' }));
 
-    expect(create).toHaveBeenCalledWith(CREDENTIAL, 'harald@example.test');
+    expect(create).toHaveBeenCalledWith(CREDENTIAL, 'harald@example.test', expect.stringMatching(/^[0-9a-f-]{36}$/));
     const link = `http://localhost:3000/#/join/${TOKEN}`;
     expect(await screen.findByLabelText('Invitation link')).toHaveValue(link);
     await user.click(screen.getByRole('button', { name: 'Copy link' }));
     expect(writeText).toHaveBeenCalledWith(link);
     expect(screen.getByRole('button', { name: 'Copied!' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Go to the table' })).toHaveAttribute('href', `#/game/${GAME_ID}`);
+  });
+
+  it('says creation is unconfirmed when the answer is lost, and retries the same request', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+    const create = vi
+      .spyOn(gameApi, 'createGame')
+      .mockRejectedValueOnce(new NetworkError('lost'))
+      .mockResolvedValueOnce({ game: game({ status: 'waiting', revision: 0 }), invitation: { token: TOKEN }, duplicate: true });
+    render(<App />);
+
+    await user.type(screen.getByLabelText('Friend’s email'), 'harald@example.test');
+    await user.click(screen.getByRole('button', { name: 'Create game' }));
+    expect(await screen.findByText(/Couldn’t confirm whether the game was created/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing was created/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[1]).toEqual(create.mock.calls[0]); // same request ID: the server finds the game
+    expect(await screen.findByLabelText('Invitation link')).toHaveValue(`http://localhost:3000/#/join/${TOKEN}`);
+  });
+
+  it('uses a new request ID when the friend’s email is changed after an unconfirmed attempt', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+    const create = vi.spyOn(gameApi, 'createGame').mockRejectedValue(new NetworkError('lost'));
+    render(<App />);
+    await user.type(screen.getByLabelText('Friend’s email'), 'harald@example.test');
+    await user.click(screen.getByRole('button', { name: 'Create game' }));
+    await screen.findByText(/Couldn’t confirm/);
+    await user.clear(screen.getByLabelText('Friend’s email'));
+    await user.type(screen.getByLabelText('Friend’s email'), 'other@example.test');
+    await user.click(screen.getByRole('button', { name: 'Create game' }));
+    expect(create.mock.calls[1][2]).not.toBe(create.mock.calls[0][2]);
   });
 
   it('joins from a pasted invitation link', async () => {

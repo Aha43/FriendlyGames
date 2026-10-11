@@ -89,7 +89,7 @@ describe('shared game', () => {
     await user.click(square('e2'));
     await user.click(square('e4'));
 
-    expect(await screen.findByText(/Your move hasn’t been saved/)).toBeInTheDocument();
+    expect(await screen.findByText(/Couldn’t confirm whether your move was saved/)).toBeInTheDocument();
     expect(square('e2')).toHaveAccessibleName('e2, white pawn');
     expect(square('e4')).toHaveAccessibleName('e4, empty');
     expect(screen.getByRole('status')).not.toHaveTextContent('Saving');
@@ -98,7 +98,7 @@ describe('shared game', () => {
     expect(submit).toHaveBeenCalledTimes(2);
     expect(submit.mock.calls[1]).toEqual(submit.mock.calls[0]); // same request ID and revision
     expect(square('e4')).toHaveAccessibleName('e4, white pawn');
-    expect(screen.queryByText(/hasn’t been saved/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Couldn’t confirm/)).not.toBeInTheDocument();
   });
 
   it('drops an unsaved move on Cancel and reloads the game', async () => {
@@ -108,7 +108,7 @@ describe('shared game', () => {
     await user.click(square('e2'));
     await user.click(square('e4'));
     await user.click(await screen.findByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByText(/hasn’t been saved/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Couldn’t confirm/)).not.toBeInTheDocument();
     expect(gameApi.getGame).toHaveBeenCalledTimes(2);
   });
 
@@ -190,6 +190,18 @@ describe('shared game', () => {
     await renderPage(game({ status: 'waiting', revision: 0, players: { white: { id: 'p-arne', displayName: 'Arne' }, black: null } }));
     expect(screen.getByRole('status')).toHaveTextContent('Waiting for your friend to join');
     expect(screen.getByLabelText('Invitation link')).toHaveValue(`http://localhost:3000/#/join/${'T'.repeat(43)}`);
+  });
+
+  it('lets the creator make a new link when this device has none', async () => {
+    const user = userEvent.setup();
+    const waiting = game({ status: 'waiting', revision: 0, players: { white: { id: 'p-arne', displayName: 'Arne' }, black: null } });
+    await renderPage(waiting);
+    const renew = vi.spyOn(gameApi, 'renewInvitation').mockResolvedValue({ game: waiting, invitation: { token: 'N'.repeat(43) } });
+
+    expect(screen.getByText(/This device doesn’t have the invitation link/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Make a new invitation link' }));
+    expect(renew).toHaveBeenCalledWith(identity.credential, GAME_ID);
+    expect(await screen.findByLabelText('Invitation link')).toHaveValue(`http://localhost:3000/#/join/${'N'.repeat(43)}`);
   });
 
   it('reports a rejected identity', async () => {

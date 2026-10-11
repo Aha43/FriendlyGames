@@ -10,7 +10,7 @@ import PlayerPlate, { type PlateBadge } from '../components/PlayerPlate';
 import { badgeFor } from '../shared/badges';
 import { describeGame, opponentName, other } from '../shared/describe';
 import { ApiError, gameApi, NetworkError, type GameAction, type Seat, type SharedGame } from '../shared/gameApi';
-import { forgetInvitation, invitationFor, type Identity } from '../shared/identity';
+import { forgetInvitation, invitationFor, rememberInvitation, type Identity } from '../shared/identity';
 import { newRequestId } from '../shared/requestId';
 
 const POLL_MS = 4_000;
@@ -99,7 +99,7 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
         // Unknown whether it arrived. Keep it, unsaved, for a retry with the same request ID.
         setPending({
           ...next,
-          failure: `Your ${next.action.type === 'move' ? 'move' : 'resignation'} hasn’t been saved: the game server couldn’t be reached.`,
+          failure: `Couldn’t confirm whether your ${next.action.type === 'move' ? 'move' : 'resignation'} was saved: the game server didn’t answer. Retrying is safe; it won’t be applied twice.`,
         });
       } else if (e instanceof ApiError && e.status === 401) {
         onIdentityRejected();
@@ -238,9 +238,9 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
         {game.status === 'waiting' &&
           (token ? (
             <InvitationShare token={token} />
-          ) : (
-            <p className="muted">Share the invitation link you created. The game starts when your friend opens it.</p>
-          ))}
+          ) : game.players.white?.id === identity.playerId ? (
+            <RenewInvitation identity={identity} gameId={game.id} onIdentityRejected={onIdentityRejected} />
+          ) : null)}
 
         <MoveList chess={replay(confirmed)} />
 
@@ -278,5 +278,51 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
         </p>
       </section>
     </>
+  );
+}
+
+/** For a waiting game whose link this device doesn't have (e.g. the creation response was lost). */
+function RenewInvitation({
+  identity,
+  gameId,
+  onIdentityRejected,
+}: {
+  identity: Identity;
+  gameId: string;
+  onIdentityRejected: () => void;
+}) {
+  const [token, setToken] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function renew() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { invitation } = await gameApi.renewInvitation(identity.credential, gameId);
+      rememberInvitation(gameId, invitation.token);
+      setToken(invitation.token);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return onIdentityRejected();
+      setError(
+        e instanceof ApiError && e.code === 'invitation_used'
+          ? 'Your friend has just joined.'
+          : 'Couldn’t reach the game server. Try again.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (token) return <InvitationShare token={token} />;
+
+  return (
+    <div className="invite">
+      <p>This device doesn’t have the invitation link for this game. Make a new one to send; any earlier link stops working.</p>
+      <button type="button" className="button button-primary" disabled={busy} onClick={renew}>
+        {busy ? 'Making a link…' : 'Make a new invitation link'}
+      </button>
+      {error && <p className="form-error">{error}</p>}
+    </div>
   );
 }

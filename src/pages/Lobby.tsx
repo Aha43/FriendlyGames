@@ -4,6 +4,7 @@ import { describeGame, opponentName } from '../shared/describe';
 import { ApiError, gameApi, NetworkError, type SharedGame } from '../shared/gameApi';
 import { forgetInvitation, rememberInvitation, tokenFromInvitation, type Identity } from '../shared/identity';
 import { navigate } from '../shared/route';
+import { newRequestId } from '../shared/requestId';
 
 const REFRESH_MS = 15_000;
 
@@ -105,25 +106,34 @@ function NewGame({
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [created, setCreated] = useState<{ gameId: string; token: string } | null>(null);
+  const [created, setCreated] = useState<{ gameId: string; token: string | null } | null>(null);
+  // An attempt whose outcome is unknown. Retrying with its request ID finds the game if it was created.
+  const [uncertain, setUncertain] = useState<{ requestId: string; email: string } | null>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    const friendEmail = email.trim();
+    const requestId = uncertain?.email === friendEmail ? uncertain.requestId : newRequestId();
     setBusy(true);
     setError(null);
     try {
-      const { game, invitation } = await gameApi.createGame(identity.credential, email.trim());
-      rememberInvitation(game.id, invitation.token);
-      setCreated({ gameId: game.id, token: invitation.token });
+      const { game, invitation } = await gameApi.createGame(identity.credential, friendEmail, requestId);
+      if (invitation) rememberInvitation(game.id, invitation.token);
+      setCreated({ gameId: game.id, token: invitation?.token ?? null });
+      setUncertain(null);
       setEmail('');
       onCreated();
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return onIdentityRejected();
-      setError(
-        e instanceof NetworkError || (e instanceof ApiError && e.status >= 500)
-          ? 'Couldn’t reach the game server. Nothing was created; try again.'
-          : 'Please enter your friend’s email address.',
-      );
+      if (e instanceof NetworkError || (e instanceof ApiError && e.status >= 500)) {
+        setUncertain({ requestId, email: friendEmail });
+        setError(
+          'Couldn’t confirm whether the game was created: the game server didn’t answer. Trying again is safe; it won’t create a second game.',
+        );
+      } else {
+        setUncertain(null);
+        setError('Please enter your friend’s email address.');
+      }
     } finally {
       setBusy(false);
     }
@@ -134,8 +144,14 @@ function NewGame({
       <h2 id="new-game-title">Start a chess game</h2>
       {created ? (
         <>
-          <p>Your game is ready. You play White.</p>
-          <InvitationShare token={created.token} />
+          {created.token ? (
+            <>
+              <p>Your game is ready. You play White.</p>
+              <InvitationShare token={created.token} />
+            </>
+          ) : (
+            <p>Your friend has already joined this game.</p>
+          )}
           <div className="button-row">
             <a className="button button-primary" href={`#/game/${created.gameId}`}>
               Go to the table
@@ -156,7 +172,7 @@ function NewGame({
             {error}
           </p>
           <button type="submit" className="button button-primary" disabled={busy}>
-            {busy ? 'Creating…' : 'Create game'}
+            {busy ? 'Creating…' : uncertain?.email === email.trim() ? 'Try again' : 'Create game'}
           </button>
         </form>
       )}

@@ -101,8 +101,19 @@ export const gameApi = {
   listGames: (credential: string) => request<{ games: SharedGame[] }>('GET', '/games', credential),
   getGame: (credential: string, id: string) =>
     request<{ game: SharedGame }>('GET', `/games/${encodeURIComponent(id)}`, credential),
-  createGame: (credential: string, friendEmail: string) =>
-    request<{ game: SharedGame; invitation: { token: string } }>('POST', '/games', credential, { friendEmail }),
+  /** Retrying with the same requestId finds the same game; `invitation` is null once the friend has joined. */
+  createGame: (credential: string, friendEmail: string, requestId: string) =>
+    request<{ game: SharedGame; invitation: { token: string } | null; duplicate: boolean }>('POST', '/games', credential, {
+      friendEmail,
+      requestId,
+    }),
+  /** A new invitation link for the creator of a game nobody has joined; earlier links stop working. */
+  renewInvitation: (credential: string, id: string) =>
+    request<{ game: SharedGame; invitation: { token: string } }>(
+      'POST',
+      `/games/${encodeURIComponent(id)}/invitation`,
+      credential,
+    ),
   redeemInvitation: (credential: string, token: string) =>
     request<{ game: SharedGame }>('POST', '/invitations/redeem', credential, { token }),
   submitAction: (credential: string, id: string, requestId: string, expectedRevision: number, action: GameAction) =>
