@@ -15,7 +15,8 @@ the next issue. Merge only with owner authorization.
 ## Checks
 
 CI gates PRs with lint, type checking, unit/component tests and production build;
-run them locally with `npm run check` (commands are listed in the README). Add a focused browser
+run them locally with `npm run check` (commands are listed in the README). A
+separate CI job runs the Playwright journeys (`npm run e2e`) on desktop and phone. Add a focused browser
 journey for the playing flow. The multiplayer milestone also needs real backend
 verification through two independent player sessions.
 

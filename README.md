@@ -9,7 +9,8 @@ return to ongoing games or start a new chess game with a friend. The playing pag
 evokes friends meeting at a table in a park, with a seasonal backdrop and a clear,
 comfortable board. Finished games become shared history.
 
-The app shows the autumn park chess table with sample history; local play follows.
+The app is a locally playable chess table in an autumn park, with sample history.
+Both players share one device for now; cross-device play is Sprint 2.
 
 - [Product brief](docs/product-brief.md)
 - [First sprint](docs/sprint-01.md)
@@ -39,6 +40,14 @@ npm run build       # production build
 ```
 
 `npm run check` runs all four in order. `npm run test:watch` runs Vitest in watch mode.
+
+Browser journeys (Playwright, desktop and phone) build the app and run against
+`vite preview`; CI runs them as a separate job:
+
+```bash
+npx playwright install chromium   # once per machine
+npm run e2e
+```
 
 ## Technical direction
 
