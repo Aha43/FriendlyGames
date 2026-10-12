@@ -56,6 +56,32 @@ describe('local play', () => {
     expect(within(screen.getByRole('list', { name: 'Moves' })).getByText('e4')).toBeInTheDocument();
   });
 
+  it('labels the legal destinations of the selected piece, and only while it is selected', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const labels = () => [...board().querySelectorAll('.target-label')].map((l) => l.textContent).sort();
+    expect(labels()).toEqual([]);
+
+    await user.click(square('d2'));
+    expect(labels()).toEqual(['d3', 'd4']);
+
+    await user.click(square('g1'));
+    expect(labels()).toEqual(['f3', 'h3']);
+
+    await user.click(square('g1')); // deselect
+    expect(labels()).toEqual([]);
+
+    await user.click(square('d2'));
+    await user.click(within(square('d4')).getByText('d4')); // tapping the label makes the move
+    expect(square('d4')).toHaveAccessibleName('d4, white pawn');
+    expect(labels()).toEqual([]);
+
+    await user.click(square('e7'));
+    expect(labels()).toEqual(['e5', 'e6']);
+    await user.keyboard('{Escape}');
+    expect(labels()).toEqual([]);
+  });
+
   it('rejects an illegal move and keeps the position', async () => {
     const user = userEvent.setup();
     render(<App />);

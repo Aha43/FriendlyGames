@@ -154,6 +154,13 @@ export default function ChessBoard({
                     </span>
                   )}
                   {piece && <img className="piece" src={pieceImage(piece)} alt="" draggable={false} />}
+                  {isTarget && (
+                    // The destination's real name, whichever way the board faces. Accessible
+                    // names already say "legal move", so this is visual only.
+                    <span className={`target-label${piece ? ' target-label-capture' : ''}`} aria-hidden="true">
+                      {square}
+                    </span>
+                  )}
                 </div>
               );
             })}
