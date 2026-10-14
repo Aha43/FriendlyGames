@@ -27,6 +27,12 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    // Playwright fixtures: `use` is Playwright's, not a React hook, and `{}` is its required
+    // signature for fixtures without dependencies.
+    files: ['e2e/**/*.ts'],
+    rules: { 'react-hooks/rules-of-hooks': 'off', 'no-empty-pattern': 'off' },
+  },
+  {
     // Backend tests read API responses as loosely typed JSON on purpose.
     files: ['tests/backend/**/*.ts'],
     rules: { '@typescript-eslint/no-explicit-any': 'off' },
