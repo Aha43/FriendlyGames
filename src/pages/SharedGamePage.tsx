@@ -23,9 +23,24 @@ const colorOf = (seat: Seat): Color => (seat === 'white' ? 'w' : 'b');
 interface Pending {
   requestId: string;
   expectedRevision: number;
+  /** Number of moves in the game when the action was sent. */
+  baseMoves: number;
   action: GameAction;
-  /** Set when sending failed; the action is not saved and can be retried as-is. */
+  /** Set when sending failed: whether it was saved is unknown, and it can be retried as-is. */
   failure: string | null;
+}
+
+/**
+ * Whether a newer game from the server shows the unconfirmed action was saved. Only called when
+ * the game has moved past the revision the action was based on, so something was saved: either
+ * this action, or something else first (then the action was refused as stale).
+ */
+function wasSaved(pending: Pending, game: SharedGame): boolean {
+  if (pending.action.type === 'resign') {
+    return game.termination === 'resignation' && game.result !== game.yourSeat;
+  }
+  const { from, to, promotion } = pending.action;
+  return game.chess.moves[pending.baseMoves] === `${from}${to}${promotion ?? ''}`;
 }
 
 interface SharedGamePageProps {
@@ -45,6 +60,12 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
   const [viewPly, setViewPly] = useState<number | null>(null);
   const [rematchBusy, setRematchBusy] = useState(false);
   const sending = useRef(false);
+
+  // An unconfirmed action is resolved once the server's game (e.g. from polling) has moved past the
+  // revision it was based on: never show "couldn't confirm" next to a board showing the outcome.
+  const resolved = !!(pending?.failure && game && game.revision > pending.expectedRevision);
+  const active = resolved ? null : pending;
+  const changedFirst = resolved && !wasSaved(pending!, game!);
 
   /** Accept a confirmed game from the server, never going back to an older revision. */
   const accept = useCallback((next: SharedGame) => {
@@ -126,15 +147,21 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
   }
 
   function act(action: GameAction) {
-    if (!game || pending) return;
-    send({ requestId: newRequestId(), expectedRevision: game.revision, action, failure: null });
+    if (!game || active) return;
+    send({
+      requestId: newRequestId(),
+      expectedRevision: game.revision,
+      baseMoves: game.chess.moves.length,
+      action,
+      failure: null,
+    });
   }
 
   const confirmed: GameRecord | null = useMemo(
     () => (game ? { schemaVersion: 1, initialFen: game.chess.initialFen, moves: game.chess.moves } : null),
     [game],
   );
-  const pendingMove = pending && !pending.failure && pending.action.type === 'move' ? pending.action : null;
+  const pendingMove = active && !active.failure && active.action.type === 'move' ? active.action : null;
   const shown = useMemo(() => {
     if (confirmed && viewPly !== null) return { ...confirmed, moves: confirmed.moves.slice(0, viewPly) };
     if (!confirmed || !pendingMove) return confirmed;
@@ -168,7 +195,7 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
   const me = game.yourSeat;
   const them = other(me);
   const opponent = opponentName(game);
-  const myTurn = game.status === 'active' && game.chess.turn === me && !pending;
+  const myTurn = game.status === 'active' && game.chess.turn === me && !active;
   const status = gameStatus(replay(shown));
   // Plates show the game's real state, even while an earlier position is being reviewed.
   const plateStatus = viewPly === null ? status : gameStatus(replay(confirmed));
@@ -183,7 +210,7 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
   function explainBlocked(color: Color): string {
     if (color !== colorOf(me)) return `You play ${me === 'white' ? 'White' : 'Black'}.`;
     if (game!.status === 'waiting') return `Waiting for ${opponent ?? 'your friend'} to join.`;
-    if (pending) return pending.failure ? 'Retry or cancel your unsaved move first.' : 'Saving your move…';
+    if (active) return active.failure ? 'Retry or cancel your unsaved move first.' : 'Saving your move…';
     return `It’s ${opponent ?? 'your friend'}’s move.`;
   }
 
@@ -221,14 +248,14 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
           {statusLine}
         </p>
         <p className="game-notice" aria-live="polite">
-          {notice}
+          {notice ?? (changedFirst ? 'The game changed before your move was saved. Here’s the latest position.' : null)}
         </p>
 
-        {pending?.failure && (
+        {active?.failure && (
           <div className="banner banner-error" role="alert">
-            <p>{pending.failure}</p>
+            <p>{active.failure}</p>
             <div className="button-row">
-              <button type="button" className="button button-primary" onClick={() => send(pending)}>
+              <button type="button" className="button button-primary" onClick={() => send(active)}>
                 Retry
               </button>
               <button
@@ -319,7 +346,7 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
             <button
               type="button"
               className="button"
-              disabled={!!pending}
+              disabled={!!active}
               onClick={() => setConfirmingResign(true)}
             >
               Resign…

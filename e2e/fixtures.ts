@@ -8,9 +8,7 @@
 //   E2E_API_TIMINGS=1 (used to measure the API while investigating #21).
 // - `api` makes setup calls straight to the API and fails at once, with the call that failed,
 //   if the server does not answer as expected.
-import { test as base, expect, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
-
-export { expect };
+import { test as base, expect as baseExpect, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
 
 export const API_URL = process.env.FG_API_URL ?? 'http://localhost:56321/functions/v1/game-api';
 
@@ -32,7 +30,12 @@ function recordApiCalls(page: Page, who: string, log: string[]) {
   page.on('requestfinished', async (request) => {
     const start = started.get(request);
     if (start === undefined) return;
-    const status = (await request.response())?.status() ?? 0;
+    // The page or context may close first (end of test): then there is nothing to record.
+    const status = await request.response().then(
+      (response) => response?.status() ?? 0,
+      () => null,
+    );
+    if (status === null) return;
     log.push(`${at()} ${who} ${request.method()} ${operation(request.url())} ${status} ${Date.now() - start}ms`);
   });
   page.on('requestfailed', (request) => {
@@ -46,6 +49,8 @@ function recordApiCalls(page: Page, who: string, log: string[]) {
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 interface Fixtures {
+  /** Base URL for setup calls; overridable so the leak regression test can use a dead port. */
+  apiBaseUrl: string;
   apiLog: string[];
   openContext: (who: string, identity?: { playerId: string; displayName: string; credential: string }) => Promise<BrowserContext>;
   api: (method: 'GET' | 'POST', path: string, options?: { credential?: string; data?: unknown; expect?: number }) => Promise<Json>;
@@ -79,17 +84,28 @@ export const test = base.extend<Fixtures>({
     await Promise.all(contexts.map((context) => context.close()));
   },
 
-  api: async ({ request, apiLog }, use) => {
+  apiBaseUrl: [API_URL, { option: true }],
+
+  api: async ({ request, apiLog, apiBaseUrl }, use) => {
     await use(async (method, path, { credential, data, expect: expected } = {}) => {
       const started = Date.now();
-      const response = await (request as APIRequestContext).fetch(`${API_URL}${path}`, {
-        method,
-        headers: credential ? { 'X-Device-Credential': credential } : {},
-        data,
-      });
-      apiLog.push(`setup ${method} ${operation(`${API_URL}${path}`)} ${response.status()} ${Date.now() - started}ms`);
+      const op = `${method} ${operation(`${apiBaseUrl}${path}`)}`;
+      let response;
+      try {
+        response = await (request as APIRequestContext).fetch(`${apiBaseUrl}${path}`, {
+          method,
+          headers: credential ? { 'X-Device-Credential': credential } : {},
+          data,
+        });
+      } catch {
+        // Playwright's transport errors include the request headers (the device credential) and
+        // body (invitation tokens, emails). Replace them with the operation alone.
+        apiLog.push(`setup ${op} TRANSPORT-ERROR ${Date.now() - started}ms`);
+        throw new Error(`Setup call ${op} could not reach the API (transport error; details withheld)`);
+      }
+      apiLog.push(`setup ${op} ${response.status()} ${Date.now() - started}ms`);
       const ok = expected === undefined ? response.ok() : response.status() === expected;
-      if (!ok) throw new Error(`Setup call ${method} ${operation(`${API_URL}${path}`)} answered ${response.status()}`);
+      if (!ok) throw new Error(`Setup call ${op} answered ${response.status()}`);
       return (await response.json()) as Json;
     });
   },
@@ -103,6 +119,13 @@ export const test = base.extend<Fixtures>({
  * Only waits that need a fresh server load use it; everything else keeps the 5 s default.
  */
 export const LOAD_BUDGET = 15_000;
+
+/**
+ * Assertions for the shared-play journeys. Every step there waits on the real server (a save, a
+ * poll, a load), and any single server call can take up to the measured 7.9 s, so all of them get
+ * LOAD_BUDGET instead of Playwright's 5 s default. Local-play journeys keep the default.
+ */
+export const expect = baseExpect.configure({ timeout: LOAD_BUDGET });
 
 /**
  * Navigate (optional) and wait until the table has loaded its game from the server, i.e. its
