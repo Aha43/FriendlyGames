@@ -88,17 +88,19 @@ export function apiBaseUrl(): string {
  * How a request may be repeated after a momentary server failure.
  * - 'safe': repeating cannot do anything twice (reads, and writes the server deduplicates by
  *   request ID or by design). Repeated after network failures and 500/502/503/504.
- * - 'unprocessed-only': repeated only after 503, which means the server did not process it.
+ * - 'never': not repeated automatically. For writes the server cannot deduplicate: no status
+ *   (not even 503) proves the server did not apply them, so only the player decides to try again.
  */
-type Repeat = 'safe' | 'unprocessed-only';
+type Repeat = 'safe' | 'never';
 
 /** Pauses before each repeat. Short: these failures are a server worker restarting. */
 export const RETRY_DELAYS_MS = [400, 1200];
 
 function repeatable(error: unknown, repeat: Repeat): boolean {
-  if (error instanceof ApiError) return repeat === 'safe' ? [500, 502, 503, 504].includes(error.status) : error.status === 503;
+  if (repeat === 'never') return false;
+  if (error instanceof ApiError) return [500, 502, 503, 504].includes(error.status);
   // A timeout already cost 10 s; repeating it would leave the player waiting far too long.
-  return error instanceof NetworkError && !error.timedOut && repeat === 'safe';
+  return error instanceof NetworkError && !error.timedOut;
 }
 
 async function request<T>(
@@ -153,13 +155,13 @@ async function attemptRequest<T>(method: 'GET' | 'POST', path: string, credentia
 
 export const gameApi = {
   createPlayer: (displayName: string, email: string) =>
-    // No request ID: a repeat could create a second player, so only repeat what was not processed.
+    // No request ID: a repeat could create a second player, so it is never repeated automatically.
     request<{ player: PlayerSummary & { email: string }; deviceCredential: string }>(
       'POST',
       '/players',
       undefined,
       { displayName, email },
-      'unprocessed-only',
+      'never',
     ),
   me: (credential: string) => request<{ player: PlayerSummary & { email: string } }>('GET', '/me', credential),
   listGames: (credential: string) => request<{ games: SharedGame[] }>('GET', '/games', credential),

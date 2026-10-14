@@ -190,6 +190,15 @@ Errors are `{ "error": { "code", "message", … } }`:
   shows the last confirmed position and offers Retry, which resends the same request ID
   and revision, so a request that did arrive is not applied twice. Game creation works
   the same way.
+- Momentary server failures are repeated automatically, at most twice (after 0.4 s and
+  1.2 s), only for requests the server deduplicates or that change nothing: reads, actions
+  (request ID), game creation (request ID), joining, rematch and invitation renewal, after
+  network errors and 500/502/503/504. Timeouts are not repeated. Sign-up has no request ID and
+  is **never** repeated automatically, since no error status proves it was not applied; the
+  player is told and can press Continue again.
+- When polling shows the server has moved past an unconfirmed action's revision, the page
+  resolves it: cleared if the server's next move is that move (or the player's resignation),
+  otherwise reported as the game changing first.
 - A stale revision (another tab or device moved first) replaces the board with the
   server's game and says so. There is no offline move queue.
 

@@ -286,17 +286,25 @@ test('finished games become shared history: checkmate, resignation, review and p
 
 });
 
-test('momentary server failures are repeated without the player noticing', async ({ openContext, api }, testInfo) => {
+test('momentary server failures: safe requests are repeated, sign-up is left to the player', async ({ openContext, api }, testInfo) => {
   const run = `${Date.now()}-${testInfo.project.name}`;
   const context = await openContext('arne');
   const arne = await context.newPage();
 
-  // Sign-up: the server's worker is restarting and answers 503 once.
+  // Sign-up answers 503 once. It cannot be deduplicated, so the app does not repeat it: the
+  // player is told and decides to press Continue again.
+  let signUps = 0;
+  arne.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/game-api/players')) signUps++;
+  });
   await rejectNextOnce(arne, '**/game-api/players');
   await arne.goto('/');
   await onboard(arne, 'Arne', `arne-${run}@example.test`);
+  await expect(arne.getByText('Couldn’t reach the game server. Check your connection and try again.')).toBeVisible();
+  expect(signUps).toBe(1);
+  await arne.getByRole('button', { name: 'Continue' }).click();
   await expect(arne.getByRole('heading', { name: 'Your games' })).toBeVisible();
-  await expect(arne.getByText(/Couldn’t reach/)).toHaveCount(0);
+  expect(signUps).toBe(2);
 
   // Creating a game: the same once.
   await rejectNextOnce(arne, '**/game-api/games');

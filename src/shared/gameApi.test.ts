@@ -61,18 +61,13 @@ describe('momentary server failures', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('repeats sign-up only when the server says it did not process it (503)', async () => {
-    fetchMock.mockResolvedValueOnce(reply(503)).mockResolvedValueOnce(reply(201, { player: {}, deviceCredential: CRED }));
-    expect(await settle(gameApi.createPlayer('Harald', 'h@example.test'))).toHaveProperty('value');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-
-    fetchMock.mockReset();
-    fetchMock.mockResolvedValueOnce(reply(500));
-    expect(await settle(gameApi.createPlayer('Harald', 'h@example.test'))).toHaveProperty('error');
-    expect(fetchMock).toHaveBeenCalledTimes(1); // might have been created: no second player
-
-    fetchMock.mockReset();
-    fetchMock.mockRejectedValueOnce(new TypeError('connection reset'));
+  it.each([
+    ['a generic 503', () => reply(503)],
+    ['a 503 with a boot-error body', () => reply(503, { code: 'BOOT_ERROR', message: 'Function failed to start' })],
+    ['a 500', () => reply(500)],
+    ['a dropped connection', () => Promise.reject(new TypeError('connection reset'))],
+  ])('never repeats sign-up after %s: it may have created the player', async (_name, failure) => {
+    fetchMock.mockImplementationOnce(failure).mockResolvedValue(reply(201, { player: {}, deviceCredential: CRED }));
     expect(await settle(gameApi.createPlayer('Harald', 'h@example.test'))).toHaveProperty('error');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
