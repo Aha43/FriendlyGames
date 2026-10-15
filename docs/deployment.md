@@ -1,0 +1,115 @@
+# Deployment
+
+FriendlyGames runs as a static site on **Cloudflare Pages** that calls the `game-api`
+**Supabase Edge Function**, which owns a hosted **Supabase Postgres** database. This mirrors
+NamWeb's production setup; NamWeb's `docs/ops/go-live-playbook.md` has screenshots-in-words
+of the dashboards and the provider gotchas.
+
+```
+browser ──HTTPS──▶ friendlygames.pages.dev (Cloudflare Pages, static dist/)
+   │
+   └──HTTPS──▶ <ref>.supabase.co/functions/v1/game-api ──▶ Postgres (same project)
+```
+
+## Environments
+
+| | Site | API | Database |
+|---|---|---|---|
+| Local | `npm run dev` (5173) | `supabase start` (56321) | local container, reset freely |
+| Production | Cloudflare Pages, `main` | hosted Edge Function | hosted Postgres |
+| Pages previews (per PR) | `<hash>.friendlygames.pages.dev` | production API, but **blocked by CORS** | — |
+
+There is no staging backend. Preview deployments show the UI and local play only: the
+production API allows browser calls from the production origin alone, so a preview cannot
+read or write real games.
+
+## Configuration and secrets
+
+Nothing secret is in the repository.
+
+| Name | Where | Value |
+|---|---|---|
+| `VITE_GAME_API_URL` | Cloudflare Pages → Settings → Variables (Production **and** Preview) | `https://<ref>.supabase.co/functions/v1/game-api` (public by design: it is in the bundle) |
+| `NODE_VERSION` | Cloudflare Pages variables | `24` |
+| `ALLOWED_ORIGINS` | Supabase function secret (set by the deploy script) | the site origin, e.g. `https://friendlygames.pages.dev` |
+| `GAME_API_COMMIT` | Supabase function secret (set by the deploy script) | deployed commit, reported by `GET /health` |
+| `SUPABASE_DB_URL` | provided by Supabase to functions | — |
+| Database password | owner's password manager | set at project creation; `supabase link` asks for it |
+| Supabase access token | Supabase CLI login on the owner's machine (`supabase login`) | never in the repo or CI |
+| `GAME_API_HEALTH_URL` | GitHub → repository **variable** (optional) | `https://<ref>.supabase.co/functions/v1/game-api/health`; enables the daily keep-alive |
+
+`GAME_DB_URL` is for the local stack only; never set it in production.
+
+## First-time setup (owner)
+
+These create accounts' resources and need the owner's credentials. Claude prepares and
+verifies; the owner performs or authorises each step.
+
+1. **Supabase project:** dashboard → New project in the owner's organisation. Name
+   `friendlygames`, region **Stockholm (eu-north-1)**, a strong database password (save it).
+   Plan: see "Plan and limits".
+2. **CLI login and link**, in a terminal at the repository root:
+   ```bash
+   supabase login
+   supabase link --project-ref <ref>
+   ```
+3. **Backend deploy** from an up-to-date, clean `main`:
+   ```bash
+   SITE_ORIGIN=https://friendlygames.pages.dev npm run deploy:backend
+   ```
+4. **Cloudflare Pages:** Workers & Pages → Create → **Pages** → *Import an existing Git
+   repository* (not the Worker flow). Grant the Cloudflare GitHub app access to the private
+   `Aha43/FriendlyGames` repository. Project name `friendlygames`, production branch `main`,
+   build command `npm run build`, output directory `dist`, variables from the table above.
+5. **Verify** (below), then record the deployment.
+
+## Releasing a change
+
+Merging to `main` makes Cloudflare Pages build and publish the site automatically. Backend
+changes are deliberate:
+
+1. Keep migrations and API changes **backward compatible** with the site already live (add,
+   don't rename or remove in the same step), because the site and backend deploy separately.
+2. After merging a PR that touches `supabase/`, run `npm run deploy:backend` from `main`.
+3. Run the smoke check and the deployed journeys (below).
+
+## Verifying a deployment
+
+```bash
+curl -fsS https://<ref>.supabase.co/functions/v1/game-api/health      # {"ok":true,"commit":"<sha>"}
+PLAYWRIGHT_BASE_URL=https://friendlygames.pages.dev \
+FG_API_URL=https://<ref>.supabase.co/functions/v1/game-api \
+npm run e2e
+```
+
+The journeys onboard fresh test players (emails `…@example.test`) in two independent browser
+contexts, create and join a game, exchange moves, refresh, recover from a lost response,
+finish, rematch and read the history, on desktop and phone profiles. They create real rows
+in production, owned by those throwaway players; they never touch real players' games or
+history. The footer shows the site's build commit.
+
+## Rollback
+
+- **Site:** Cloudflare Pages → Deployments → choose the previous deployment → *Rollback*.
+- **Function:** check out the previous good commit on a branch and run
+  `supabase functions deploy game-api --project-ref <ref> --no-verify-jwt` (and
+  `supabase secrets set GAME_API_COMMIT=<sha>`), then return to `main`.
+- **Database:** migrations are forward-only. Fix forward with a new migration. If data was
+  damaged, restore from the dump the deploy script wrote to `backups/` (git-ignored, contains
+  private emails; keep it on the owner's machine).
+
+## Plan and limits
+
+- **Free plan:** pauses after about 7 days without activity and has no point-in-time
+  recovery. The optional `Keep backend awake` workflow pings `/health` daily once
+  `GAME_API_HEALTH_URL` is set; the deploy script's dumps are the backup. Check the free
+  plan's active-project limit against the owner's existing projects (NamWeb).
+- **Pro plan** (paid) removes pausing and adds daily backups.
+- No rate limiting; invitation links and device credentials are the only protection
+  (docs/backend.md). Fine for a friends-only prototype.
+
+## Deployed versions
+
+| Date (UTC) | Site commit | Backend commit | Notes |
+|---|---|---|---|
+| — | — | — | not yet deployed |

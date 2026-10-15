@@ -49,11 +49,23 @@ class ApiError extends Error {
   }
 }
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info, x-device-credential',
-};
+export interface ApiConfig {
+  /** Origins allowed to call the API from a browser; null allows any (local development). */
+  allowedOrigins: string[] | null;
+  /** The deployed commit, reported by GET /health. */
+  commit: string | null;
+}
+
+function corsHeaders(request: Request, config: ApiConfig): Record<string, string> {
+  const origin = request.headers.get('origin');
+  const allowed = config.allowedOrigins === null ? '*' : origin && config.allowedOrigins.includes(origin) ? origin : null;
+  return {
+    ...(allowed ? { 'Access-Control-Allow-Origin': allowed } : {}),
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info, x-device-credential',
+    Vary: 'Origin',
+  };
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SECRET = /^[A-Za-z0-9_-]{43}$/; // 32 random bytes, base64url
@@ -62,20 +74,28 @@ const EMAIL = /^[^@\s]+@[^@\s]+$/;
 const MAX_BODY_BYTES = 4096;
 
 function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-  });
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 }
 
-export async function handleRequest(request: Request, sql: Sql): Promise<Response> {
-  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
+export async function handleRequest(request: Request, sql: Sql, config: ApiConfig): Promise<Response> {
+  const cors = corsHeaders(request, config);
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+  const response = await route(request, sql, config);
+  for (const [name, value] of Object.entries(cors)) response.headers.set(name, value);
+  return response;
+}
+
+async function route(request: Request, sql: Sql, config: ApiConfig): Promise<Response> {
 
   try {
     const path = new URL(request.url).pathname.replace(/^.*?\/game-api/, '') || '/';
     const route = `${request.method} ${path.replace(/\/+$/, '') || '/'}`;
     const gameMatch = path.match(/^\/games\/([^/]+)(\/actions|\/invitation|\/rematch)?\/?$/);
 
+    if (route === 'GET /health') {
+      await sql`select 1`;
+      return json(200, { ok: true, commit: config.commit });
+    }
     if (route === 'POST /players') return json(201, await createPlayer(sql, await readBody(request)));
 
     const player = await authenticate(sql, request);

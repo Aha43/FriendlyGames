@@ -8,3 +8,6 @@ test-results/
 !.env.example
 .DS_Store
 *.log
+
+# Production database backups (contain private data)
+backups/

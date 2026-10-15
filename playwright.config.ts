@@ -2,6 +2,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 // Browser journeys against the production build. Run with `npm run e2e`.
 // Shared-play journeys need the local Supabase stack running (`supabase start`).
+// Against a deployed site: PLAYWRIGHT_BASE_URL=<site> FG_API_URL=<api> npm run e2e (see docs/deployment.md).
+const deployedSite = process.env.PLAYWRIGHT_BASE_URL;
 export default defineConfig({
   testDir: 'e2e',
   fullyParallel: true,
@@ -12,7 +14,7 @@ export default defineConfig({
   // URLs, which carry device credentials and invitation tokens.
   reporter: 'list',
   use: {
-    baseURL: 'http://localhost:4173',
+    baseURL: deployedSite ?? 'http://localhost:4173',
     trace: 'off',
     video: 'off',
     screenshot: 'off',
@@ -21,9 +23,11 @@ export default defineConfig({
     { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1366, height: 850 } } },
     { name: 'phone', use: { ...devices['Pixel 7'] } },
   ],
-  webServer: {
-    command: 'npm run build && npm run preview -- --port 4173 --strictPort',
-    url: 'http://localhost:4173',
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: deployedSite
+    ? undefined
+    : {
+        command: 'npm run build && npm run preview -- --port 4173 --strictPort',
+        url: 'http://localhost:4173',
+        reuseExistingServer: !process.env.CI,
+      },
 });
