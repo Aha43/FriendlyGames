@@ -382,10 +382,8 @@ inspector_port = 8093
 # The Deno major version to use.
 deno_version = 2
 
-[edge_runtime.secrets]
-# Local stack only (public default credentials): reach the database by its hyphenated network
-# alias, because Deno cannot resolve the default supabase_db_<project> hostname. See docs/backend.md.
-GAME_DB_URL = "postgresql://postgres:postgres@db.supabase.internal:5432/postgres"
+# No [edge_runtime.secrets] here: `supabase secrets set` uploads them to the hosted project too.
+# See supabase/functions/game-api/databaseUrl.ts for the local database address.
 
 [analytics]
 enabled = false
