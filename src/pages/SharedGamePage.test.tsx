@@ -113,6 +113,39 @@ describe('shared game', () => {
     expect(gameApi.getGame).toHaveBeenCalledTimes(2);
   });
 
+  it('settles an unconfirmed move as saved when polling shows it on the server', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval'] });
+    const user = userEvent.setup();
+    await renderPage(game());
+    vi.spyOn(gameApi, 'submitAction').mockRejectedValue(new NetworkError('lost'));
+    await user.click(square('e2'));
+    await user.click(square('e4'));
+    expect(await screen.findByText(/Couldn’t confirm whether your move was saved/)).toBeInTheDocument();
+
+    vi.mocked(gameApi.getGame).mockResolvedValue({ game: game({}, ['e2e4']) }); // it did arrive
+    await act(async () => vi.advanceTimersByTime(4_000));
+    expect(screen.queryByText(/Couldn’t confirm/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/The game changed/)).not.toBeInTheDocument();
+    expect(square('e4')).toHaveAccessibleName('e4, white pawn');
+    expect(screen.getByRole('status')).toHaveTextContent('Harald’s move');
+  });
+
+  it('settles an unconfirmed move as not saved when the server shows something else first', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval'] });
+    const user = userEvent.setup();
+    await renderPage(game());
+    vi.spyOn(gameApi, 'submitAction').mockRejectedValue(new NetworkError('lost'));
+    await user.click(square('e2'));
+    await user.click(square('e4'));
+    await screen.findByText(/Couldn’t confirm/);
+
+    vi.mocked(gameApi.getGame).mockResolvedValue({ game: game({}, ['d2d4']) }); // another tab moved first
+    await act(async () => vi.advanceTimersByTime(4_000));
+    expect(screen.queryByText(/Couldn’t confirm/)).not.toBeInTheDocument();
+    expect(screen.getByText('The game changed before your move was saved. Here’s the latest position.')).toBeInTheDocument();
+    expect(square('e4')).toHaveAccessibleName('e4, empty');
+  });
+
   it('shows the newer game when the move was based on a stale revision', async () => {
     const user = userEvent.setup();
     await renderPage(game());

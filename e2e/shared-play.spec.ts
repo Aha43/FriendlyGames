@@ -1,5 +1,6 @@
 // Two players in independent browser contexts, against the real local backend (`supabase start`).
-import { expect, test, type BrowserContextOptions, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, LOAD_BUDGET, openLobby, openTable, test } from './fixtures';
 
 const square = (page: Page, name: string) => page.locator(`[data-square="${name}"]`);
 
@@ -14,25 +15,38 @@ async function onboard(page: Page, name: string, email: string) {
   await page.getByRole('button', { name: 'Continue' }).click();
 }
 
-// Polling runs every 4 s; allow a couple of rounds.
-const SYNC = { timeout: 12_000 };
+// Seeing the other player's change takes one 4 s poll plus one server call, so the same
+// budget as a fresh load covers it (see LOAD_BUDGET in fixtures.ts).
+const SYNC = { timeout: LOAD_BUDGET };
 
-/** Let the next matching request reach the server and commit, then lose its response. */
-async function loseNextResponse(page: Page, url: string, method = 'POST') {
-  let lost = false;
+/**
+ * Until the route is removed, let matching requests reach the server and commit, then lose
+ * their responses. All of them, so the app's automatic repeats are lost too.
+ */
+async function loseResponses(page: Page, url: string, method = 'POST') {
   await page.route(url, async (route) => {
-    if (lost || route.request().method() !== method) return route.continue();
-    lost = true;
+    if (route.request().method() !== method) return route.continue();
     await route.fetch(); // the server receives and commits it
     await route.abort('connectionreset'); // the client never sees the answer
   });
 }
 
-test('two players create, join, play, refresh, recover from a failed send and resign', async ({ browser }, testInfo) => {
-  const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch, baseURL } = testInfo.project.use;
-  const options: BrowserContextOptions = { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch, baseURL };
-  const arneContext = await browser.newContext(options);
-  const haraldContext = await browser.newContext(options);
+/** Answer the next matching request with 503 without it reaching the server, as a restarting worker does. */
+async function rejectNextOnce(page: Page, url: string, method = 'POST') {
+  let rejected = false;
+  await page.route(url, async (route) => {
+    if (rejected || route.request().method() !== method) return route.continue();
+    rejected = true;
+    await route.fulfill({ status: 503, body: '' });
+  });
+}
+
+test('two players create, join, play, refresh, recover from a failed send and resign', async ({ openContext }, testInfo) => {
+  // A long journey: about 30 server round trips, measured at 21 s median and 25.7 s max, too
+  // close to Playwright's 30 s default. test.slow() allows 90 s.
+  test.slow();
+  const arneContext = await openContext('arne');
+  const haraldContext = await openContext('harald');
   // Harald's browser behaves like a phone on the dev server's LAN address (plain HTTP, not a
   // secure context), where crypto.randomUUID does not exist.
   await haraldContext.addInitScript(() => {
@@ -48,7 +62,7 @@ test('two players create, join, play, refresh, recover from a failed send and re
   await arne.getByLabel('Friend’s email').fill(`harald-${run}@example.test`);
 
   // The game is created, but the answer (with the only copy of the link) is lost.
-  await loseNextResponse(arne, '**/game-api/games');
+  await loseResponses(arne, '**/game-api/games');
   await arne.getByRole('button', { name: 'Create game' }).click();
   await expect(arne.getByText(/Couldn’t confirm whether the game was created/)).toBeVisible();
   await arne.unroute('**/game-api/games');
@@ -64,6 +78,7 @@ test('two players create, join, play, refresh, recover from a failed send and re
   await harald.goto(link);
   await expect(harald.getByRole('heading', { name: 'You’re invited to a game' })).toBeVisible();
   await onboard(harald, 'Harald', `harald-${run}@example.test`);
+  await openTable(harald); // after onboarding: redeem the invitation, then load the game
   await expect(harald.getByRole('status')).toHaveText('Arne’s move');
   expect(harald.url()).not.toContain('/join/'); // the token is not left in the address bar
   await expect(harald.getByRole('gridcell').first()).toHaveAccessibleName('h1, white rook');
@@ -79,6 +94,7 @@ test('two players create, join, play, refresh, recover from a failed send and re
 
   // Both close and come back: the game resumes from the server.
   await Promise.all([arne.reload(), harald.reload()]);
+  await Promise.all([openTable(arne), openTable(harald)]);
   await expect(arne.getByRole('list', { name: 'Moves' })).toContainText('e4');
   await expect(arne.getByRole('list', { name: 'Moves' })).toContainText('e5');
   await expect(arne.getByRole('status')).toHaveText('Your move');
@@ -86,19 +102,24 @@ test('two players create, join, play, refresh, recover from a failed send and re
 
   // Arne's move is saved, but the answer is lost: the page doesn't claim either outcome,
   // and Retry (same request ID) confirms it without playing it twice.
-  await loseNextResponse(arne, '**/game-api/games/*/actions');
+  // Reads are cut too, so polling cannot settle the move before the player uses Retry.
+  await loseResponses(arne, '**/game-api/games/*/actions');
+  await arne.route('**/game-api/games/*', (route) =>
+    route.request().method() === 'GET' ? route.abort('connectionreset') : route.fallback(),
+  );
   await move(arne, 'g1', 'f3');
   await expect(arne.getByText(/Couldn’t confirm whether your move was saved/)).toBeVisible();
   await expect(square(arne, 'g1')).toHaveAccessibleName('g1, white knight'); // last confirmed position
   await arne.unroute('**/game-api/games/*/actions');
   await arne.getByRole('button', { name: 'Retry' }).click();
+  await arne.unroute('**/game-api/games/*');
   await expect(arne.getByRole('status')).toHaveText('Harald’s move');
   await expect(square(arne, 'f3')).toHaveAccessibleName('f3, white knight');
   await expect(square(harald, 'f3')).toHaveAccessibleName('f3, white knight', SYNC);
   await expect(harald.getByRole('list', { name: 'Moves' }).getByText('Nf3')).toHaveCount(1);
 
   // Both lobbies list the game.
-  await arne.goto('/');
+  await openLobby(arne);
   await expect(arne.getByRole('list', { name: 'Games in progress' })).toContainText('vs Harald');
   await expect(arne.getByRole('list', { name: 'Games in progress' })).toContainText('Harald’s move');
   await arne.goBack();
@@ -108,38 +129,34 @@ test('two players create, join, play, refresh, recover from a failed send and re
   await harald.getByRole('button', { name: 'Resign', exact: true }).click();
   await expect(harald.getByRole('status')).toHaveText('You resigned. Arne wins');
   await expect(arne.getByRole('status')).toHaveText('Harald resigned. You win', SYNC);
-
-  await arneContext.close();
-  await haraldContext.close();
 });
 
-test('a move from an outdated tab is refused and the tab catches up', async ({ browser, request }, testInfo) => {
-  const api = process.env.FG_API_URL ?? 'http://localhost:56321/functions/v1/game-api';
+test('a move from an outdated tab is refused and the tab catches up', async ({ openContext, api }, testInfo) => {
   const run = `${Date.now()}-${testInfo.project.name}`;
-  const createPlayer = async (displayName: string) =>
-    (await request.post(`${api}/players`, { data: { displayName, email: `${displayName}-${run}@example.test` } })).json();
+  const createPlayer = (displayName: string) =>
+    api('POST', '/players', { data: { displayName, email: `${displayName}-${run}@example.test` }, expect: 201 });
   const arne = await createPlayer('Arne');
   const harald = await createPlayer('Harald');
-  const created = await (
-    await request.post(`${api}/games`, {
-      headers: { 'X-Device-Credential': arne.deviceCredential },
-      data: { friendEmail: `harald-${run}@example.test` },
-    })
-  ).json();
-  await request.post(`${api}/invitations/redeem`, {
-    headers: { 'X-Device-Credential': harald.deviceCredential },
+  const created = await api('POST', '/games', {
+    credential: arne.deviceCredential,
+    data: { friendEmail: `harald-${run}@example.test` },
+    expect: 201,
+  });
+  await api('POST', '/invitations/redeem', {
+    credential: harald.deviceCredential,
     data: { token: created.invitation.token },
+    expect: 200,
   });
 
   // Arne has the game open in two tabs of the same browser.
-  const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch, baseURL } = testInfo.project.use;
-  const context = await browser.newContext({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch, baseURL });
-  await context.addInitScript((identity) => {
-    localStorage.setItem('friendlygames.identity', JSON.stringify(identity));
-  }, { playerId: arne.player.id, displayName: 'Arne', credential: arne.deviceCredential });
+  const context = await openContext('arne', {
+    playerId: arne.player.id,
+    displayName: 'Arne',
+    credential: arne.deviceCredential,
+  });
   const [first, second] = [await context.newPage(), await context.newPage()];
   for (const page of [first, second]) {
-    await page.goto(`/#/game/${created.game.id}`);
+    await openTable(page, `/#/game/${created.game.id}`);
     await expect(page.getByRole('status')).toHaveText('Your move');
   }
 
@@ -155,52 +172,46 @@ test('a move from an outdated tab is refused and the tab catches up', async ({ b
   await expect(square(second, 'e4')).toHaveAccessibleName('e4, white pawn');
   await expect(square(second, 'd4')).toHaveAccessibleName('d4, empty');
   await expect(second.getByRole('status')).toHaveText('Harald’s move');
-
-  await context.close();
 });
 
-test('the creator can make a new invitation link from a device without one', async ({ browser, request }, testInfo) => {
-  const api = process.env.FG_API_URL ?? 'http://localhost:56321/functions/v1/game-api';
+test('the creator can make a new invitation link from a device without one', async ({ openContext, api }, testInfo) => {
   const run = `${Date.now()}-${testInfo.project.name}`;
-  const arne = await (
-    await request.post(`${api}/players`, { data: { displayName: 'Arne', email: `arne-${run}@example.test` } })
-  ).json();
+  const arne = await api('POST', '/players', {
+    data: { displayName: 'Arne', email: `arne-${run}@example.test` },
+    expect: 201,
+  });
   // A game exists, but its link never reached this browser.
-  const created = await (
-    await request.post(`${api}/games`, {
-      headers: { 'X-Device-Credential': arne.deviceCredential },
-      data: { friendEmail: `harald-${run}@example.test` },
-    })
-  ).json();
+  const created = await api('POST', '/games', {
+    credential: arne.deviceCredential,
+    data: { friendEmail: `harald-${run}@example.test` },
+    expect: 201,
+  });
 
-  const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch, baseURL } = testInfo.project.use;
-  const options: BrowserContextOptions = { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch, baseURL };
-  const arneContext = await browser.newContext(options);
-  await arneContext.addInitScript((identity) => {
-    localStorage.setItem('friendlygames.identity', JSON.stringify(identity));
-  }, { playerId: arne.player.id, displayName: 'Arne', credential: arne.deviceCredential });
+  const arneContext = await openContext('arne', {
+    playerId: arne.player.id,
+    displayName: 'Arne',
+    credential: arne.deviceCredential,
+  });
   const page = await arneContext.newPage();
-  await page.goto(`/#/game/${created.game.id}`);
+  await openTable(page, `/#/game/${created.game.id}`);
   await page.getByRole('button', { name: 'Make a new invitation link' }).click();
   const link = await page.getByLabel('Invitation link', { exact: true }).inputValue();
   expect(link).not.toContain(created.invitation.token);
 
-  const haraldContext = await browser.newContext(options);
+  const haraldContext = await openContext('harald');
   const harald = await haraldContext.newPage();
   await harald.goto(link);
   await onboard(harald, 'Harald', `harald-${run}@example.test`);
+  await openTable(harald); // after onboarding: redeem the invitation, then load the game
   await expect(harald.getByRole('status')).toHaveText('Arne’s move');
   await expect(page.getByRole('status')).toHaveText('Your move', SYNC);
-
-  await arneContext.close();
-  await haraldContext.close();
 });
 
-test('finished games become shared history: checkmate, resignation, review and play again', async ({ browser }, testInfo) => {
-  const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch, baseURL } = testInfo.project.use;
-  const options: BrowserContextOptions = { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch, baseURL };
-  const arneContext = await browser.newContext(options);
-  const haraldContext = await browser.newContext(options);
+test('finished games become shared history: checkmate, resignation, review and play again', async ({ openContext }, testInfo) => {
+  // A long journey: measured at 25 s median and 27.5 s max against the 30 s default. 90 s.
+  test.slow();
+  const arneContext = await openContext('arne');
+  const haraldContext = await openContext('harald');
   const arne = await arneContext.newPage();
   const harald = await haraldContext.newPage();
   const run = `${Date.now()}-${testInfo.project.name}`;
@@ -229,6 +240,8 @@ test('finished games become shared history: checkmate, resignation, review and p
 
   // Arne asks to play again; Harald is offered the same new game, now as White.
   await arne.getByRole('button', { name: 'Play again (you take Black)' }).click();
+  await expect(arne).toHaveURL(/#\/game\//);
+  await openTable(arne); // starting the rematch and loading it are two server calls
   await expect(arne.getByRole('status')).toHaveText('Harald’s move');
   await expect(harald.getByRole('link', { name: 'Go to the rematch' })).toBeVisible(SYNC);
   await harald.getByRole('link', { name: 'Go to the rematch' }).click();
@@ -237,6 +250,7 @@ test('finished games become shared history: checkmate, resignation, review and p
 
   // Game 2: Harald opens and then resigns.
   await move(harald, 'e2', 'e4');
+  await openTable(harald); // after onboarding: redeem the invitation, then load the game
   await expect(harald.getByRole('status')).toHaveText('Arne’s move');
   await harald.getByRole('button', { name: 'Resign…' }).click();
   await harald.getByRole('button', { name: 'Resign', exact: true }).click();
@@ -244,8 +258,7 @@ test('finished games become shared history: checkmate, resignation, review and p
 
   // After a refresh, both histories show both games and an exact tally.
   for (const [page, opponent] of [[arne, 'Harald'], [harald, 'Arne']] as const) {
-    await page.goto('/');
-    await page.reload();
+    await openLobby(page);
     const tally = page.getByLabel(`Tally with ${opponent}`);
     await expect(tally).toContainText('You1');
     await expect(tally).toContainText('Draws0');
@@ -271,6 +284,62 @@ test('finished games become shared history: checkmate, resignation, review and p
   await square(arne, 'e2').click();
   await expect(square(arne, 'e2')).toHaveAccessibleName('e2, white pawn'); // nothing selectable
 
-  await arneContext.close();
-  await haraldContext.close();
+});
+
+test('momentary server failures: safe requests are repeated, sign-up is left to the player', async ({ openContext, api }, testInfo) => {
+  const run = `${Date.now()}-${testInfo.project.name}`;
+  const context = await openContext('arne');
+  const arne = await context.newPage();
+
+  // Sign-up answers 503 once. It cannot be deduplicated, so the app does not repeat it: the
+  // player is told and decides to press Continue again.
+  let signUps = 0;
+  arne.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/game-api/players')) signUps++;
+  });
+  await rejectNextOnce(arne, '**/game-api/players');
+  await arne.goto('/');
+  await onboard(arne, 'Arne', `arne-${run}@example.test`);
+  await expect(arne.getByText('Couldn’t reach the game server. Check your connection and try again.')).toBeVisible();
+  expect(signUps).toBe(1);
+  await arne.getByRole('button', { name: 'Continue' }).click();
+  await expect(arne.getByRole('heading', { name: 'Your games' })).toBeVisible();
+  expect(signUps).toBe(2);
+
+  // Creating a game: the same once.
+  await rejectNextOnce(arne, '**/game-api/games');
+  await arne.getByLabel('Friend’s email').fill(`harald-${run}@example.test`);
+  await arne.getByRole('button', { name: 'Create game' }).click();
+  const link = await arne.getByLabel('Invitation link', { exact: true }).inputValue();
+  expect(link).toMatch(/#\/join\/[A-Za-z0-9_-]{43}$/);
+  await expect(arne.getByText(/Couldn’t confirm/)).toHaveCount(0);
+
+  // Play again on a finished game: the same once, and the player still lands in the rematch.
+  const identity = JSON.parse((await arne.evaluate(() => localStorage.getItem('friendlygames.identity')))!);
+  const harald = await api('POST', '/players', { data: { displayName: 'Harald', email: `harald-${run}@example.test` }, expect: 201 });
+  const game = (await api('POST', '/invitations/redeem', {
+    credential: harald.deviceCredential,
+    data: { token: link.split('/join/')[1] },
+    expect: 200,
+  })).game;
+  let revision = game.revision;
+  for (const [credential, from, to] of [
+    [identity.credential, 'f2', 'f3'],
+    [harald.deviceCredential, 'e7', 'e5'],
+    [identity.credential, 'g2', 'g4'],
+    [harald.deviceCredential, 'd8', 'h4'],
+  ]) {
+    const result = await api('POST', `/games/${game.id}/actions`, {
+      credential,
+      data: { requestId: crypto.randomUUID(), expectedRevision: revision, action: { type: 'move', from, to } },
+      expect: 200,
+    });
+    revision = result.game.revision;
+  }
+  await openTable(arne, `/#/game/${game.id}`);
+  await expect(arne.getByRole('status')).toHaveText('Checkmate. Harald wins');
+  await rejectNextOnce(arne, '**/game-api/games/*/rematch');
+  await arne.getByRole('button', { name: 'Play again (you take Black)' }).click();
+  await openTable(arne);
+  await expect(arne.getByRole('status')).toHaveText('Harald’s move');
 });

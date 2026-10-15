@@ -65,7 +65,15 @@ export class ApiError extends Error {
 }
 
 /** The server could not be reached, or did not answer in time. Nothing is known to be saved. */
-export class NetworkError extends Error {}
+export class NetworkError extends Error {
+  constructor(
+    message: string,
+    /** True when no answer came within the time limit (as opposed to a refused or dropped connection). */
+    readonly timedOut = false,
+  ) {
+    super(message);
+  }
+}
 
 const TIMEOUT_MS = 10_000;
 
@@ -76,7 +84,43 @@ export function apiBaseUrl(): string {
   return `${window.location.protocol}//${window.location.hostname}:56321/functions/v1/game-api`;
 }
 
-async function request<T>(method: 'GET' | 'POST', path: string, credential?: string, body?: unknown): Promise<T> {
+/**
+ * How a request may be repeated after a momentary server failure.
+ * - 'safe': repeating cannot do anything twice (reads, and writes the server deduplicates by
+ *   request ID or by design). Repeated after network failures and 500/502/503/504.
+ * - 'never': not repeated automatically. For writes the server cannot deduplicate: no status
+ *   (not even 503) proves the server did not apply them, so only the player decides to try again.
+ */
+type Repeat = 'safe' | 'never';
+
+/** Pauses before each repeat. Short: these failures are a server worker restarting. */
+export const RETRY_DELAYS_MS = [400, 1200];
+
+function repeatable(error: unknown, repeat: Repeat): boolean {
+  if (repeat === 'never') return false;
+  if (error instanceof ApiError) return [500, 502, 503, 504].includes(error.status);
+  // A timeout already cost 10 s; repeating it would leave the player waiting far too long.
+  return error instanceof NetworkError && !error.timedOut;
+}
+
+async function request<T>(
+  method: 'GET' | 'POST',
+  path: string,
+  credential?: string,
+  body?: unknown,
+  repeat: Repeat = 'safe',
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await attemptRequest<T>(method, path, credential, body);
+    } catch (error) {
+      if (attempt >= RETRY_DELAYS_MS.length || !repeatable(error, repeat)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+    }
+  }
+}
+
+async function attemptRequest<T>(method: 'GET' | 'POST', path: string, credential?: string, body?: unknown): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   let response: Response;
@@ -91,7 +135,7 @@ async function request<T>(method: 'GET' | 'POST', path: string, credential?: str
       signal: controller.signal,
     });
   } catch {
-    throw new NetworkError('Could not reach the game server.');
+    throw new NetworkError('Could not reach the game server.', controller.signal.aborted);
   } finally {
     clearTimeout(timer);
   }
@@ -111,10 +155,14 @@ async function request<T>(method: 'GET' | 'POST', path: string, credential?: str
 
 export const gameApi = {
   createPlayer: (displayName: string, email: string) =>
-    request<{ player: PlayerSummary & { email: string }; deviceCredential: string }>('POST', '/players', undefined, {
-      displayName,
-      email,
-    }),
+    // No request ID: a repeat could create a second player, so it is never repeated automatically.
+    request<{ player: PlayerSummary & { email: string }; deviceCredential: string }>(
+      'POST',
+      '/players',
+      undefined,
+      { displayName, email },
+      'never',
+    ),
   me: (credential: string) => request<{ player: PlayerSummary & { email: string } }>('GET', '/me', credential),
   listGames: (credential: string) => request<{ games: SharedGame[] }>('GET', '/games', credential),
   /** Finished games per opponent with an exact tally. */
