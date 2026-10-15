@@ -38,7 +38,8 @@ Nothing secret is in the repository.
 | Supabase access token | Supabase CLI login on the owner's machine (`supabase login`) | never in the repo or CI |
 | `GAME_API_HEALTH_URL` | GitHub → repository **variable** (optional) | `https://<ref>.supabase.co/functions/v1/game-api/health`; enables the daily keep-alive |
 
-`GAME_DB_URL` is for the local stack only; never set it in production.
+Never add `[edge_runtime.secrets]` to `supabase/config.toml`: `supabase secrets set` uploads
+them to the hosted project as well (this broke the first deploy; see docs/backend.md).
 
 ## First-time setup (owner)
 

@@ -47,10 +47,12 @@ supabase stop
 - Tests can target another stack with `FG_API_URL` and `FG_DB_URL`.
 - After editing function code, if a change does not show up, restart the runtime:
   `docker restart supabase_edge_runtime_friendlygames`.
-- Locally the function reaches Postgres through `GAME_DB_URL` (set in
-  `config.toml` to the `db.supabase.internal` network alias). Deno's resolver rejects
-  the default `supabase_db_<project>` hostname because of its underscores. Hosted
-  Supabase does not need this; there the function uses `SUPABASE_DB_URL`.
+- The function always connects with Supabase's `SUPABASE_DB_URL`. Locally its host is the
+  container name `supabase_db_<project>`, which Deno's resolver rejects because of the
+  underscores, so `databaseUrl.ts` swaps in the container's alias `db.supabase.internal`.
+  Hosted URLs are used unchanged. (An earlier `GAME_DB_URL` in `config.toml` was uploaded
+  to production by `supabase secrets set` and broke it; never put local values in
+  `[edge_runtime.secrets]`.)
 
 ## Identity
 
