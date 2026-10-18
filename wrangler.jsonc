@@ -1,0 +1,13 @@
+// Cloudflare Worker serving the built site (static assets only, no server code).
+// Built and deployed by Workers Builds from `main`; see docs/deployment.md.
+{
+  "name": "friendlygames",
+  "compatibility_date": "2026-10-18",
+  "assets": {
+    "directory": "./dist",
+    // Routes are hash-based (#/game/…), so only "/" and real files are requested; stray paths
+    // still get the app rather than a bare 404.
+    "not_found_handling": "single-page-application"
+  },
+  "preview_urls": true
+}

@@ -77,7 +77,8 @@ npm run test:backend
 
 ## Deployment
 
-Cloudflare Pages (site) and a hosted Supabase project (API and database). Setup, secrets,
+A Cloudflare Worker serving the static site (`wrangler.jsonc`) and a hosted Supabase project
+(API and database). Setup, secrets,
 releasing, verification and rollback: [docs/deployment.md](docs/deployment.md).
 
 ## Third-party assets

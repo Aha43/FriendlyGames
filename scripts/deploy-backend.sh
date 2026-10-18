@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Deploy the game backend to the linked hosted Supabase project: back up, apply migrations,
 # configure and deploy the game-api function, then check it answers with this commit.
-# Usage: SITE_ORIGIN=https://friendlygames.pages.dev npm run deploy:backend
+# Usage: SITE_ORIGIN=https://friendlygames.<subdomain>.workers.dev npm run deploy:backend
 # Prerequisites and rollback: docs/deployment.md.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-: "${SITE_ORIGIN:?Set SITE_ORIGIN to the site origin, e.g. https://friendlygames.pages.dev}"
+: "${SITE_ORIGIN:?Set SITE_ORIGIN to the site origin, e.g. https://friendlygames.example.workers.dev}"
 
 [ "$(git rev-parse --abbrev-ref HEAD)" = main ] || { echo "Deploy from main." >&2; exit 1; }
 git diff --quiet && git diff --cached --quiet || { echo "The working tree has changes." >&2; exit 1; }

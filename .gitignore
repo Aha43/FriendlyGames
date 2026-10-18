@@ -11,3 +11,6 @@ test-results/
 
 # Production database backups (contain private data)
 backups/
+
+# Wrangler local state
+.wrangler/
