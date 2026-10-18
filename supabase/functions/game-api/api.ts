@@ -212,12 +212,13 @@ async function authenticate(sql: Sql, request: Request): Promise<Player> {
   return { id: row.id, displayName: row.display_name };
 }
 
+/** The caller's own player. `email` is null if it was detached when reconciling duplicates (#27). */
 async function loadMe(sql: Sql, playerId: string) {
   const [row] = await sql`
     select p.id, p.display_name, c.email
-    from players p join player_contacts c on c.player_id = p.id
+    from players p left join player_contacts c on c.player_id = p.id
     where p.id = ${playerId}`;
-  return { id: row.id, displayName: row.display_name, email: row.email };
+  return { id: row.id, displayName: row.display_name, email: row.email ?? null };
 }
 
 // ---------- games ----------
