@@ -1,12 +1,13 @@
 # Deployment
 
-FriendlyGames runs as a static site on **Cloudflare Pages** that calls the `game-api`
-**Supabase Edge Function**, which owns a hosted **Supabase Postgres** database. This mirrors
-NamWeb's production setup; NamWeb's `docs/ops/go-live-playbook.md` has screenshots-in-words
-of the dashboards and the provider gotchas.
+FriendlyGames runs as a static site on a **Cloudflare Worker** (static assets only, configured
+in `wrangler.jsonc`) that calls the `game-api` **Supabase Edge Function**, which owns a hosted
+**Supabase Postgres** database. Cloudflare now recommends Workers over Pages for new projects
+("Start new projects with Workers", developers.cloudflare.com/pages); NamWeb still uses Pages,
+and its `docs/ops/go-live-playbook.md` remains useful for the Supabase side.
 
 ```
-browser ──HTTPS──▶ friendlygames.pages.dev (Cloudflare Pages, static dist/)
+browser ──HTTPS──▶ friendlygames.<subdomain>.workers.dev (Cloudflare Worker, static dist/)
    │
    └──HTTPS──▶ <ref>.supabase.co/functions/v1/game-api ──▶ Postgres (same project)
 ```
@@ -16,8 +17,8 @@ browser ──HTTPS──▶ friendlygames.pages.dev (Cloudflare Pages, static d
 | | Site | API | Database |
 |---|---|---|---|
 | Local | `npm run dev` (5173) | `supabase start` (56321) | local container, reset freely |
-| Production | Cloudflare Pages, `main` | hosted Edge Function | hosted Postgres |
-| Pages previews (per PR) | `<hash>.friendlygames.pages.dev` | production API, but **blocked by CORS** | — |
+| Production | Cloudflare Worker, built from `main` | hosted Edge Function (Frankfurt) | hosted Postgres (Frankfurt) |
+| Worker previews (other branches, if enabled) | their own preview URL | production API, but **blocked by CORS** | — |
 
 There is no staging backend. Preview deployments show the UI and local play only: the
 production API allows browser calls from the production origin alone, so a preview cannot
@@ -29,9 +30,9 @@ Nothing secret is in the repository.
 
 | Name | Where | Value |
 |---|---|---|
-| `VITE_GAME_API_URL` | Cloudflare Pages → Settings → Variables (Production **and** Preview) | `https://<ref>.supabase.co/functions/v1/game-api` (public by design: it is in the bundle) |
-| `NODE_VERSION` | Cloudflare Pages variables | `24` |
-| `ALLOWED_ORIGINS` | Supabase function secret (set by the deploy script) | the site origin, e.g. `https://friendlygames.pages.dev` |
+| `VITE_GAME_API_URL` | Worker → Settings → Build → **Build variables and secrets** (build-time; Workers keeps these separate from runtime variables) | `https://<ref>.supabase.co/functions/v1/game-api` (public by design: it is in the bundle) |
+| `NODE_VERSION` | Worker build variables | `24` |
+| `ALLOWED_ORIGINS` | Supabase function secret (set by the deploy script) | the site origin, e.g. `https://friendlygames.<subdomain>.workers.dev` |
 | `GAME_API_COMMIT` | Supabase function secret (set by the deploy script) | deployed commit, reported by `GET /health` |
 | `SUPABASE_DB_URL` | provided by Supabase to functions | — |
 | Database password | owner's password manager | set at project creation; `supabase link` asks for it |
@@ -47,8 +48,8 @@ These create accounts' resources and need the owner's credentials. Claude prepar
 verifies; the owner performs or authorises each step.
 
 1. **Supabase project:** dashboard → New project in the owner's organisation. Name
-   `friendlygames`, region **Stockholm (eu-north-1)**, a strong database password (save it).
-   Plan: see "Plan and limits".
+   `friendlygames`, an EU region (the project was created in **Central EU, Frankfurt**), a
+   strong database password (save it), *Enable automatic RLS* on. Plan: see "Plan and limits".
 2. **CLI login and link**, in a terminal at the repository root:
    ```bash
    supabase login
@@ -56,17 +57,21 @@ verifies; the owner performs or authorises each step.
    ```
 3. **Backend deploy** from an up-to-date, clean `main`:
    ```bash
-   SITE_ORIGIN=https://friendlygames.pages.dev npm run deploy:backend
+   SITE_ORIGIN=https://friendlygames.<subdomain>.workers.dev npm run deploy:backend
    ```
-4. **Cloudflare Pages:** Workers & Pages → Create → **Pages** → *Import an existing Git
-   repository* (not the Worker flow). Grant the Cloudflare GitHub app access to the private
-   `Aha43/FriendlyGames` repository. Project name `friendlygames`, production branch `main`,
-   build command `npm run build`, output directory `dist`, variables from the table above.
-5. **Verify** (below), then record the deployment.
+4. **Cloudflare Worker:** Workers & Pages → Create → *Import a repository* → GitHub →
+   `Aha43/FriendlyGames` (grant the Cloudflare GitHub app access to this private repository
+   under GitHub → Settings → Applications → Installed GitHub Apps → Configure; the repository
+   stays private). Worker name `friendlygames` (must match `wrangler.jsonc`), build command
+   `npm run build`, deploy command `npx wrangler deploy` (the default), build variables from
+   the table above. Under Settings → Build → Branch control the production branch is `main`.
+5. If the `workers.dev` address differs from the `SITE_ORIGIN` used in step 3, update it:
+   `supabase secrets set ALLOWED_ORIGINS=<site origin> --project-ref <ref>`.
+6. **Verify** (below), then record the deployment.
 
 ## Releasing a change
 
-Merging to `main` makes Cloudflare Pages build and publish the site automatically. Backend
+Merging to `main` makes Workers Builds build and publish the site automatically. Backend
 changes are deliberate:
 
 1. Keep migrations and API changes **backward compatible** with the site already live (add,
@@ -78,7 +83,7 @@ changes are deliberate:
 
 ```bash
 curl -fsS https://<ref>.supabase.co/functions/v1/game-api/health      # {"ok":true,"commit":"<sha>"}
-PLAYWRIGHT_BASE_URL=https://friendlygames.pages.dev \
+PLAYWRIGHT_BASE_URL=https://friendlygames.<subdomain>.workers.dev \
 FG_API_URL=https://<ref>.supabase.co/functions/v1/game-api \
 npm run e2e
 ```
@@ -91,7 +96,8 @@ history. The footer shows the site's build commit.
 
 ## Rollback
 
-- **Site:** Cloudflare Pages → Deployments → choose the previous deployment → *Rollback*.
+- **Site:** the Worker → Deployments → choose the previous version → *Rollback* (or
+  `npx wrangler rollback`).
 - **Function:** check out the previous good commit on a branch and run
   `supabase functions deploy game-api --project-ref <ref> --no-verify-jwt` (and
   `supabase secrets set GAME_API_COMMIT=<sha>`), then return to `main`.
