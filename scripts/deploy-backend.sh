@@ -15,6 +15,9 @@ git fetch -q origin main
 [ -f supabase/.temp/project-ref ] || { echo "Not linked: run 'supabase link --project-ref <ref>' first." >&2; exit 1; }
 
 ref=$(cat supabase/.temp/project-ref)
+# Production must reach the database through the pooler (docs/deployment.md, "Database connection").
+supabase secrets list --project-ref "$ref" | grep -q 'GAME_DB_POOLER_URL' || {
+  echo "Missing function secret GAME_DB_POOLER_URL: set it first (docs/deployment.md)." >&2; exit 1; }
 commit=$(git rev-parse HEAD)
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 echo "Deploying $commit to project $ref"
@@ -31,6 +34,6 @@ supabase functions deploy game-api --project-ref "$ref" --no-verify-jwt
 health=$(curl -fsS "https://$ref.supabase.co/functions/v1/game-api/health")
 echo "Health: $health"
 case "$health" in
-  *"\"commit\":\"$commit\""*) echo "Backend is live at $commit." ;;
-  *) echo "Health check does not report $commit." >&2; exit 1 ;;
+  *"\"commit\":\"$commit\""*'"pooled":true'*) echo "Backend is live at $commit, using the pooler." ;;
+  *) echo "Health check does not report $commit with the pooler." >&2; exit 1 ;;
 esac
