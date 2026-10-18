@@ -34,7 +34,8 @@ Nothing secret is in the repository.
 | `NODE_VERSION` | Worker build variables | `24` |
 | `ALLOWED_ORIGINS` | Supabase function secret (set by the deploy script) | the site origin, e.g. `https://friendlygames.<subdomain>.workers.dev` |
 | `GAME_API_COMMIT` | Supabase function secret (set by the deploy script) | deployed commit, reported by `GET /health` |
-| `SUPABASE_DB_URL` | provided by Supabase to functions | — |
+| `GAME_DB_POOLER_URL` | Supabase function secret, **set by the owner** (contains the database password) | the pooler in transaction mode: `postgresql://postgres.<ref>:<password>@aws-1-eu-central-1.pooler.supabase.com:6543/postgres` |
+| `SUPABASE_DB_URL` | provided by Supabase to functions | used only locally and in CI; production uses the pooler |
 | Database password | owner's password manager | set at project creation; `supabase link` asks for it |
 | Supabase access token | Supabase CLI login on the owner's machine (`supabase login`) | never in the repo or CI |
 | `GAME_API_HEALTH_URL` | GitHub → repository **variable** (optional) | `https://<ref>.supabase.co/functions/v1/game-api/health`; enables the daily keep-alive |
@@ -55,19 +56,26 @@ verifies; the owner performs or authorises each step.
    supabase login
    supabase link --project-ref <ref>
    ```
-3. **Backend deploy** from an up-to-date, clean `main`:
+3. **Database connection secret** (owner, in a terminal at the repository root). The command
+   asks for the database password without echoing it, URL-encodes it and keeps it out of the
+   shell history:
+   ```bash
+   PW=$(python3 -c 'import getpass, urllib.parse; print(urllib.parse.quote(getpass.getpass("Database password: "), safe=""))') && supabase secrets set "GAME_DB_POOLER_URL=postgresql://postgres.<ref>:${PW}@aws-1-eu-central-1.pooler.supabase.com:6543/postgres" --project-ref <ref>; unset PW
+   ```
+   Check the pooler host in the dashboard (Connect → Transaction pooler) if the region differs.
+4. **Backend deploy** from an up-to-date, clean `main`:
    ```bash
    SITE_ORIGIN=https://friendlygames.<subdomain>.workers.dev npm run deploy:backend
    ```
-4. **Cloudflare Worker:** Workers & Pages → Create → *Import a repository* → GitHub →
+5. **Cloudflare Worker:** Workers & Pages → Create → *Import a repository* → GitHub →
    `Aha43/FriendlyGames` (grant the Cloudflare GitHub app access to this private repository
    under GitHub → Settings → Applications → Installed GitHub Apps → Configure; the repository
    stays private). Worker name `friendlygames` (must match `wrangler.jsonc`), build command
    `npm run build`, deploy command `npx wrangler deploy` (the default), build variables from
    the table above. Under Settings → Build → Branch control the production branch is `main`.
-5. If the `workers.dev` address differs from the `SITE_ORIGIN` used in step 3, update it:
+6. If the `workers.dev` address differs from the `SITE_ORIGIN` used in step 3, update it:
    `supabase secrets set ALLOWED_ORIGINS=<site origin> --project-ref <ref>`.
-6. **Verify** (below), then record the deployment.
+7. **Verify** (below), then record the deployment.
 
 ## Releasing a change
 
@@ -93,6 +101,16 @@ contexts, create and join a game, exchange moves, refresh, recover from a lost r
 finish, rematch and read the history, on desktop and phone profiles. They create real rows
 in production, owned by those throwaway players; they never touch real players' games or
 history. The footer shows the site's build commit.
+
+## Database connection
+
+Edge Functions run as many short-lived instances. Connected directly, each instance opened its
+own Postgres connections, and under load the free database ran out of slots ("remaining
+connection slots are reserved for roles with the SUPERUSER attribute", during the first
+deployed test run). Production therefore connects through Supabase's pooler in transaction mode
+(`GAME_DB_POOLER_URL`), and each instance keeps at most 2 connections, closing them after 10 s
+idle. `GET /health` reports `"pooled": true` when the pooler is in use, and the deploy script
+refuses to deploy without the secret.
 
 ## Rollback
 

@@ -47,7 +47,8 @@ supabase stop
 - Tests can target another stack with `FG_API_URL` and `FG_DB_URL`.
 - After editing function code, if a change does not show up, restart the runtime:
   `docker restart supabase_edge_runtime_friendlygames`.
-- The function always connects with Supabase's `SUPABASE_DB_URL`. Locally its host is the
+- In production the function connects through the pooler secret `GAME_DB_POOLER_URL`
+  (docs/deployment.md, "Database connection"). Otherwise it connects with Supabase's `SUPABASE_DB_URL`. Locally its host is the
   container name `supabase_db_<project>`, which Deno's resolver rejects because of the
   underscores, so `databaseUrl.ts` swaps in the container's alias `db.supabase.internal`.
   Hosted URLs are used unchanged. (An earlier `GAME_DB_URL` in `config.toml` was uploaded
@@ -133,7 +134,7 @@ endpoints except `POST /players` need `X-Device-Credential`.
 
 | Method and path | Body | Success |
 |---|---|---|
-| `GET /health` | | `200 { ok: true, commit }` (no credential; checks the database) |
+| `GET /health` | | `200 { ok: true, commit, pooled }` (no credential; checks the database; `pooled` says whether the connection pooler is used) |
 | `POST /players` | `{ displayName, email }` | `201 { player: { id, displayName, email }, deviceCredential }` |
 | `GET /me` | | `200 { player: { id, displayName, email } }` |
 | `POST /games` | `{ friendEmail, requestId? }` | `201 { game, invitation: { token }, duplicate: false }`; a retry with the same `requestId` gets `200 { game, invitation, duplicate: true }` |

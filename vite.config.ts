@@ -6,8 +6,9 @@ import react from '@vitejs/plugin-react';
 
 // The commit being built: Cloudflare Workers Builds provides it; locally, ask git. Shown in the footer.
 function buildCommit(): string {
+  // Only a real hash: the first, manually started Workers build reported the branch name ("main").
   const provided = process.env.WORKERS_CI_COMMIT_SHA ?? process.env.CF_PAGES_COMMIT_SHA;
-  if (provided) return provided;
+  if (provided && /^[0-9a-f]{7,40}$/.test(provided)) return provided;
   try {
     return execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
   } catch {

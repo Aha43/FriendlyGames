@@ -54,6 +54,8 @@ export interface ApiConfig {
   allowedOrigins: string[] | null;
   /** The deployed commit, reported by GET /health. */
   commit: string | null;
+  /** Whether the database is reached through the connection pooler, reported by GET /health. */
+  pooled?: boolean;
 }
 
 function corsHeaders(request: Request, config: ApiConfig): Record<string, string> {
@@ -94,7 +96,7 @@ async function route(request: Request, sql: Sql, config: ApiConfig): Promise<Res
 
     if (route === 'GET /health') {
       await sql`select 1`;
-      return json(200, { ok: true, commit: config.commit });
+      return json(200, { ok: true, commit: config.commit, pooled: config.pooled ?? false });
     }
     if (route === 'POST /players') return json(201, await createPlayer(sql, await readBody(request)));
 
