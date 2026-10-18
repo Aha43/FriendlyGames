@@ -13,10 +13,30 @@
  */
 export function databaseConnection(env: { get(name: string): string | undefined }): { url: string; pooled: boolean } {
   const pooler = env.get('GAME_DB_POOLER_URL');
-  if (pooler) return { url: pooler, pooled: true };
+  if (pooler) return { url: transactionPooler(pooler), pooled: true };
   const provided = env.get('SUPABASE_DB_URL');
   if (!provided) throw new Error('SUPABASE_DB_URL is not set');
   return { url: databaseUrl(provided), pooled: false };
+}
+
+/**
+ * Accept only Supabase's transaction pooler (host *.pooler.supabase.com, port 6543). The session
+ * pooler and direct connections use port 5432 and would keep the connection exhaustion this
+ * secret exists to prevent. Errors never include the URL: it contains the database password.
+ */
+export function transactionPooler(value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('GAME_DB_POOLER_URL is not a valid URL.');
+  }
+  if (!['postgres:', 'postgresql:'].includes(url.protocol) || !url.hostname.endsWith('.pooler.supabase.com') || url.port !== '6543') {
+    throw new Error(
+      "GAME_DB_POOLER_URL must be Supabase's transaction pooler (postgresql://…@<region>.pooler.supabase.com:6543/postgres).",
+    );
+  }
+  return value;
 }
 
 export function databaseUrl(provided: string): string {

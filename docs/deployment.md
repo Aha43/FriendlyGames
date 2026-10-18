@@ -109,8 +109,10 @@ own Postgres connections, and under load the free database ran out of slots ("re
 connection slots are reserved for roles with the SUPERUSER attribute", during the first
 deployed test run). Production therefore connects through Supabase's pooler in transaction mode
 (`GAME_DB_POOLER_URL`), and each instance keeps at most 2 connections, closing them after 10 s
-idle. `GET /health` reports `"pooled": true` when the pooler is in use, and the deploy script
-refuses to deploy without the secret.
+idle. The function accepts only the transaction pooler (host `*.pooler.supabase.com`, port
+6543); a session-pooler or direct URL (port 5432) stops it at start-up with an error that does
+not repeat the URL. `GET /health` reports `"pooled": true` only for a validated pooler, and the
+deploy script refuses to deploy without the secret and requires that flag.
 
 ## Rollback
 
