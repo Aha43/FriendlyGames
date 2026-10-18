@@ -7,6 +7,9 @@ interface OnboardingProps {
   onDone: (identity: Identity) => void;
 }
 
+const EMAIL_TAKEN =
+  'A player already uses this email. Open FriendlyGames in the browser where you first created your player: your games are there. Entering your email here can’t sign you in.';
+
 export default function Onboarding({ invited, onDone }: OnboardingProps) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -27,11 +30,13 @@ export default function Onboarding({ invited, onDone }: OnboardingProps) {
       onDone(identity);
     } catch (e) {
       setError(
-        e instanceof NetworkError || (e instanceof ApiError && e.status >= 500)
-          ? 'Couldn’t reach the game server. Check your connection and try again.'
-          : e instanceof ApiError && e.status === 400
-            ? 'Please enter your name and a valid email address.'
-            : 'Something went wrong. Please try again.',
+        e instanceof ApiError && e.code === 'email_taken'
+          ? EMAIL_TAKEN
+          : e instanceof NetworkError || (e instanceof ApiError && e.status >= 500)
+            ? 'Couldn’t reach the game server. Check your connection and try again.'
+            : e instanceof ApiError && e.status === 400
+              ? 'Please enter your name and a valid email address.'
+              : 'Something went wrong. Please try again.',
       );
     } finally {
       setBusy(false);
@@ -41,7 +46,7 @@ export default function Onboarding({ invited, onDone }: OnboardingProps) {
   return (
     <section className="card onboarding" aria-labelledby="onboarding-title">
       <h2 id="onboarding-title">{invited ? 'You’re invited to a game' : 'Welcome to the park'}</h2>
-      <p>{invited ? 'First, tell us who you are. Then you’ll go straight to the table.' : 'Tell us who you are to play chess with a friend.'}</p>
+      <p>{invited ? 'First, create your player. Then you’ll go straight to the table.' : 'Create your player to play chess with a friend.'}</p>
 
       <form onSubmit={submit} className="form">
         <label>
@@ -59,25 +64,21 @@ export default function Onboarding({ invited, onDone }: OnboardingProps) {
             autoComplete="email"
           />
         </label>
+        <div className="notice-box" id="browser-access">
+          <p>
+            <strong>This creates your player in this browser.</strong> Your games are saved on our server, but for now
+            only this browser can open them. There’s no password and your email doesn’t sign you in; one email
+            belongs to one player.
+          </p>
+          <p>If this browser’s data is cleared, this player can’t be reached again.</p>
+        </div>
         <p className="form-error" role="alert">
           {error}
         </p>
-        <button type="submit" className="button button-primary" disabled={busy}>
-          {busy ? 'Setting the table…' : 'Continue'}
+        <button type="submit" className="button button-primary" disabled={busy} aria-describedby="browser-access">
+          {busy ? 'Creating your player…' : 'Create my player'}
         </button>
       </form>
-
-      <details className="fine-print">
-        <summary>How this device remembers you</summary>
-        <p>
-          There’s no password. This browser keeps a private key that identifies you to the game server. Your email
-          isn’t checked or shown to other players; it only helps friends invite you.
-        </p>
-        <p>
-          <strong>If this browser’s data is cleared, or you use another device, you start as a new player</strong> and
-          can’t get back to games played here. Typing the same email again doesn’t restore them.
-        </p>
-      </details>
     </section>
   );
 }

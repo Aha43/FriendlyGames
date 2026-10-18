@@ -12,7 +12,7 @@ async function move(page: Page, from: string, to: string) {
 async function onboard(page: Page, name: string, email: string) {
   await page.getByLabel('Your name').fill(name);
   await page.getByLabel('Your email').fill(email);
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Create my player' }).click();
 }
 
 // Seeing the other player's change takes one 4 s poll plus one server call, so the same
@@ -292,7 +292,7 @@ test('momentary server failures: safe requests are repeated, sign-up is left to 
   const arne = await context.newPage();
 
   // Sign-up answers 503 once. It cannot be deduplicated, so the app does not repeat it: the
-  // player is told and decides to press Continue again.
+  // player is told and decides to press Create my player again.
   let signUps = 0;
   arne.on('request', (request) => {
     if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/game-api/players')) signUps++;
@@ -302,7 +302,7 @@ test('momentary server failures: safe requests are repeated, sign-up is left to 
   await onboard(arne, 'Arne', `arne-${run}@example.test`);
   await expect(arne.getByText('Couldn’t reach the game server. Check your connection and try again.')).toBeVisible();
   expect(signUps).toBe(1);
-  await arne.getByRole('button', { name: 'Continue' }).click();
+  await arne.getByRole('button', { name: 'Create my player' }).click();
   await expect(arne.getByRole('heading', { name: 'Your games' })).toBeVisible();
   expect(signUps).toBe(2);
 
@@ -342,4 +342,54 @@ test('momentary server failures: safe requests are repeated, sign-up is left to 
   await arne.getByRole('button', { name: 'Play again (you take Black)' }).click();
   await openTable(arne);
   await expect(arne.getByRole('status')).toHaveText('Harald’s move');
+});
+
+test('one player per email: a second browser is told, gets nothing, and the first keeps playing', async ({ openContext }, testInfo) => {
+  const run = `${Date.now()}-${testInfo.project.name}`;
+  const email = `once-${run}@example.test`;
+  const first = await (await openContext('first')).newPage();
+  const second = await (await openContext('second')).newPage();
+
+  await first.goto('/');
+  await onboard(first, 'Arne', email);
+  await expect(first.getByRole('heading', { name: 'Your games' })).toBeVisible();
+
+  // The same person (or anyone) types the same email, differently cased, in another browser.
+  let signUps = 0;
+  second.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/game-api/players')) signUps++;
+  });
+  await second.goto('/');
+  await onboard(second, 'Arne again', `  ${email.toUpperCase()} `);
+  await expect(second.getByText(/A player already uses this email\. Open FriendlyGames in the browser where you first created your player/)).toBeVisible();
+  expect(signUps).toBe(1); // sign-up is never repeated automatically
+  await expect(second.getByRole('heading', { name: 'Your games' })).toHaveCount(0);
+  expect(await second.evaluate(() => localStorage.getItem('friendlygames.identity'))).toBeNull();
+
+  // The first browser is unaffected.
+  await first.reload();
+  await expect(first.getByRole('heading', { name: 'Your games' })).toBeVisible();
+  await expect(first.getByText('Arne', { exact: true })).toBeVisible();
+});
+
+test('an invited player whose email is taken is told so, and nothing claims they joined', async ({ openContext, api }, testInfo) => {
+  const run = `${Date.now()}-${testInfo.project.name}`;
+  const host = await api('POST', '/players', { data: { displayName: 'Host', email: `host-${run}@example.test` }, expect: 201 });
+  await api('POST', '/players', { data: { displayName: 'Guest', email: `guest-${run}@example.test` }, expect: 201 });
+  const created = await api('POST', '/games', {
+    credential: host.deviceCredential,
+    data: { friendEmail: `guest-${run}@example.test` },
+    expect: 201,
+  });
+
+  const page = await (await openContext('guest-elsewhere')).newPage();
+  await page.goto(`/#/join/${created.invitation.token}`);
+  await expect(page.getByRole('heading', { name: 'You’re invited to a game' })).toBeVisible();
+  await onboard(page, 'Guest', `guest-${run}@example.test`);
+  await expect(page.getByText(/A player already uses this email/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'You’re invited to a game' })).toBeVisible();
+  await expect(page.getByRole('grid', { name: 'Chess board' })).toHaveCount(0);
+
+  const game = await api('GET', `/games/${created.game.id}`, { credential: host.deviceCredential });
+  expect(game.game.status).toBe('waiting'); // the seat is still free
 });
