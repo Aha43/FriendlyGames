@@ -9,5 +9,9 @@
     // still get the app rather than a bare 404.
     "not_found_handling": "single-page-application"
   },
-  "preview_urls": true
+  "preview_urls": true,
+  // Required by `wrangler preview`, which Workers Builds runs for non-production branches. Empty:
+  // previews use the top-level settings. They cannot reach real games (the API's CORS allows
+  // only the production origin).
+  "previews": {}
 }
