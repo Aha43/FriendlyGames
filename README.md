@@ -20,11 +20,17 @@ Local play on one device remains available separately.
 - [Sprint 2 — Across the table from Harald](docs/sprint-02.md)
 - [Future park ideas](docs/future-ideas.md)
 - [Development workflow](docs/development.md)
+- [Version roadmap](docs/roadmap.md)
+- [Sprint 3 — Correct starts and repeatable development](docs/sprint-03.md)
+- [Changelog](CHANGELOG.md)
 - [Agent guidance](AGENTS.md)
 
 ## Getting started
 
 Requires Node.js 24 (see `.nvmrc`) and npm.
+
+Human Makefile commands are specified in [issue #32](https://github.com/Aha43/FriendlyGames/issues/32)
+and are not installed yet. Until that work merges, use the supported commands below.
 
 ```bash
 npm ci              # install exact dependencies from package-lock.json
