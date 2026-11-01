@@ -159,4 +159,26 @@ deploy script refuses to deploy without the secret and requires that flag.
 
 | Date (UTC) | Site commit | Backend commit | Notes |
 |---|---|---|---|
-| — | — | — | not yet deployed |
+| 2026-10-18 | `025ff34` | `025ff34` | First production deployment (#11). Site: `https://friendlygames.arne-halvorsen.workers.dev` (Worker `friendlygames`, built by Workers Builds from `main`). Backend: Supabase project `friendlygames` (ref `hxiwclhyxisoqpljrytw`, Central EU / Frankfurt, Free plan, keep-alive on), reached through the transaction pooler. |
+| 2026-11-01 | `7da615c` | `7da615c` | One player per email (#27, #28). Before the migration, two unused duplicate test players (`92fc3f7d`, `acd55ac5`) had their email detached after an owner-approved backup and review; no players, games or history were deleted. |
+| 2026-11-01 | `2f58dcd` | `2f58dcd` | Email entry from any browser (#29, #30): `player_credentials` migration; existing browsers kept working. Prototype: email ownership isn't checked. Owner verified existing browsers and email entry from a private window. |
+
+### First deployment: verification and limits (2026-10-18)
+
+- `GET /health` → `{"ok":true,"commit":"025ff34…","pooled":true}`; the site footer shows
+  `Build 025ff34`. CORS allows only the site origin.
+- Production database (dashboard SQL): RLS on for all six tables, no `select`/`insert` for
+  `anon` or `authenticated`, the archive trigger on `games`.
+- Browser journeys against the deployed site (`PLAYWRIGHT_BASE_URL`, `FG_API_URL`): 16/16,
+  twice, desktop and Pixel 7 profiles, with no 500s (177 successful calls: median 290 ms, max
+  1.1 s from Norway).
+- Found and fixed on the way: the local `GAME_DB_URL` uploaded by `supabase secrets set`
+  (#23); Pages replaced by a Worker (#24); database connection exhaustion under load, fixed
+  with the pooler (#25); the `previews` block for branch builds (#25).
+- Production contains throwaway test players (`…@example.test`, including `smoke-…`) and
+  their games from these runs. They do not appear in real players' lobbies or history.
+- Limits: Free plan (no point-in-time recovery; the deploy script's dumps in `backups/` are
+  the backup); identities were device-bound with no recovery (since 2026-11-01, email entry
+  reopens a player from any browser; docs/backend.md); no rate
+  limiting; `workers.dev` address only (no custom domain).
+- The milestone acceptance is the owner and Harald playing a real game on the deployed site.
