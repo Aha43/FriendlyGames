@@ -27,44 +27,46 @@ Local play on one device remains available separately.
 
 ## Getting started
 
-Requires Node.js 24 (see `.nvmrc`) and npm.
+Requires Node.js 24 (see `.nvmrc`) and npm; the local backend needs Docker and the
+[Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started).
+`make` lists every command; each one runs the npm/Supabase commands named beside it.
 
-Human Makefile commands are specified in [issue #32](https://github.com/Aha43/FriendlyGames/issues/32)
-and are not installed yet. Until that work merges, use the supported commands below.
+| Command | What it does | Runs |
+| --- | --- | --- |
+| `make setup` | Install exact dependencies | `npm ci` |
+| `make doctor` | Check Node 24, npm, Supabase CLI, Docker and the project link | |
+| `make up` / `make down` | Start / stop this project's local backend; `down` keeps local data | `supabase start` / `stop` |
+| `make dev` | App at http://localhost:5173 | `npm run dev` |
+| `make phone` | Same, reachable from a phone on your Wi-Fi | `npm run dev -- --host` |
+| `make check` | Lint, types, unit/component tests, build | `npm run check` |
+| `make test-backend` | Backend integration tests (needs `make up`) | `npm run test:backend` |
+| `make e2e` | Browser journeys, desktop and phone (needs `make up`) | `npm run e2e` |
+| `make verify` | `check`, `test-backend`, `e2e` in order, stopping at the first failure | |
+| `make build` / `make preview` | Production build / serve it locally | `npm run build` / `preview` |
+| `make version` | The checked-out version and commit (local, **not** what is deployed) | |
 
-```bash
-npm ci              # install exact dependencies from package-lock.json
-supabase start      # local game backend (needs Docker); see docs/backend.md
-npm run dev         # start the Vite dev server at http://localhost:5173
-npm run build       # production build into dist/
-npm run preview     # serve the production build locally
-```
+Production commands, run deliberately by the owner (docs/deployment.md):
 
-The app talks to the game API at `VITE_GAME_API_URL` (see `.env.example`). Unset, it uses
-the local stack on the same host as the page, so a phone on the same Wi-Fi works with
-`npm run dev -- --host`. Local play (`#/local`) needs no backend.
+| Command | What it does |
+| --- | --- |
+| `make prod-status` | Read-only: the live site, and the backend's deployed commit, database and pooler status |
+| `make backup` | Back up the production database into `backups/` (private, git-ignored); only complete dumps are kept |
+| `make deploy-backend` | Back up, apply migrations and deploy the function, from a clean, up-to-date `main` (`scripts/deploy-backend.sh`) |
+| `make prod-e2e` | Browser journeys against the live site; they create throwaway `@example.test` players |
+
+The npm scripts keep working directly. The app talks to the game API at
+`VITE_GAME_API_URL` (see `.env.example`). Unset, it uses the local stack on the same host
+as the page, which is how `make phone` works. Local play (`#/local`) needs no backend.
 
 ## Checks
 
-CI (`.github/workflows/ci.yml`) runs these on every pull request and push to main:
-
-```bash
-npm run lint        # ESLint
-npm run typecheck   # TypeScript, app and tooling configs
-npm run test        # Vitest unit/component tests (jsdom)
-npm run build       # production build
-```
-
-`npm run check` runs all four in order. `npm run test:watch` runs Vitest in watch mode.
+CI (`.github/workflows/ci.yml`) runs the same make commands on every pull request and push
+to main, in three jobs: `make check` (ESLint, TypeScript, Vitest including the Makefile's own
+tests, build), and `make up` followed by `make test-backend` or `make e2e` on a fresh local
+backend. `npm run test:watch` runs Vitest in watch mode.
 
 Browser journeys (Playwright, desktop and phone) build the app and run against
-`vite preview`; the shared-play journeys also need `supabase start`. CI runs them as
-a separate job:
-
-```bash
-npx playwright install chromium   # once per machine
-npm run e2e
-```
+`vite preview`; they need Chromium once per machine: `npx playwright install chromium`.
 
 ## Technical direction
 

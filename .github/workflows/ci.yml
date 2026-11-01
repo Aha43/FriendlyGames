@@ -18,11 +18,9 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm run test
-      - run: npm run build
+      - run: make setup
+      # Lint, types, unit/component (and Makefile) tests, build: the same command as locally.
+      - run: make check
 
   e2e:
     runs-on: ubuntu-latest
@@ -32,15 +30,15 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
+      - run: make setup
       - run: npx playwright install --with-deps chromium
       # Shared-play journeys run two browser contexts against a fresh local backend.
       - uses: supabase/setup-cli@v1
         with:
           version: 2.105.0
-      - run: supabase start
+      - run: make up
       # No report or trace upload: they would contain device credentials and invitation tokens.
-      - run: npm run e2e
+      - run: make e2e
 
   # Real-backend integration tests: a fresh local Supabase stack with the repository's
   # migrations applied and the game-api function served. No cloud project or secrets involved.
@@ -52,11 +50,11 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
+      - run: make setup
       - uses: supabase/setup-cli@v1
         with:
           version: 2.105.0
-      - run: supabase start
-      - run: npm run test:backend
+      - run: make up
+      - run: make test-backend
       - if: ${{ failure() }}
         run: docker logs supabase_edge_runtime_friendlygames 2>&1 | tail -100

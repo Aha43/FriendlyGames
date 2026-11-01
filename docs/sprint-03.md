@@ -41,10 +41,10 @@ creator move while waiting, on their own colour's turn. Colour choice is backlog
 
 ## Human commands
 
-The Makefile is **not installed by this planning PR**; [#32](https://github.com/Aha43/FriendlyGames/issues/32)
-implements it. Until then, the README's npm/Supabase commands remain supported.
+Implemented by [#32](https://github.com/Aha43/FriendlyGames/issues/32); the README has the
+full command table.
 
-| Need | Planned command |
+| Need | Command |
 | --- | --- |
 | Discover commands / prerequisites | `make help`, `make doctor` |
 | Install / start / stop local work | `make setup`, `make up`, `make down` |

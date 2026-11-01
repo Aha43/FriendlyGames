@@ -15,10 +15,10 @@ tests; Playwright covers desktop and phone. CI runs check, backend and browser
 jobs. Run relevant local checks and inspect visual changes. The app is already
 hosted on a Cloudflare Worker with a production Supabase project.
 
-The Makefile is planned in #32, not present yet: use documented npm/Supabase
-commands until it merges. Afterwards keep those scripts behind the human Makefile
-entry points and use the same checks as CI. Never run production-writing tests or
-a database reset as routine local verification.
+The Makefile (#32) is the human entry point and CI calls the same targets: `make check`,
+`make up`, `make test-backend`, `make e2e`, `make verify`. Keep npm scripts and `scripts/`
+behind it; never add a target that makes `verify` or the default reach production.
+Never run production-writing tests or a database reset as routine local verification.
 
 If this workspace cannot run real Supabase (for example blocked image registries),
 disclose it. Stand-in results are supplementary; current-head CI backend/e2e jobs
