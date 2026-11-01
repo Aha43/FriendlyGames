@@ -1016,3 +1016,18 @@ h2 {
 }
 
 .history-friend .game time { white-space: nowrap; }
+
+/* ---------- onboarding notice ---------- */
+
+.notice-box {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  background: #f3e7cf;
+  border: 1px solid var(--paper-edge);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+}
+
+.notice-box p { margin: 0; }
+.notice-box p + p { margin-top: 0.35rem; }
+.notice-box strong { color: var(--ink); }

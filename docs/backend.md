@@ -73,6 +73,40 @@ reached again. Typing the same email does **not** recover it; that would let any
 who knows an email take over a player. Recovery and moving an identity between devices
 are deferred beyond Sprint 2. The app must explain this limit plainly (#9).
 
+## One player per email
+
+Email identifies one player (#27): the database has a unique index on the normalised email
+(`lower(btrim(email))`, matching how the API stores it; no provider-specific rules). Signing up
+with an email that is taken returns `409 email_taken` ("A player already uses this email.")
+and creates nothing: the player row rolls back with the contact. The response says nothing
+about the existing player. Matching email never grants access; using a player from another
+browser needs a deliberate transfer flow (not built yet).
+
+The migration that adds the index (`20261018200000_unique_player_email.sql`) refuses to run
+while any email is shared, with a count but no emails, so nothing is dropped or merged
+silently. Reconcile existing duplicates first:
+
+1. **Preflight** (SQL editor; shows no emails):
+   ```sql
+   select dense_rank() over (order by lower(btrim(c.email))) as email_group,
+          left(p.id::text, 8) as player, p.created_at as signed_up,
+          (select count(*) from game_participants gp where gp.player_id = p.id) as games,
+          (select count(*) from game_actions a where a.player_id = p.id) as actions,
+          (select count(*) from games g where g.created_by = p.id) as created_games
+     from player_contacts c join players p on p.id = c.player_id
+    where lower(btrim(c.email)) in (
+            select lower(btrim(email)) from player_contacts group by 1 having count(*) > 1)
+    order by 1, p.created_at;
+   ```
+2. **Decide with the owner**, per group, which player is the person's real one, on evidence
+   such as which browser holds which player and which one has the games. Matching email
+   alone proves nothing.
+3. **Detach the email from the other player(s)** by deleting only their `player_contacts`
+   row, with guards: the player keeps its row (its browser still opens it), and the statement
+   refuses if that player has any games, actions or created games. Games, history and
+   participant rows are never deleted or merged.
+4. Run the preflight again (expect no rows), then deploy the migration.
+
 ## Games and invitations
 
 - Creating a game seats the creator as White and returns an **invitation token** once.

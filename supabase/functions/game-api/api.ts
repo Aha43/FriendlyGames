@@ -181,14 +181,24 @@ async function createPlayer(sql: Sql, body: Record<string, unknown>) {
   const deviceCredential = newSecret();
   const credentialHash = await hashHex(deviceCredential);
 
-  const player = await sql.begin(async (tx) => {
-    const [row] = await tx`
-      insert into players (display_name, credential_hash)
-      values (${displayName}, decode(${credentialHash}, 'hex'))
-      returning id`;
-    await tx`insert into player_contacts (player_id, email) values (${row.id}, ${email})`;
-    return { id: row.id as string, displayName, email };
-  });
+  let player;
+  try {
+    player = await sql.begin(async (tx) => {
+      const [row] = await tx`
+        insert into players (display_name, credential_hash)
+        values (${displayName}, decode(${credentialHash}, 'hex'))
+        returning id`;
+      await tx`insert into player_contacts (player_id, email) values (${row.id}, ${email})`;
+      return { id: row.id as string, displayName, email };
+    });
+  } catch (error) {
+    // The unique email index rejected the contact; the transaction rolled the player back too.
+    // Say only that the email is taken: nothing about the existing player.
+    if ((error as { constraint_name?: string }).constraint_name === 'player_contacts_email_unique') {
+      throw new ApiError(409, 'email_taken', 'A player already uses this email.');
+    }
+    throw error;
+  }
   // The credential is returned once and never stored in readable form.
   return { player, deviceCredential };
 }
@@ -202,12 +212,13 @@ async function authenticate(sql: Sql, request: Request): Promise<Player> {
   return { id: row.id, displayName: row.display_name };
 }
 
+/** The caller's own player. `email` is null if it was detached when reconciling duplicates (#27). */
 async function loadMe(sql: Sql, playerId: string) {
   const [row] = await sql`
     select p.id, p.display_name, c.email
-    from players p join player_contacts c on c.player_id = p.id
+    from players p left join player_contacts c on c.player_id = p.id
     where p.id = ${playerId}`;
-  return { id: row.id, displayName: row.display_name, email: row.email };
+  return { id: row.id, displayName: row.display_name, email: row.email ?? null };
 }
 
 // ---------- games ----------
