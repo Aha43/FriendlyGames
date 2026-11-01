@@ -42,23 +42,22 @@ milestones remain records rather than destinations for new work.
 
 ## Human commands and checks
 
-Issue #32 implements the Makefile; separate #36 adds the small PR tracking gate.
-Until the Makefile merges, use the working commands below:
+The Makefile (#32) is the human entry point; the README lists every command. `make`
+alone shows help. Each target delegates to an npm script or `scripts/`, and CI calls
+the same targets (`make check`, `make up`, `make test-backend`, `make e2e`), so local
+and CI logic cannot drift. Typical local loop:
 
 ```bash
-npm ci
-supabase start                # local backend; requires Docker
-npm run dev                  # add -- --host for a phone on the LAN
-npm run check                # lint, types, unit/component tests, production build
-npm run test:backend          # real local Supabase integration tests
-npm run e2e                   # desktop and phone against the local backend
-supabase stop                # preserve local data
+make setup && make up        # once, then whenever Docker was restarted
+make dev                     # or make phone
+make verify                  # check, backend and browser tests, stopping at the first failure
+make down                    # keeps local data
 ```
 
-The future default `make` is help only. `make verify` runs local checks
-sequentially; production backup/deploy/status/journeys have explicit separate
-targets. The full command contract is in #32 and [Sprint 3](sprint-03.md). Make
-will delegate to existing scripts: local and CI logic must not drift.
+`make verify` never touches production or resets a database. Production commands
+(`prod-status`, `backup`, `deploy-backend`, `prod-e2e`) are separate, named targets the
+owner runs deliberately. `tests/tooling/makefile.test.ts` runs the Makefile with stub
+tools to keep these properties. Separate #36 adds the small PR tracking gate.
 
 Keep existing check/backend/e2e CI jobs and meaningful assertions. Backend and
 browser jobs start fresh local Supabase stacks in CI, never production. Add a

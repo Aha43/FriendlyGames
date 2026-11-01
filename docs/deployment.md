@@ -65,7 +65,7 @@ verifies; the owner performs or authorises each step.
    Check the pooler host in the dashboard (Connect → Transaction pooler) if the region differs.
 4. **Backend deploy** from an up-to-date, clean `main`:
    ```bash
-   SITE_ORIGIN=https://friendlygames.<subdomain>.workers.dev npm run deploy:backend
+   make deploy-backend   # site origin defaults to the live site; SITE_ORIGIN=… make deploy-backend overrides
    ```
 5. **Cloudflare Worker:** Workers & Pages → Create → *Import a repository* → GitHub →
    `Aha43/FriendlyGames` (grant the Cloudflare GitHub app access to this private repository
@@ -84,7 +84,7 @@ changes are deliberate:
 
 1. Keep migrations and API changes **backward compatible** with the site already live (add,
    don't rename or remove in the same step), because the site and backend deploy separately.
-2. After merging a PR that touches `supabase/`, run `npm run deploy:backend` from `main`.
+2. After merging a PR that touches `supabase/`, run `make deploy-backend` from `main`.
 3. Run the smoke check and the deployed journeys (below).
 
 ### Email entry (#29): order and rollback
@@ -94,7 +94,7 @@ table filled with every existing credential hash, and a trigger that copies the 
 any player the previous function version creates. `players.credential_hash` stays. So every
 browser keeps working through the release, whichever versions are serving.
 
-1. Merge the PR: the site deploys by itself. Run `npm run deploy:backend` from `main` right
+1. Merge the PR: the site deploys by itself. Run `make deploy-backend` from `main` right
    away. Until it finishes (a few minutes), a browser that has no player yet can't get past
    the email step (the old backend requires a name); browsers that remember a player are
    unaffected. The old site against the new backend works as before.
@@ -109,11 +109,13 @@ migration in place (forward-only; harmless to the old version).
 ## Verifying a deployment
 
 ```bash
-curl -fsS https://<ref>.supabase.co/functions/v1/game-api/health      # {"ok":true,"commit":"<sha>"}
-PLAYWRIGHT_BASE_URL=https://friendlygames.<subdomain>.workers.dev \
-FG_API_URL=https://<ref>.supabase.co/functions/v1/game-api \
-npm run e2e
+make prod-status     # live site, and the backend's deployed commit, database and pooler status
+make prod-e2e        # the browser journeys against the live site (writes test players)
 ```
+
+`make prod-status` is read-only; it also prints your local commit separately, for
+comparison. Both take the API address from the linked project (`supabase/.temp/project-ref`);
+set `FG_API_URL` / `SITE_ORIGIN` to override.
 
 The journeys onboard fresh test players (emails `…@example.test`) in two independent browser
 contexts, create and join a game, exchange moves, refresh, recover from a lost response,

@@ -19,13 +19,10 @@ ref=$(cat supabase/.temp/project-ref)
 supabase secrets list --project-ref "$ref" | grep -q 'GAME_DB_POOLER_URL' || {
   echo "Missing function secret GAME_DB_POOLER_URL: set it first (docs/deployment.md)." >&2; exit 1; }
 commit=$(git rev-parse HEAD)
-stamp=$(date -u +%Y%m%dT%H%M%SZ)
 echo "Deploying $commit to project $ref"
 
-# Backups stay on this machine (backups/ is git-ignored): they contain players' private emails.
-mkdir -p backups
-supabase db dump --linked -f "backups/$stamp-schema.sql"
-supabase db dump --linked --data-only -f "backups/$stamp-data.sql"
+# Back up first; stops the deploy if the backup isn't complete (scripts/backup-production.sh).
+scripts/backup-production.sh
 
 supabase db push --linked
 supabase secrets set --project-ref "$ref" ALLOWED_ORIGINS="$SITE_ORIGIN" GAME_API_COMMIT="$commit"

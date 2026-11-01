@@ -14,6 +14,8 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ### Development
 
+- `make` commands for local work, checks, backups, deploying the backend and production
+  status; CI runs the same commands. Backups now keep only complete dumps (#32).
 - Define versioned milestones, ordered sprints, issue/PR tracking and the human
   command contract for Claude's Makefile implementation (#31).
 
