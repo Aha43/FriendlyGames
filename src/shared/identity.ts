@@ -1,5 +1,5 @@
-// The player's identity on this device. The credential is the only key to their games:
-// there is no password and no recovery (docs/backend.md, "Losing the credential").
+// The player remembered in this browser. Entering the player's email gives each browser its own
+// credential (prototype email entry, docs/backend.md); this one is what the browser sends.
 
 export interface Identity {
   playerId: string;

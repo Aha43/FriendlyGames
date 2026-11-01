@@ -54,21 +54,24 @@ afterEach(() => {
 });
 
 describe('onboarding', () => {
-  it('creates a player, remembers the device and opens the lobby', async () => {
+  const ENTERED = {
+    player: { id: 'p-arne', displayName: 'Arne', email: 'arne@example.test' },
+    deviceCredential: CREDENTIAL,
+    created: false,
+  };
+
+  it('opens an existing player from their email alone, keeping their name', async () => {
     const user = userEvent.setup();
-    const create = vi.spyOn(gameApi, 'createPlayer').mockResolvedValue({
-      player: { id: 'p-arne', displayName: 'Arne', email: 'arne@example.test' },
-      deviceCredential: CREDENTIAL,
-    });
+    const enter = vi.spyOn(gameApi, 'enterPlayer').mockResolvedValue(ENTERED);
     vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
     render(<App />);
 
     expect(screen.getByRole('heading', { name: 'Welcome to the park' })).toBeInTheDocument();
-    await user.type(screen.getByLabelText('Your name'), 'Arne');
-    await user.type(screen.getByLabelText('Your email'), 'arne@example.test');
-    await user.click(screen.getByRole('button', { name: 'Create my player' }));
+    expect(screen.queryByLabelText('Your name')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Your email'), ' arne@example.test ');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
 
-    expect(create).toHaveBeenCalledWith('Arne', 'arne@example.test');
+    expect(enter).toHaveBeenCalledWith('arne@example.test', undefined);
     expect(await screen.findByRole('heading', { name: 'Your games' })).toBeInTheDocument();
     expect(JSON.parse(localStorage.getItem('friendlygames.identity')!)).toEqual({
       playerId: 'p-arne',
@@ -77,47 +80,77 @@ describe('onboarding', () => {
     });
   });
 
-  it('explains that the identity lives on this device only', () => {
+  it('asks a new email for a name, then creates the player', async () => {
+    const user = userEvent.setup();
+    const enter = vi
+      .spyOn(gameApi, 'enterPlayer')
+      .mockRejectedValueOnce(new ApiError(404, 'player_not_found', 'new'))
+      .mockResolvedValueOnce({ ...ENTERED, created: true });
+    vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+    render(<App />);
+    await user.type(screen.getByLabelText('Your email'), 'arne@example.test');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByText(/This email is new here, so you’ll get a new player/)).toBeVisible();
+    await user.type(screen.getByLabelText('Your name'), 'Arne');
+    await user.click(screen.getByRole('button', { name: 'Create my player' }));
+    expect(enter).toHaveBeenLastCalledWith('arne@example.test', 'Arne');
+    expect(await screen.findByRole('heading', { name: 'Your games' })).toBeInTheDocument();
+  });
+
+  it('goes back to email-only when the email is changed after asking for a name', async () => {
+    const user = userEvent.setup();
+    const enter = vi
+      .spyOn(gameApi, 'enterPlayer')
+      .mockRejectedValueOnce(new ApiError(404, 'player_not_found', 'new'))
+      .mockResolvedValueOnce(ENTERED);
+    vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+    render(<App />);
+    await user.type(screen.getByLabelText('Your email'), 'arne@exampel.test');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await screen.findByLabelText('Your name');
+
+    await user.clear(screen.getByLabelText('Your email'));
+    await user.type(screen.getByLabelText('Your email'), 'arne@example.test');
+    expect(screen.queryByLabelText('Your name')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(enter).toHaveBeenLastCalledWith('arne@example.test', undefined);
+  });
+
+  it('says plainly that this is email-only prototype access', () => {
     render(<App />);
     // Visible before submitting, not hidden behind a disclosure.
-    expect(screen.getByText(/This creates your player in this browser\./)).toBeVisible();
-    expect(screen.getByText(/only this browser can open them/)).toBeVisible();
-    expect(screen.getByText(/your email doesn’t sign you in; one email belongs to one player/)).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Create my player' })).toHaveAccessibleDescription(/This creates your player in this browser/);
+    const notice = screen.getByText(/Prototype: enter your email to open your games\. Email ownership isn’t checked yet/);
+    expect(notice).toBeVisible();
+    expect(notice).toHaveTextContent('anyone who knows your email can play as you');
+    expect(screen.getByRole('button', { name: 'Continue' })).toHaveAccessibleDescription(/Email ownership isn’t checked yet/);
+    expect(screen.queryByText(/only this browser can open them|doesn’t sign you in/)).not.toBeInTheDocument();
   });
 
-  it('explains an email that already belongs to a player, without saving anything', async () => {
+  it('keeps the form and saves nothing when the server can’t be reached', async () => {
     const user = userEvent.setup();
-    const create = vi.spyOn(gameApi, 'createPlayer').mockRejectedValue(
-      new ApiError(409, 'email_taken', 'A player already uses this email.'),
-    );
+    vi.spyOn(gameApi, 'enterPlayer').mockRejectedValue(new NetworkError('down'));
     render(<App />);
-    await user.type(screen.getByLabelText('Your name'), 'Arne');
     await user.type(screen.getByLabelText('Your email'), 'arne@example.test');
-    await user.click(screen.getByRole('button', { name: 'Create my player' }));
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'A player already uses this email. Open FriendlyGames in the browser where you first created your player: your games are there. Entering your email here can’t sign you in.',
-    );
-    expect(screen.getByRole('alert')).not.toHaveTextContent(/different email|another email/i);
-    expect(create).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t reach the game server.');
     expect(localStorage.getItem('friendlygames.identity')).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Welcome to the park' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Your email')).toHaveValue('arne@example.test');
   });
 
-  it('keeps an invited player on the invitation when their email is taken', async () => {
+  it('takes an invited player who already has a player straight to the table', async () => {
     const user = userEvent.setup();
     window.location.hash = `#/join/${TOKEN}`;
-    vi.spyOn(gameApi, 'createPlayer').mockRejectedValue(new ApiError(409, 'email_taken', 'taken'));
-    const redeem = vi.spyOn(gameApi, 'redeemInvitation');
+    vi.spyOn(gameApi, 'enterPlayer').mockResolvedValue(ENTERED);
+    const redeem = vi.spyOn(gameApi, 'redeemInvitation').mockResolvedValue({ game: game() });
+    vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: game() });
     render(<App />);
-    await user.type(screen.getByLabelText('Your name'), 'Øystein');
-    await user.type(screen.getByLabelText('Your email'), 'oystein@example.test');
-    await user.click(screen.getByRole('button', { name: 'Create my player' }));
-    expect(await screen.findByText(/A player already uses this email/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'You’re invited to a game' })).toBeInTheDocument();
-    expect(redeem).not.toHaveBeenCalled();
-    expect(window.location.hash).toBe(`#/join/${TOKEN}`);
+    await user.type(screen.getByLabelText('Your email'), 'arne@example.test');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('region', { name: /Chess:/ })).toBeInTheDocument();
+    expect(redeem).toHaveBeenCalledWith(CREDENTIAL, TOKEN);
+    expect(window.location.hash).toBe(`#/game/${GAME_ID}`);
   });
 
   it('asks an invited player to introduce themselves first', () => {
@@ -290,14 +323,14 @@ describe('joining', () => {
 });
 
 describe('identity', () => {
-  it('offers a fresh start when the server no longer knows this device', async () => {
+  it('asks for the email again when the server no longer knows this browser', async () => {
     const user = userEvent.setup();
     signIn();
     vi.spyOn(gameApi, 'history').mockRejectedValue(new ApiError(401, 'unauthenticated', 'no'));
     vi.spyOn(gameApi, 'listGames').mockRejectedValue(new ApiError(401, 'unauthenticated', 'no'));
     render(<App />);
-    expect(await screen.findByRole('heading', { name: 'We don’t recognise this device any more' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Start as a new player' }));
+    expect(await screen.findByRole('heading', { name: 'We don’t recognise this browser any more' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Enter my email' }));
     expect(screen.getByRole('heading', { name: 'Welcome to the park' })).toBeInTheDocument();
     expect(localStorage.getItem('friendlygames.identity')).toBeNull();
   });

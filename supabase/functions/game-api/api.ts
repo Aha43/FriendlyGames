@@ -98,7 +98,10 @@ async function route(request: Request, sql: Sql, config: ApiConfig): Promise<Res
       await sql`select 1`;
       return json(200, { ok: true, commit: config.commit, pooled: config.pooled ?? false });
     }
-    if (route === 'POST /players') return json(201, await createPlayer(sql, await readBody(request)));
+    if (route === 'POST /players') {
+      const { status, body } = await enterPlayer(sql, await readBody(request));
+      return json(status, body);
+    }
 
     const player = await authenticate(sql, request);
     if (route === 'GET /me') return json(200, { player: await loadMe(sql, player.id) });
@@ -175,39 +178,73 @@ async function hashHex(secret: string): Promise<string> {
 
 // ---------- players ----------
 
-async function createPlayer(sql: Sql, body: Record<string, unknown>) {
-  const displayName = requireText(body, 'displayName', 40);
+/**
+ * Email entry (#29, prototype): an email that belongs to a player opens that same player in this
+ * browser; a new email creates one player, which needs a display name. Email ownership is NOT
+ * checked: knowing the email is enough. Each call issues a fresh credential for this browser only;
+ * the player's other browsers keep theirs. Repeating a call (e.g. after a lost response) is safe:
+ * it reaches the same player again.
+ */
+async function enterPlayer(sql: Sql, body: Record<string, unknown>) {
   const email = requireEmail(body, 'email');
+  const displayName = body.displayName === undefined || body.displayName === null ? null : requireText(body, 'displayName', 40);
   const deviceCredential = newSecret();
   const credentialHash = await hashHex(deviceCredential);
 
-  let player;
-  try {
-    player = await sql.begin(async (tx) => {
-      const [row] = await tx`
-        insert into players (display_name, credential_hash)
-        values (${displayName}, decode(${credentialHash}, 'hex'))
-        returning id`;
-      await tx`insert into player_contacts (player_id, email) values (${row.id}, ${email})`;
-      return { id: row.id as string, displayName, email };
-    });
-  } catch (error) {
-    // The unique email index rejected the contact; the transaction rolled the player back too.
-    // Say only that the email is taken: nothing about the existing player.
-    if ((error as { constraint_name?: string }).constraint_name === 'player_contacts_email_unique') {
-      throw new ApiError(409, 'email_taken', 'A player already uses this email.');
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const existing = await addCredentialFor(sql, email, credentialHash);
+    // An existing player keeps their own name, whatever this browser typed.
+    if (existing) return { status: 200, body: { player: existing, deviceCredential, created: false } };
+    if (displayName === null) {
+      throw new ApiError(404, 'player_not_found', 'No player uses this email yet. Choose a name to create one.');
     }
-    throw error;
+    try {
+      const player = await sql.begin(async (tx) => {
+        const [row] = await tx`
+          insert into players (display_name, credential_hash)
+          values (${displayName}, decode(${credentialHash}, 'hex'))
+          returning id`;
+        await tx`
+          insert into player_credentials (credential_hash, player_id)
+          values (decode(${credentialHash}, 'hex'), ${row.id})
+          on conflict (credential_hash) do nothing`;
+        await tx`insert into player_contacts (player_id, email) values (${row.id}, ${email})`;
+        return { id: row.id as string, displayName, email };
+      });
+      // The credential is returned once and never stored in readable form.
+      return { status: 201, body: { player, deviceCredential, created: true } };
+    } catch (error) {
+      // Someone entered the same new email at the same moment and won: the whole transaction
+      // (player, credential, contact) rolled back, so join the winner's player instead.
+      if ((error as { constraint_name?: string }).constraint_name !== 'player_contacts_email_unique') throw error;
+    }
   }
-  // The credential is returned once and never stored in readable form.
-  return { player, deviceCredential };
+  throw new ApiError(503, 'try_again', 'Please try again.');
+}
+
+/** Gives the player with this email one more device credential; null if no player has the email. */
+async function addCredentialFor(sql: Sql, email: string, credentialHash: string) {
+  const [row] = await sql`
+    with target as (
+      select p.id, p.display_name, c.email
+        from player_contacts c join players p on p.id = c.player_id
+       where lower(btrim(c.email)) = ${email}
+    ), issued as (
+      insert into player_credentials (credential_hash, player_id)
+      select decode(${credentialHash}, 'hex'), id from target
+      returning player_id
+    )
+    select t.id, t.display_name, t.email from target t join issued i on i.player_id = t.id`;
+  return row ? { id: row.id as string, displayName: row.display_name as string, email: row.email as string } : null;
 }
 
 async function authenticate(sql: Sql, request: Request): Promise<Player> {
   const credential = request.headers.get('x-device-credential') ?? '';
   if (!SECRET.test(credential)) throw new ApiError(401, 'unauthenticated', 'A valid device credential is required.');
   const [row] = await sql`
-    select id, display_name from players where credential_hash = decode(${await hashHex(credential)}, 'hex')`;
+    select p.id, p.display_name
+      from player_credentials c join players p on p.id = c.player_id
+     where c.credential_hash = decode(${await hashHex(credential)}, 'hex')`;
   if (!row) throw new ApiError(401, 'unauthenticated', 'A valid device credential is required.');
   return { id: row.id, displayName: row.display_name };
 }

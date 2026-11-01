@@ -87,6 +87,25 @@ changes are deliberate:
 2. After merging a PR that touches `supabase/`, run `npm run deploy:backend` from `main`.
 3. Run the smoke check and the deployed journeys (below).
 
+### Email entry (#29): order and rollback
+
+The migration (`20261101120000_player_credentials.sql`) only adds: a `player_credentials`
+table filled with every existing credential hash, and a trigger that copies the credential of
+any player the previous function version creates. `players.credential_hash` stays. So every
+browser keeps working through the release, whichever versions are serving.
+
+1. Merge the PR: the site deploys by itself. Run `npm run deploy:backend` from `main` right
+   away. Until it finishes (a few minutes), a browser that has no player yet can't get past
+   the email step (the old backend requires a name); browsers that remember a player are
+   unaffected. The old site against the new backend works as before.
+2. Verify: `/health` reports the new commit; an existing browser still opens its games;
+   entering the same email in a private window opens the same player.
+
+Rollback: roll back the site **and** the function together. The old function authenticates
+with `players.credential_hash`, so each player's first browser keeps working; browsers added
+by email entry stop working until the new version is redeployed. Leave the
+migration in place (forward-only; harmless to the old version).
+
 ## Verifying a deployment
 
 ```bash
@@ -132,8 +151,9 @@ deploy script refuses to deploy without the secret and requires that flag.
   `GAME_API_HEALTH_URL` is set; the deploy script's dumps are the backup. Check the free
   plan's active-project limit against the owner's existing projects (NamWeb).
 - **Pro plan** (paid) removes pausing and adds daily backups.
-- No rate limiting; invitation links and device credentials are the only protection
-  (docs/backend.md). Fine for a friends-only prototype.
+- No rate limiting, and email entry trusts whoever types an email (prototype decision #29,
+  docs/backend.md): anyone with the site address and a player's email can play as them.
+  Fine for a friends-only prototype; don't share the address widely.
 
 ## Deployed versions
 

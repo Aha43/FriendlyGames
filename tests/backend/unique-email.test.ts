@@ -1,4 +1,5 @@
-// One player per email (#27), against the real local backend.
+// One player per email (#27): reconciling legacy duplicates, against the real local backend.
+// Entering an email that is already used is covered in email-entry.test.ts (#29).
 import { readFileSync } from 'node:fs';
 import { afterAll, describe, expect, it } from 'vitest';
 import { call, db, newPlayer, startGame } from './client';
@@ -10,67 +11,6 @@ let counter = 0;
 const unique = () => `${Date.now()}-${process.pid}-${counter++}`;
 
 const signUp = (displayName: string, email: string) => call('POST', '/players', { body: { displayName, email } });
-
-async function rowsFor(displayName: string, email: string) {
-  const [players] = await sql`select count(*)::int as n from players where display_name = ${displayName}`;
-  const [contacts] = await sql`select count(*)::int as n from player_contacts where lower(btrim(email)) = lower(btrim(${email}))`;
-  return { players: players.n, contacts: contacts.n };
-}
-
-describe('one player per email', () => {
-  it('refuses a second player for the same email, creating nothing and revealing nothing', async () => {
-    const run = unique();
-    const email = `dup-${run}@example.test`;
-    const first = await signUp(`First-${run}`, email);
-    expect(first.status).toBe(201);
-
-    const second = await signUp(`Second-${run}`, email);
-    expect(second.status).toBe(409);
-    expect(second.body).toEqual({ error: { code: 'email_taken', message: 'A player already uses this email.' } });
-    const leaked = JSON.stringify(second.body);
-    expect(leaked).not.toContain(first.body.player.id);
-    expect(leaked).not.toContain(`First-${run}`);
-    expect(leaked).not.toContain(first.body.deviceCredential);
-
-    // The losing attempt left no player (rolled back with its contact) and no contact.
-    expect(await rowsFor(`Second-${run}`, email)).toEqual({ players: 0, contacts: 1 });
-    expect(await rowsFor(`First-${run}`, email)).toEqual({ players: 1, contacts: 1 });
-  });
-
-  it('treats case and surrounding whitespace as the same email', async () => {
-    const run = unique();
-    expect((await signUp(`A-${run}`, `case-${run}@example.test`)).status).toBe(201);
-    for (const variant of [`CASE-${run}@Example.TEST`, `  case-${run}@example.test  `, `\tCase-${run}@EXAMPLE.test`]) {
-      const attempt = await signUp(`B-${run}`, variant);
-      expect(attempt.status).toBe(409);
-      expect(attempt.body.error.code).toBe('email_taken');
-    }
-    expect(await rowsFor(`B-${run}`, `case-${run}@example.test`)).toEqual({ players: 0, contacts: 1 });
-  });
-
-  it('lets exactly one of several simultaneous sign-ups win', async () => {
-    const run = unique();
-    const email = `race-${run}@example.test`;
-    const results = await Promise.all([1, 2, 3, 4, 5].map((i) => signUp(`Racer-${run}`, i % 2 ? email : email.toUpperCase())));
-    expect(results.map((r) => r.status).sort()).toEqual([201, 409, 409, 409, 409]);
-    expect(await rowsFor(`Racer-${run}`, email)).toEqual({ players: 1, contacts: 1 });
-  });
-
-  it('gives the second browser no access, and the original player keeps everything', async () => {
-    const original = await newPlayer('Original');
-    const friend = await newPlayer('Friend');
-    const { game } = await startGame(original, friend);
-
-    const intruder = await signUp('Intruder', original.email);
-    expect(intruder.status).toBe(409);
-    expect(intruder.body.deviceCredential).toBeUndefined();
-
-    const me = await call('GET', '/me', { credential: original.credential });
-    expect(me.body.player).toEqual({ id: original.id, displayName: 'Original', email: original.email });
-    const games = await call('GET', '/games', { credential: original.credential });
-    expect(games.body.games.map((g: { id: string }) => g.id)).toContain(game.id);
-  });
-});
 
 describe('a player whose email was detached (reconciling duplicates)', () => {
   it('keeps working, and the email can be used by someone else', async () => {
@@ -87,6 +27,13 @@ describe('a player whose email was detached (reconciling duplicates)', () => {
 
     const real = await signUp('Real owner', tester.email);
     expect(real.status).toBe(201);
+    expect(real.body.player.id).not.toBe(tester.id);
+
+    // Entering that email now opens the real owner, never the detached tester (no reattaching).
+    const again = await call('POST', '/players', { body: { email: tester.email } });
+    expect(again.body.player.id).toBe(real.body.player.id);
+    const testerMe = await call('GET', '/me', { credential: tester.credential });
+    expect(testerMe.body.player).toEqual({ id: tester.id, displayName: 'Tester', email: null });
   });
 });
 
