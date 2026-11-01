@@ -564,7 +564,7 @@ async function submitAction(sql: Sql, player: Player, gameId: string, body: Reco
   return await sql.begin(async (tx) => {
     // The row lock serialises actions on one game; the revision check rejects stale clients.
     const [game] = await tx`
-      select g.status, g.revision, g.payload, me.seat
+      select g.status, g.revision, g.payload, g.created_by, me.seat
         from games g
         join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
        where g.id = ${gameId}
@@ -586,7 +586,12 @@ async function submitAction(sql: Sql, player: Player, gameId: string, body: Reco
         game: await loadView(tx, player.id, gameId),
       });
     }
-    if (game.status === 'waiting') throw new ApiError(409, 'not_started', 'Waiting for your friend to join.');
+    // While waiting for the friend (#33), only the creator may act, and only by moving on their
+    // own colour's turn (the turn check below): White's opening, as the creator plays White.
+    // Resigning a game nobody has joined is not possible.
+    if (game.status === 'waiting' && (action.type === 'resign' || game.created_by !== player.id)) {
+      throw new ApiError(409, 'not_started', 'Waiting for your friend to join.');
+    }
     if (game.status === 'finished') throw new ApiError(409, 'game_finished', 'This game is over.');
 
     const seat = game.seat as Seat;
@@ -610,7 +615,7 @@ async function submitAction(sql: Sql, player: Player, gameId: string, body: Reco
       update games
          set payload = ${tx.json({ initialFen: record.initialFen, moves: record.moves })},
              revision = ${revision},
-             status = ${outcome ? 'finished' : 'active'},
+             status = ${outcome ? 'finished' : game.status},
              result = ${outcome?.result ?? null},
              termination = ${outcome?.termination ?? null},
              updated_at = now()

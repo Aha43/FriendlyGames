@@ -79,7 +79,8 @@ test('two players create, join, play, refresh, recover from a failed send and re
   expect(link).toMatch(/#\/join\/[A-Za-z0-9_-]{43}$/);
   await expect(arne.getByRole('list', { name: 'Games in progress' }).getByRole('link')).toHaveCount(1);
   await arne.getByRole('link', { name: 'Go to the table' }).click();
-  await expect(arne.getByRole('status')).toHaveText('Waiting for your friend to join');
+  // Arne could open now (#33), but this journey has Harald join first: White still starts.
+  await expect(arne.getByRole('status')).toHaveText('Your move. Your friend can join at any time');
 
   // Harald opens the link on his own device, introduces himself and lands at the table as Black.
   await harald.goto(link);
@@ -445,4 +446,49 @@ test('an invited player who already has a player joins as that player from anoth
     white: { id: host.player.id, displayName: 'Host' },
     black: { id: guest.player.id, displayName: 'Guest' },
   });
+});
+
+test('the creator opens while waiting; the friend joins later and replies (#33)', async ({ openContext }, testInfo) => {
+  test.slow();
+  const run = `${Date.now()}-${testInfo.project.name}`;
+  const arne = await (await openContext('arne')).newPage();
+  const harald = await (await openContext('harald')).newPage();
+
+  // Arne creates the game and goes to the table before Harald has joined.
+  await arne.goto('/');
+  await onboard(arne, 'Arne', `arne-${run}@example.test`);
+  await arne.getByLabel('Friend’s email').fill(`harald-${run}@example.test`);
+  await arne.getByRole('button', { name: 'Create game' }).click();
+  const link = await arne.getByLabel('Invitation link', { exact: true }).inputValue();
+  await arne.getByRole('link', { name: 'Go to the table' }).click();
+  await expect(arne.getByRole('status')).toHaveText('Your move. Your friend can join at any time');
+
+  // He plays the opening; it is saved and the game keeps waiting for Harald.
+  await move(arne, 'e2', 'e4');
+  await expect(arne.getByRole('status')).toHaveText('Your move is saved. Waiting for your friend to join');
+  await expect(square(arne, 'e4')).toHaveAccessibleName('e4, white pawn');
+
+  // After a refresh: same position, still waiting, the invitation still offered, no second move.
+  await arne.reload();
+  await openTable(arne);
+  await expect(arne.getByRole('status')).toHaveText('Your move is saved. Waiting for your friend to join');
+  await expect(square(arne, 'e4')).toHaveAccessibleName('e4, white pawn');
+  await expect(arne.getByLabel('Invitation link', { exact: true })).toHaveValue(link);
+  await square(arne, 'd2').click();
+  await expect(arne.getByText('Your move is saved. Waiting for your friend to join.')).toBeVisible();
+  await expect(arne.getByRole('button', { name: 'Resign…' })).toHaveCount(0);
+
+  // Harald joins with the same link, finds the opening and that it is his move.
+  await harald.goto(link);
+  await onboard(harald, 'Harald', `harald-${run}@example.test`);
+  await openTable(harald);
+  await expect(harald.getByRole('status')).toHaveText('Your move');
+  await expect(square(harald, 'e4')).toHaveAccessibleName('e4, white pawn');
+  await expect(harald.getByRole('list', { name: 'Moves' })).toContainText('e4');
+
+  // He replies; Arne sees it and it is White's move again.
+  await move(harald, 'e7', 'e5');
+  await expect(harald.getByRole('status')).toHaveText('Arne’s move');
+  await expect(square(arne, 'e5')).toHaveAccessibleName('e5, black pawn', SYNC);
+  await expect(arne.getByRole('status')).toHaveText('Your move');
 });

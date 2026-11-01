@@ -136,6 +136,10 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
         if (e instanceof ApiError && e.code === 'stale_revision' && e.game) {
           accept(e.game);
           setNotice('The game changed before your move was saved. Here’s the latest position.');
+        } else if (e instanceof ApiError && e.code === 'not_started') {
+          // A game server without #33 refuses opening moves before the friend joins.
+          setNotice('Your move wasn’t saved: the game server can’t take an opening move before your friend joins yet. Try again in a few minutes.');
+          refresh();
         } else {
           setNotice(e instanceof ApiError ? e.message : 'That didn’t work.');
           refresh();
@@ -195,22 +199,24 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
   const me = game.yourSeat;
   const them = other(me);
   const opponent = opponentName(game);
-  const myTurn = game.status === 'active' && game.chess.turn === me && !active;
+  // While waiting, only the creator is seated, and may open on their own colour's turn (#33).
+  const myTurn = game.status !== 'finished' && game.chess.turn === me && !active;
   const status = gameStatus(replay(shown));
   // Plates show the game's real state, even while an earlier position is being reviewed.
   const plateStatus = viewPly === null ? status : gameStatus(replay(confirmed));
   const token = game.status === 'waiting' ? invitationFor(game.id) : null;
 
   function badge(seat: Seat): PlateBadge {
-    if (game!.status === 'waiting') return null;
+    // Nobody is in the empty seat yet, so it never gets a playable badge.
+    if (game!.status === 'waiting' && seat !== me) return null;
     if (game!.termination === 'resignation') return game!.result === seat ? 'won' : null;
     return badgeFor(colorOf(seat), plateStatus);
   }
 
   function explainBlocked(color: Color): string {
     if (color !== colorOf(me)) return `You play ${me === 'white' ? 'White' : 'Black'}.`;
-    if (game!.status === 'waiting') return `Waiting for ${opponent ?? 'your friend'} to join.`;
     if (active) return active.failure ? 'Retry or cancel your unsaved move first.' : 'Saving your move…';
+    if (game!.status === 'waiting') return `Your move is saved. Waiting for ${opponent ?? 'your friend'} to join.`;
     return `It’s ${opponent ?? 'your friend'}’s move.`;
   }
 

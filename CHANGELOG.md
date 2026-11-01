@@ -6,6 +6,12 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
+### Changed
+
+- The player who creates a game can make the opening move before their friend joins;
+  the friend finds it waiting and replies. Previously the board stayed locked until the
+  friend joined, which looked as if Black moved first (#33).
+
 ### Development
 
 - Define versioned milestones, ordered sprints, issue/PR tracking and the human
