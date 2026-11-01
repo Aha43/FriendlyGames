@@ -6,20 +6,34 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
+Nothing yet.
+
+## v0.1.1 — Correct starts and repeatable development (2026-11-01)
+
+Sprint 3. The release date is when this version was prepared; the `v0.1.1` tag marks the
+accepted commit.
+
 ### Changed
 
 - The player who creates a game can make the opening move before their friend joins;
   the friend finds it waiting and replies. Previously the board stayed locked until the
-  friend joined, which looked as if Black moved first (#33).
+  friend joined, which looked as if Black moved first (#33, PR #39).
 
 ### Development
 
-- A PR check requires exactly one primary `Closes #N` for an issue with a version
-  milestone (#36).
 - `make` commands for local work, checks, backups, deploying the backend and production
-  status; CI runs the same commands. Backups now keep only complete dumps (#32).
-- Define versioned milestones, ordered sprints, issue/PR tracking and the human
-  command contract for Claude's Makefile implementation (#31).
+  status; CI runs the same commands. Backups now keep only complete dumps (#32, PR #40).
+- A PR check requires exactly one primary `Closes #N` for an issue with a version
+  milestone (#36, PR #41).
+- Versioned milestones, ordered sprints, issue/PR tracking and the human command
+  contract (#31, PR #35).
+
+### Known limitations
+
+- Email entry is prototype access: email ownership isn't checked.
+- The lobby says "1 moves" for a single move.
+- The first real game with Harald is still being played, so the v0.1.0 acceptance (#11)
+  stays open.
 
 ## Existing prototype baseline
 
