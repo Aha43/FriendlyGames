@@ -6,13 +6,20 @@
 - Claude implements, tests, and addresses review findings.
 - The owner decides product tradeoffs and approves shipping.
 
-Read README.md, docs/product-brief.md, docs/development.md and the active issue
-before implementation. Read docs/sprint-01.md for the first sprint.
+Read README.md, docs/product-brief.md, docs/roadmap.md, docs/development.md and
+the active issue/sprint before implementation. The active sprint is currently
+docs/sprint-03.md. Historical sprint documents remain design records.
 
 ## Working rules
 
 - Work from one agreed GitHub issue at a time on a focused branch, never directly
   on main. Initial repository setup is the exception.
+- Before coding, assign the primary issue to one version milestone and exactly
+  one sprint:NN label, with a work-type and area label. Follow the ordered sprint
+  plan; backlog ideas are not permission to implement. See docs/roadmap.md.
+- Features/maintenance and bugs are issue-backed. Record a bug's expected/actual
+  behaviour and reproducer, then verify a regression through the affected path.
+  Do not repair live game data as an incidental part of a code fix.
 - Implement the smallest complete result that meets the issue's acceptance criteria.
 - Preserve the friendly park atmosphere while keeping the board readable and usable.
 - Do not build a generic game engine, teams, ratings, chat or verified authentication
@@ -25,6 +32,12 @@ before implementation. Read docs/sprint-01.md for the first sprint.
 - Report what changed, what was verified, and material limitations.
 - Open a PR for review and stop after the issue. Do not merge, publish, make the
   repository public, or add a license without owner authorization.
+- Each PR has exactly one primary Closes #N reference; use Refs for other issues.
+  Add user-visible changes to CHANGELOG.md under Unreleased. Version bumps, tags
+  and milestone acceptance belong to an agreed release issue and owner decision.
+- Merging auto-publishes the frontend. Backend deployment is separate: explain
+  migration/compatibility order and record actual site/backend commits. Never
+  treat local HEAD or a green PR as proof of deployed state.
 
 ## Reviews
 

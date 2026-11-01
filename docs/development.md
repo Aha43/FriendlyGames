@@ -1,41 +1,94 @@
 # Development workflow
 
+The [roadmap](roadmap.md) names version destinations. The active route is
+[Sprint 3](sprint-03.md), targeting v0.1.1. Keep the process small enough to use
+between moves of a real game.
+
 ## Planning and implementation
 
-Use GitHub milestones for small, coherent sprints and ordered issues for work.
-Each issue states the observable result, scope, acceptance criteria and verification.
-Codex plans and reviews; Claude implements. The owner approves product choices and
-shipping. One issue and one focused branch/PR at a time.
+Codex plans product/architecture, writes acceptance criteria and reviews. Claude
+implements and tests. The owner chooses tradeoffs and approves acceptance, merge
+and release. Those are distinct decisions: a Codex approval does not merge or
+ship anything by itself.
 
-Begin from current main, implement on a branch, run the relevant checks and inspect
-visual changes. Open a PR linking the issue with `Closes #N`. Include the result,
-verification evidence and remaining limitations. Stop for review before starting
-the next issue. Merge only with owner authorization.
+1. Record a feature, bug or maintenance result as a GitHub issue before coding.
+2. Select it into a version milestone and an ordered sprint. Add a work type
+   (`enhancement`, `bug` or `documentation`), `area:*` and one `sprint:NN` label.
+3. Start a focused issue branch from current main. Use another worktree if the
+   owner's checkout is serving a phone; explain any checkout change.
+4. Implement the smallest complete acceptance result. New discoveries become
+   separate issues unless needed for this one. Urgent fixes can be expedited,
+   but still have an issue, meaningful regression and review.
+5. Verify the affected path, update relevant docs and add user-visible work to
+   CHANGELOG.md under Unreleased.
+6. Open a PR with exactly one primary `Closes #N`; use `Refs #N` for other links.
+   Report checks, data/deployment impact and limitations. Stop for review.
+7. Codex reviews the current head. Fix findings and report the new head: approval
+   of an older commit does not approve the update. The owner authorises merge.
 
-## Checks
+GitHub issues are the live execution record. The short sprint document records
+order, integrated result and acceptance, not daily status. Historical Sprint 1/2
+milestones remain records rather than destinations for new work.
 
-CI gates PRs with lint, type checking, unit/component tests and production build;
-run them locally with `npm run check` (commands are listed in the README). A
-separate CI job runs the Playwright journeys (`npm run e2e`) on desktop and phone.
-Another job starts a fresh local Supabase stack, applies the migrations and runs the
-backend integration tests (`npm run test:backend`); see docs/backend.md. Add a focused browser
-journey for the playing flow. The multiplayer milestone also needs real backend
-verification through two independent player sessions.
+## Human commands and checks
 
-## Review handoff
+Issue #32 implements the Makefile and PR tracking gate. Until it merges, use the
+working commands below:
 
-Identify the PR head commit in the review. Claude addresses actionable findings and
-reports verification; Codex reviews the new head. Stop on approval or when a product
-decision or disagreement requires the owner. An automated handoff can later adapt
-JUranometria's bounded loop; no automated reviewer or secrets are configured yet.
+```bash
+npm ci
+supabase start                # local backend; requires Docker
+npm run dev                  # add -- --host for a phone on the LAN
+npm run check                # lint, types, unit/component tests, production build
+npm run test:backend          # real local Supabase integration tests
+npm run e2e                   # desktop and phone against the local backend
+supabase stop                # preserve local data
+```
 
-## Hosting and release
+The future default `make` is help only. `make verify` runs local checks
+sequentially; production backup/deploy/status/journeys have explicit separate
+targets. The full command contract is in #32 and [Sprint 3](sprint-03.md). Make
+will delegate to existing scripts: local and CI logic must not drift.
 
-Use preview deployments when hosting is selected and deliberate production updates
-after review. Keep credentials in the host/GitHub secret stores, never in source.
-Confirm the private repository's available CI, protection and hosting features
-during setup; do not change visibility to solve a tooling limitation automatically.
+Keep existing check/backend/e2e CI jobs and meaningful assertions. Backend and
+browser jobs start fresh local Supabase stacks in CI, never production. Add a
+regression through the actual failing path: a green test with no observed event
+is not evidence. Inspect visual changes on desktop and phone. Report failures
+and flaky reruns honestly. Run checks appropriate to the change; do not repeat
+broad suites after sufficient evidence unless something changes.
 
-No license is selected. Record third-party code and artwork licenses as assets are
-introduced. Publishing the repository or granting an open-source license requires
-an explicit owner decision.
+The #32 tracking check will require the primary issue's version, sprint and work
+type. Until then this is a manual review gate. Do not claim branch protection or
+automated Codex review is configured when it has not been verified. Any future
+review loop must be bounded and tied to the current head.
+
+## Releases and production
+
+`package.json` is the source version. A release issue prepares a patch/minor bump,
+matching lockfile, changelog, integrated checks and deployment order. The owner
+authorises tags, publishing and milestone acceptance. The v0.1.1 release issue
+is #34; it must not pretend the original real-game acceptance (#11) is done if
+Arne and Harald are still playing.
+
+Merging to main **auto-deploys the frontend** through Workers Builds. Treat merge
+approval accordingly. Backend/function/schema changes are a separate deliberate
+deployment: back up first, prefer additive compatible migrations, rehearse
+existing-data cases and plan the site/backend order. The prototype has one hosted
+backend and local development; do not provision staging or paid services by inference.
+
+Use [deployment.md](deployment.md) for actual commands, secrets, rollback and the
+deployed-version log. Local version/HEAD, green CI or a preview does not prove
+what production runs. Verify actual site/backend commits; they may differ for
+frontend-only work. Production journeys write fresh throwaway players/games and
+are explicitly owner-authorised, never part of routine local verify.
+
+Do not reset or rewrite the live dogfooding game as a code fix. A data repair gets
+a concrete reviewed proposal and owner approval, preserving players, moves and
+history. Never log private emails, credentials or invitations.
+
+## Hosting and repository decisions
+
+The repository remains private. No project open-source license is selected;
+third-party assets retain their recorded licences. Do not make it public, add a
+licence, change access controls or create cloud resources merely to work around
+a tooling limitation. Those are owner decisions.
