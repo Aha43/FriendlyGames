@@ -57,7 +57,7 @@ make down                    # keeps local data
 `make verify` never touches production or resets a database. Production commands
 (`prod-status`, `backup`, `deploy-backend`, `prod-e2e`) are separate, named targets the
 owner runs deliberately. `tests/tooling/makefile.test.ts` runs the Makefile with stub
-tools to keep these properties. Separate #36 adds the small PR tracking gate.
+tools to keep these properties.
 
 Keep existing check/backend/e2e CI jobs and meaningful assertions. Backend and
 browser jobs start fresh local Supabase stacks in CI, never production. Add a
@@ -72,11 +72,19 @@ help development but is supplementary; the current-head CI backend/e2e jobs on
 real Supabase are authoritative. Codex may verify on a real local stack too.
 Do not weaken real-stack CI or repeatedly retry a known inaccessible registry.
 
-The #36 tracking check requires exactly one primary closing issue and its version
-milestone, not sprint/area/type labels. Sprint membership stays in the plan and
-review. Until then tracking is a manual gate. Do not claim branch protection or
-automated Codex review is configured when it has not been verified. Any future
-review loop must be bounded and tied to the current head.
+**PR tracking** (`.github/workflows/pr-tracking.yml`, #36) checks every pull request:
+exactly one primary closing reference (`Closes #N`, or GitHub's other closing words) to an
+issue in this repository, and that issue has a version milestone (`v0.1.1 — …`, not an old
+`Sprint N — …` one). Other issues use `Refs #N`. Comments and code in the description are
+ignored, so the template's guidance doesn't count. Labels, sprint and area are not
+checked; sprint membership stays in the plan and review. The check runs when a PR is
+opened, its description is edited or its branch is updated. **It does not rerun when the
+issue's milestone changes**: re-run the failed job afterwards (Actions → the run →
+Re-run jobs, or `gh run rerun <run-id>`). It has only read access; the logic is in
+`scripts/pr-tracking.ts`, with fixture tests in `tests/tooling/`.
+
+Do not claim branch protection or automated Codex review is configured when it has not
+been verified. Any future review loop must be bounded and tied to the current head.
 
 ## Releases and production
 

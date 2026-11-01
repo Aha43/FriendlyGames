@@ -1,0 +1,39 @@
+name: PR tracking
+
+# Every pull request names exactly one primary issue ("Closes #N") in this repository, and that
+# issue has a version milestone (docs/development.md). Labels are not checked.
+#
+# Runs on the PR's own events, including edits to its description. Changing the issue's
+# milestone does not start it: re-run this workflow afterwards (Actions → the failed run →
+# Re-run jobs, or `gh run rerun <run-id>`).
+#
+# `pull_request` (never `pull_request_target`) with a read-only token: it only reads the
+# description and one issue; it cannot write, merge or publish.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: pr-tracking-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  tracking:
+    name: tracking
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Check primary issue and version milestone
+        run: node scripts/pr-tracking.ts
+        env:
+          # Passed as data through the environment, never pasted into the shell command.
+          PR_BODY: ${{ github.event.pull_request.body }}
+          GITHUB_TOKEN: ${{ github.token }}
