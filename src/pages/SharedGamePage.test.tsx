@@ -222,8 +222,57 @@ describe('shared game', () => {
   it('shows the invitation link to the creator while waiting', async () => {
     localStorage.setItem('friendlygames.invitations', JSON.stringify({ [GAME_ID]: 'T'.repeat(43) }));
     await renderPage(game({ status: 'waiting', revision: 0, players: { white: { id: 'p-arne', displayName: 'Arne' }, black: null } }));
-    expect(screen.getByRole('status')).toHaveTextContent('Waiting for your friend to join');
+    expect(screen.getByRole('status')).toHaveTextContent('Your move. Your friend can join at any time');
     expect(screen.getByLabelText('Invitation link')).toHaveValue(`http://localhost:3000/#/join/${'T'.repeat(43)}`);
+  });
+
+  describe('opening while waiting for the friend (#33)', () => {
+    const waitingSeats = { white: { id: 'p-arne', displayName: 'Arne' }, black: null };
+    const waiting = (moves: string[] = []) =>
+      game({ status: 'waiting', revision: moves.length, players: waitingSeats }, moves);
+    const plate = (name: string) => screen.getByText(name).parentElement!;
+
+    it('lets the creator make the opening, then says it is saved and keeps the invitation', async () => {
+      const user = userEvent.setup();
+      localStorage.setItem('friendlygames.invitations', JSON.stringify({ [GAME_ID]: 'T'.repeat(43) }));
+      await renderPage(waiting());
+      expect(plate('Arne (you)')).toHaveTextContent('To move');
+      expect(plate('Waiting for friend')).not.toHaveTextContent('To move');
+      expect(screen.queryByRole('button', { name: 'Resign…' })).not.toBeInTheDocument();
+
+      const reply = deferred<{ game: SharedGame; duplicate: boolean }>();
+      const submit = vi.spyOn(gameApi, 'submitAction').mockReturnValue(reply.promise);
+      await user.click(square('e2'));
+      await user.click(square('e4'));
+      expect(submit).toHaveBeenCalledWith(identity.credential, GAME_ID, expect.any(String), 0, { type: 'move', from: 'e2', to: 'e4' });
+      // Unconfirmed: never called saved.
+      expect(screen.getByRole('status')).toHaveTextContent('Saving your move…');
+      expect(square('e4')).toHaveAccessibleName('e4, white pawn, not saved yet');
+
+      await act(async () => reply.resolve({ game: waiting(['e2e4']), duplicate: false }));
+      expect(screen.getByRole('status')).toHaveTextContent('Your move is saved. Waiting for your friend to join');
+      expect(square('e4')).toHaveAccessibleName('e4, white pawn');
+      expect(plate('Arne (you)')).not.toHaveTextContent('To move');
+      expect(plate('Waiting for friend')).not.toHaveTextContent('To move');
+      expect(screen.getByLabelText('Invitation link')).toBeInTheDocument();
+
+      // No second move: the board explains why.
+      await user.click(square('d2'));
+      expect(screen.getByText('Your move is saved. Waiting for your friend to join.')).toBeInTheDocument();
+      expect(submit).toHaveBeenCalledTimes(1);
+    });
+
+    it('explains an old game server’s refusal and shows the confirmed board again', async () => {
+      const user = userEvent.setup();
+      await renderPage(waiting());
+      vi.spyOn(gameApi, 'submitAction').mockRejectedValue(new ApiError(409, 'not_started', 'Waiting for your friend to join.'));
+      await user.click(square('e2'));
+      await user.click(square('e4'));
+      expect(await screen.findByText(/Your move wasn’t saved: the game server can’t take an opening move/)).toBeInTheDocument();
+      expect(square('e2')).toHaveAccessibleName('e2, white pawn');
+      expect(square('e4')).toHaveAccessibleName('e4, empty');
+      expect(screen.getByRole('status')).toHaveTextContent('Your move. Your friend can join at any time');
+    });
   });
 
   it('lets the creator make a new link when this device has none', async () => {

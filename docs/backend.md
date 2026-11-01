@@ -128,6 +128,12 @@ silently. Reconcile existing duplicates first:
   claim the Black seat, once. The seat claim is serialised with a row lock, so two
   racing players cannot both get it. The same player redeeming again gets the game back;
   anyone else gets `invitation_used`.
+- **Opening while waiting (#33).** Before the friend joins, the creator may make a legal
+  move if it is their colour's turn: the creator plays White, so that is the opening move.
+  The game stays `waiting` (revision + 1), the invitation stays usable and the empty seat is
+  then to move, so nothing else can happen until someone joins. Joining keeps the moves and
+  activates the game as usual, so the friend can reply at once. Resigning while waiting is
+  refused (`not_started`).
 - Every game read and action requires being a participant. For anyone else, a game is
   indistinguishable from a missing one (`404 game_not_found`).
 
@@ -154,7 +160,8 @@ resignation). An action names the revision it was based on and a client-generate
 2. if this player already used `requestId` on this game: returns the current game with
    `duplicate: true` when it was the same action, or `409 request_id_reused` otherwise,
 3. rejects a stale `expectedRevision` with `409 stale_revision` and the current game,
-4. rejects games that are waiting (`not_started`) or over (`game_finished`),
+4. rejects games that are over (`game_finished`); while waiting, rejects anything but a move by
+   the creator (`not_started`; see "Opening while waiting"),
 5. for a move: checks it is the player's turn and that the move is legal by replaying
    the stored moves with chess.js; a promotion must name its piece, and only a
    promotion may,

@@ -57,9 +57,12 @@ describe('two players', () => {
     expect(created.body.invitation.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     const gameId = created.body.game.id;
 
-    const early = await move(arne, gameId, 0, 'e2e4');
+    // Changed intentionally in #33: the creator may now open while waiting (opening-while-waiting
+    // tests). Resigning before anyone has joined is still refused, and the invitee isn't seated yet.
+    const early = await resign(arne, gameId, 0);
     expect(early.status).toBe(409);
     expect(early.body.error.code).toBe('not_started');
+    expect((await move(harald, gameId, 0, 'e2e4')).body.error.code).toBe('game_not_found');
 
     const joined = await call('POST', '/invitations/redeem', {
       credential: harald.credential,

@@ -15,7 +15,7 @@ shows White moving first. The current game with Harald continues intact.
 | Order | Issue | Result |
 | --- | --- | --- |
 | 1 | [#31 — Planning and guidance](https://github.com/Aha43/FriendlyGames/issues/31) | Version roadmap, sprint contract, current agent instructions and issue/PR templates. Codex prepares this planning PR. |
-| 2 | [#33 — Opening-turn triage and confirmed fix](https://github.com/Aha43/FriendlyGames/issues/33) | Read-only inspection of the live game's seats/moves first; establish whether display, assignment or authoritative turn disagree. Then fix a confirmed defect with a regression. No Makefile dependency. |
+| 2 | [#33 — Opening while waiting](https://github.com/Aha43/FriendlyGames/issues/33) | Triage showed correct seats and turns: the creator was blocked because the friend hadn't joined. Owner decision: the creator may make a legal move on their colour's turn while waiting. No Makefile dependency. |
 | 3 | [#32 — Makefile commands](https://github.com/Aha43/FriendlyGames/issues/32) | Human commands delegate to existing scripts; existing CI uses the same check commands. No metadata gate in this PR. |
 | 4 | [#36 — Minimal PR tracking check](https://github.com/Aha43/FriendlyGames/issues/36) | Require one primary closing issue and a version milestone, without weakening application checks or gating labels. |
 | 5 | [#34 — Release qualification](https://github.com/Aha43/FriendlyGames/issues/34) | Review the combined result, prepare 0.1.1/version notes and owner commands, and record actual commits after authorised deployment. |
@@ -33,6 +33,11 @@ first move is his but white always start in chess.” They continue dogfooding; 
 is not a show stopper. Do not infer whether Black actually moved first, the
 plates are wrong, or a rematch colour was misunderstood. Establish the path in
 the issue. Never reset or rewrite the live game to make the fix pass.
+
+**Outcome (read-only triage, [#33](https://github.com/Aha43/FriendlyGames/issues/33#issuecomment-6560316442)):**
+seats, moves and turn were correct; Harald had not joined yet, and a waiting game refused
+every move, so White's ready-looking board would not move. The owner chose to let the
+creator move while waiting, on their own colour's turn. Colour choice is backlog #38.
 
 ## Human commands
 
@@ -61,9 +66,9 @@ existing deployment guards and owner authorisation remain.
 - Every coding PR has its primary issue and target version, and belongs to this
   ordered sprint plan. Labels are optional.
 - Command/help/CI behaviour is verified, including failure paths.
-- On two devices, a new game's actual White player gets the first legal turn;
-  Black is rejected server-side until White moves. Seats, orientation and labels
-  agree after refresh. Relevant rematch behaviour stays correct.
+- On two devices, a new game's actual White player gets the first legal turn, also
+  before Black joins; Black is rejected server-side until White moves. Seats,
+  orientation and labels agree after refresh. Relevant rematch behaviour stays correct.
 - Existing games, identities, moves, histories and tallies survive.
 - Relevant checks pass, the integrated result is reviewed and the owner accepts
   the patch. Report failed/flaky runs honestly.
