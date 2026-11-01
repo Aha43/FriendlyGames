@@ -63,13 +63,25 @@ describe('momentary server failures', () => {
 
   it.each([
     ['a generic 503', () => reply(503)],
-    ['a 503 with a boot-error body', () => reply(503, { code: 'BOOT_ERROR', message: 'Function failed to start' })],
     ['a 500', () => reply(500)],
     ['a dropped connection', () => Promise.reject(new TypeError('connection reset'))],
-  ])('never repeats sign-up after %s: it may have created the player', async (_name, failure) => {
-    fetchMock.mockImplementationOnce(failure).mockResolvedValue(reply(201, { player: {}, deviceCredential: CRED }));
-    expect(await settle(gameApi.createPlayer('Harald', 'h@example.test'))).toHaveProperty('error');
+  ])('repeats email entry after %s with the same request: it reaches the same player', async (_name, failure) => {
+    fetchMock
+      .mockImplementationOnce(failure)
+      .mockResolvedValue(reply(200, { player: { id: 'p-h' }, deviceCredential: CRED, created: false }));
+    expect(await settle(gameApi.enterPlayer('h@example.test'))).toHaveProperty('value.player.id', 'p-h');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][1].body).toBe(fetchMock.mock.calls[0][1].body);
+  });
+
+  it('asks for a name only when the email is new, without repeating', async () => {
+    fetchMock.mockResolvedValue(reply(404, { error: { code: 'player_not_found', message: 'new' } }));
+    const outcome = await settle(gameApi.enterPlayer('new@example.test'));
+    expect((outcome as { error: ApiError }).error.code).toBe('player_not_found');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ email: 'new@example.test' });
+    await settle(gameApi.enterPlayer('new@example.test', 'Newcomer'));
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ email: 'new@example.test', displayName: 'Newcomer' });
   });
 
   it('does not repeat a request that timed out', async () => {

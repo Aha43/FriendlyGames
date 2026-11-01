@@ -4,7 +4,8 @@ A welcoming place to play games with friends and keep the story of those games.
 
 **First milestone: play chess with Harald.**
 
-The first prototype uses name and email onboarding without verified login. Players
+The first prototype uses email entry without verified login: entering an email opens that
+player from any browser (email ownership isn't checked yet; see docs/backend.md). Players
 return to ongoing games or start a new chess game with a friend. The playing page
 evokes friends meeting at a table in a park, with a seasonal backdrop and a clear,
 comfortable board. Finished games become shared history.

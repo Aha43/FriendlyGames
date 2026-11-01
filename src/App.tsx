@@ -22,10 +22,10 @@ export default function App() {
     content = (
       <div className="page">
         <section className="card" aria-labelledby="lost-title">
-          <h2 id="lost-title">We don’t recognise this device any more</h2>
+          <h2 id="lost-title">We don’t recognise this browser any more</h2>
           <p>
-            The game server no longer knows the identity saved in this browser, so its games can’t be reached from
-            here. You can start again as a new player.
+            The game server no longer knows the player saved in this browser. Enter your email again to open your
+            games.
           </p>
           <button
             type="button"
@@ -36,7 +36,7 @@ export default function App() {
               setRejected(false);
             }}
           >
-            Start as a new player
+            Enter my email
           </button>
         </section>
       </div>

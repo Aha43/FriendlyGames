@@ -8,6 +8,10 @@ their shared history. The current autumn table remains the playing surface.
 
 ## Product decisions for the prototype
 
+> **Superseded for identity (2026-11-01, #29):** entering an email now opens that player from
+> any browser, without checking ownership. See docs/backend.md, "Identity: email entry".
+> The identity points below record Sprint 2 as planned.
+
 - Name and email onboarding, no verified login and no automated email sending.
 - Email is private contact metadata, never a password or proof of ownership.
 - A random device credential identifies a returning player. Persist only its hash

@@ -7,16 +7,19 @@ close the app, return later and resume. The completed game remains in their hist
 
 ## Experience
 
-1. Enter a name and email, remembered on the device. Email is unverified identity
-   in the friends-only prototype, not proof of ownership.
+1. Enter your email to open your player and games, from any browser or phone; a new
+   email also asks for a name. The browser remembers the player afterwards.
 2. See ongoing games and whose turn it is, or start a game.
 3. Choose Chess and a friend's email. Share a game link manually initially.
 4. Play at an inviting park table, together or asynchronously, without a clock.
 5. Finish, revisit the game or play again.
 
-Use opaque device credentials for returning players rather than treating an email
-address alone as write authorization. Specify recovery and joining behavior in the
-backend issue before implementation. No verified authentication is required yet.
+**Prototype access (owner decision, 2026-11-01, #29):** entering an email opens that
+player; email ownership is not checked, so anyone who knows a player's email can play as
+them. This is accepted for the friends-only prototype and stated on the onboarding screen.
+Each browser that enters the email gets its own opaque device credential, which authorises
+its later requests; several browsers stay signed in at once. Verified authentication
+(e.g. an emailed sign-in link) comes later, before the site is shared beyond friends.
 
 ## Visual direction
 

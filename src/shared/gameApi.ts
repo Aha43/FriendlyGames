@@ -154,14 +154,17 @@ async function attemptRequest<T>(method: 'GET' | 'POST', path: string, credentia
 }
 
 export const gameApi = {
-  createPlayer: (displayName: string, email: string) =>
-    // No request ID: a repeat could create a second player, so it is never repeated automatically.
-    request<{ player: PlayerSummary & { email: string }; deviceCredential: string }>(
+  /**
+   * Email entry (prototype, #29): opens the player with this email in this browser, or creates one
+   * when `displayName` is given and the email is new (`player_not_found` without it). Safe to
+   * repeat: a repeat reaches the same player and leaves the player's other browsers signed in.
+   */
+  enterPlayer: (email: string, displayName?: string) =>
+    request<{ player: PlayerSummary & { email: string }; deviceCredential: string; created: boolean }>(
       'POST',
       '/players',
       undefined,
-      { displayName, email },
-      'never',
+      displayName === undefined ? { email } : { email, displayName },
     ),
   me: (credential: string) => request<{ player: PlayerSummary & { email: string } }>('GET', '/me', credential),
   listGames: (credential: string) => request<{ games: SharedGame[] }>('GET', '/games', credential),

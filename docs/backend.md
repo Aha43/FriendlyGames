@@ -55,32 +55,38 @@ supabase stop
   to production by `supabase secrets set` and broke it; never put local values in
   `[edge_runtime.secrets]`.)
 
-## Identity
+## Identity: email entry (prototype)
 
-- `POST /players` creates a player and returns a **device credential**: 32 random
-  bytes, base64url (43 characters). The server stores only its SHA-256 hash.
-- The client keeps the credential on the device and sends it as
-  `X-Device-Credential` on every other request.
-- Email is private contact metadata. It is stored apart from games, is never returned
-  to other players and proves nothing about who someone is.
-- There is no login and no player directory.
+Owner decision for the friends-only prototype (#29, superseding #27's "email never grants
+access"): **entering an email opens that player.** Email ownership is not checked, so anyone
+who knows a player's email can act as them. The onboarding screen says so. Verified
+authentication is future work.
 
-### Losing the credential
-
-The credential is the player's only key. If the browser's storage is cleared, the app
-is reinstalled, or the player switches device, that identity and its games cannot be
-reached again. Typing the same email does **not** recover it; that would let anyone
-who knows an email take over a player. Recovery and moving an identity between devices
-are deferred beyond Sprint 2. The app must explain this limit plainly (#9).
+- `POST /players { email }` opens the player whose normalised email matches, in this browser.
+  If no player has the email, it answers `404 player_not_found`; the client then asks for a
+  name and sends `{ email, displayName }`, which creates the player (`201`). An existing
+  player keeps their own name whatever name is sent.
+- Every successful call returns a fresh **device credential** for this browser only: 32
+  random bytes, base64url (43 characters). The server stores only its SHA-256 hash, in
+  `player_credentials`, one row per browser. A player's other browsers stay signed in.
+- The client keeps the credential in `localStorage` and sends it as `X-Device-Credential`
+  on every other request; that credential, not the email, authorises reads and actions.
+  If the browser's storage is cleared, entering the email again opens the same player.
+- Simultaneous first entries for one new email resolve to one player: the unique email index
+  lets one transaction win, the others roll back completely and join the winner's player.
+- Repeating a call (e.g. after a lost response) reaches the same player again and only adds
+  another credential, so the client repeats it after momentary failures like other safe
+  requests. Unused credentials from lost responses are harmless.
+- Email is private: it is stored apart from games and never returned to other players.
+  Entering an email returns only that player (id, name, email). There is no player directory.
+- A player whose email was detached (reconciling duplicates below) keeps its browsers but
+  can't be entered by email; that email is never silently reattached to it.
 
 ## One player per email
 
 Email identifies one player (#27): the database has a unique index on the normalised email
-(`lower(btrim(email))`, matching how the API stores it; no provider-specific rules). Signing up
-with an email that is taken returns `409 email_taken` ("A player already uses this email.")
-and creates nothing: the player row rolls back with the contact. The response says nothing
-about the existing player. Matching email never grants access; using a player from another
-browser needs a deliberate transfer flow (not built yet).
+(`lower(btrim(email))`, matching how the API stores it; no provider-specific rules), so an
+email entered again always reaches the same player instead of creating a second one.
 
 The migration that adds the index (`20261018200000_unique_player_email.sql`) refuses to run
 while any email is shared, with a count but no emails, so nothing is dropped or merged
@@ -164,12 +170,12 @@ ends it as a win for the other player. Draw offers, undo and clocks are deferred
 ## API
 
 Base URL: `<project>/functions/v1/game-api`. Requests and responses are JSON. All
-endpoints except `POST /players` need `X-Device-Credential`.
+endpoints except `GET /health` and `POST /players` need `X-Device-Credential`.
 
 | Method and path | Body | Success |
 |---|---|---|
 | `GET /health` | | `200 { ok: true, commit, pooled }` (no credential; checks the database; `pooled` says whether the connection pooler is used) |
-| `POST /players` | `{ displayName, email }` | `201 { player: { id, displayName, email }, deviceCredential }` |
+| `POST /players` | `{ email, displayName? }` | `200 { player: { id, displayName, email }, deviceCredential, created: false }` for an existing player; `201 { …, created: true }` for a new email with `displayName`; `404 player_not_found` for a new email without it |
 | `GET /me` | | `200 { player: { id, displayName, email } }` |
 | `POST /games` | `{ friendEmail, requestId? }` | `201 { game, invitation: { token }, duplicate: false }`; a retry with the same `requestId` gets `200 { game, invitation, duplicate: true }` |
 | `POST /games/:id/invitation` | | `200 { game, invitation: { token } }` (creator only, game still waiting) |
@@ -209,7 +215,7 @@ Errors are `{ "error": { "code", "message", … } }`:
 | 400 | `bad_request` (invalid body or fields) |
 | 401 | `unauthenticated` (missing or unknown credential) |
 | 403 | `not_creator` |
-| 404 | `not_found`, `game_not_found`, `invitation_not_found` |
+| 404 | `not_found`, `player_not_found`, `game_not_found`, `invitation_not_found` |
 | 409 | `stale_revision` (includes `game`), `not_your_turn`, `not_started`, `not_finished`, `game_finished`, `invitation_used`, `already_participant`, `request_id_reused` |
 | 413 | `too_large` |
 | 422 | `illegal_move` |
@@ -230,10 +236,9 @@ Errors are `{ "error": { "code", "message", … } }`:
   the same way.
 - Momentary server failures are repeated automatically, at most twice (after 0.4 s and
   1.2 s), only for requests the server deduplicates or that change nothing: reads, actions
-  (request ID), game creation (request ID), joining, rematch and invitation renewal, after
-  network errors and 500/502/503/504. Timeouts are not repeated. Sign-up has no request ID and
-  is **never** repeated automatically, since no error status proves it was not applied; the
-  player is told and can press Continue again.
+  (request ID), game creation (request ID), joining, rematch, invitation renewal and email
+  entry (a repeat reaches the same player), after network errors and 500/502/503/504.
+  Timeouts are not repeated.
 - When polling shows the server has moved past an unconfirmed action's revision, the page
   resolves it: cleared if the server's next move is that move (or the player's resignation),
   otherwise reported as the game changing first.
@@ -246,7 +251,8 @@ Migrations live in `supabase/migrations/`.
 
 | Table | Holds |
 |---|---|
-| `players` | id, display name, credential hash |
+| `players` | id, display name, `credential_hash` (the first browser's; kept for compatibility with the previous function version, not used for authentication) |
+| `player_credentials` | one SHA-256 credential hash per browser that entered the player's email |
 | `player_contacts` | private email per player |
 | `games` | envelope: type, schema version, status, result, termination, revision, timestamps, `payload` (`{ initialFen, moves }`), `create_request_id`, `rematch_of` |
 | `game_participants` | game, player, seat (unique per game and per player) |
@@ -259,8 +265,9 @@ expose nothing; tests assert both roles are denied.
 
 ## Not covered yet
 
-- No rate limiting or abuse protection beyond unguessable secrets; acceptable for a
-  friends-only prototype, to revisit before wider use.
+- Verified authentication: email entry trusts whoever types the email (see Identity).
+- No rate limiting or abuse protection; acceptable for a friends-only prototype, to revisit
+  before wider use.
 - CORS: production allows only `ALLOWED_ORIGINS` (the site); locally any origin. The API
   uses a custom header, not cookies, so CORS is defence in depth, not authentication.
 - Deployment: docs/deployment.md.
