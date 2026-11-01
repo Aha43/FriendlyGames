@@ -12,8 +12,9 @@ and release. Those are distinct decisions: a Codex approval does not merge or
 ship anything by itself.
 
 1. Record a feature, bug or maintenance result as a GitHub issue before coding.
-2. Select it into a version milestone and an ordered sprint. Add a work type
-   (`enhancement`, `bug` or `documentation`), `area:*` and one `sprint:NN` label.
+2. Assign a version milestone and list it in the ordered sprint plan. Use a work
+   type (`enhancement`, `bug` or `documentation`) for clarity. Sprint/area labels
+   are optional navigation aids; the sprint plan records membership and order.
 3. Start a focused issue branch from current main. Use another worktree if the
    owner's checkout is serving a phone; explain any checkout change.
 4. Implement the smallest complete acceptance result. New discoveries become
@@ -26,14 +27,23 @@ ship anything by itself.
 7. Codex reviews the current head. Fix findings and report the new head: approval
    of an older commit does not approve the update. The owner authorises merge.
 
+Read-only investigation of a live-game fault can start before the planning PR or
+tooling work merges. It must not create sessions/players/games, submit moves or
+edit data. A confirmed bug can be fixed first under its existing issue/milestone,
+using existing commands; Makefile and CI improvements are not prerequisites.
+
+Exact-head review remains the default for every update, including deployment-log
+edits. Re-review can be a short diff check with no repeat of unaffected suites;
+there is no automatic documentation exception unless the owner later chooses one.
+
 GitHub issues are the live execution record. The short sprint document records
 order, integrated result and acceptance, not daily status. Historical Sprint 1/2
 milestones remain records rather than destinations for new work.
 
 ## Human commands and checks
 
-Issue #32 implements the Makefile and PR tracking gate. Until it merges, use the
-working commands below:
+Issue #32 implements the Makefile; separate #36 adds the small PR tracking gate.
+Until the Makefile merges, use the working commands below:
 
 ```bash
 npm ci
@@ -57,8 +67,15 @@ is not evidence. Inspect visual changes on desktop and phone. Report failures
 and flaky reruns honestly. Run checks appropriate to the change; do not repeat
 broad suites after sufficient evidence unless something changes.
 
-The #32 tracking check will require the primary issue's version, sprint and work
-type. Until then this is a manual review gate. Do not claim branch protection or
+When an implementer cannot run real Supabase (for example blocked image
+registries), say exactly what ran and what did not. A Node/Postgres stand-in can
+help development but is supplementary; the current-head CI backend/e2e jobs on
+real Supabase are authoritative. Codex may verify on a real local stack too.
+Do not weaken real-stack CI or repeatedly retry a known inaccessible registry.
+
+The #36 tracking check requires exactly one primary closing issue and its version
+milestone, not sprint/area/type labels. Sprint membership stays in the plan and
+review. Until then tracking is a manual gate. Do not claim branch protection or
 automated Codex review is configured when it has not been verified. Any future
 review loop must be bounded and tied to the current head.
 
@@ -75,6 +92,10 @@ approval accordingly. Backend/function/schema changes are a separate deliberate
 deployment: back up first, prefer additive compatible migrations, rehearse
 existing-data cases and plan the site/backend order. The prototype has one hosted
 backend and local development; do not provision staging or paid services by inference.
+
+Future #37 will prepare an explicit backup → backend → site release path and
+review the corresponding publishing settings. It is outside Sprint 3; no current
+Cloudflare setting is changed by this plan.
 
 Use [deployment.md](deployment.md) for actual commands, secrets, rollback and the
 deployed-version log. Local version/HEAD, green CI or a preview does not prove

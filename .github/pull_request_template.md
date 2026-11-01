@@ -3,8 +3,8 @@
 Closes #
 
 <!-- Exactly one primary closing issue. Additional links use Refs #N.
-     Assign the primary issue's version milestone, sprint:NN and work-type/area
-     labels before implementation. -->
+     Assign the primary issue's version milestone and list it in the sprint plan
+     before implementation. Sprint/area labels are optional, not CI gates. -->
 
 Target version:
 Sprint:

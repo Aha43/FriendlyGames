@@ -26,8 +26,8 @@ Blocks play / inconvenient / cosmetic:
 ## Planning
 
 Target version milestone:
-Sprint (`sprint:NN` label):
-Area (`area:*` label):
+Sprint plan entry (optional `sprint:NN` label):
+Area (optional `area:*` label):
 
 <!-- Codex triages/assigns these before coding; urgent fixes still get an issue. -->
 

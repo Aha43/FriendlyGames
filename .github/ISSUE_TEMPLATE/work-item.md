@@ -7,11 +7,11 @@ labels: enhancement
 ## Planning
 
 Target version milestone:
-Sprint (`sprint:NN` label):
-Area (`area:*` label):
+Sprint plan entry (optional `sprint:NN` label):
+Area (optional `area:*` label):
 Order/dependencies:
 
-<!-- Assign the GitHub milestone and labels too; prose alone does not assign them.
+<!-- Assign the GitHub version milestone too; list selected work in the sprint plan.
      A backlog idea may remain unassigned, but must be selected before coding. -->
 
 ## Observable result

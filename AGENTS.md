@@ -14,9 +14,9 @@ docs/sprint-03.md. Historical sprint documents remain design records.
 
 - Work from one agreed GitHub issue at a time on a focused branch, never directly
   on main. Initial repository setup is the exception.
-- Before coding, assign the primary issue to one version milestone and exactly
-  one sprint:NN label, with a work-type and area label. Follow the ordered sprint
-  plan; backlog ideas are not permission to implement. See docs/roadmap.md.
+- Before coding, assign the primary issue to a version milestone and list it in
+  the ordered sprint plan. Sprint/area labels are optional navigation aids, not
+  gates. Backlog ideas are not permission to implement. See docs/roadmap.md.
 - Features/maintenance and bugs are issue-backed. Record a bug's expected/actual
   behaviour and reproducer, then verify a regression through the affected path.
   Do not repair live game data as an incidental part of a code fix.
@@ -44,6 +44,13 @@ docs/sprint-03.md. Historical sprint documents remain design records.
 Review observable behavior against acceptance criteria. Tests must exercise the
 claimed production path and fail when that behavior breaks. Review must identify
 the commit reviewed; changes afterward require review of the new head.
+Deployment-record-only edits have no automatic exception: re-review can be a
+short diff review without rerunning unaffected checks.
+
+If the implementer cannot run real Supabase, disclose that limitation. Stand-in
+tests are supplementary; current-head CI backend/browser jobs on real Supabase
+are authoritative evidence. Codex may also verify locally. Do not weaken those
+jobs or claim stand-in success proves real-stack behaviour.
 
 An automated review loop is not configured yet. If introduced, keep it bounded
 and stop on approval, unresolved disagreement, or a decision needed from the owner.

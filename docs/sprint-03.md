@@ -1,7 +1,8 @@
 # Sprint 3 — Correct starts and repeatable development
 
 Target: [v0.1.1](https://github.com/Aha43/FriendlyGames/milestone/4).
-Tracking label: `sprint:03`. A coherent result, not a time box.
+Optional navigation label: `sprint:03`. This ordered plan records membership;
+labels do not gate work. A coherent result, not a time box.
 
 ## Result
 
@@ -14,12 +15,16 @@ shows White moving first. The current game with Harald continues intact.
 | Order | Issue | Result |
 | --- | --- | --- |
 | 1 | [#31 — Planning and guidance](https://github.com/Aha43/FriendlyGames/issues/31) | Version roadmap, sprint contract, current agent instructions and issue/PR templates. Codex prepares this planning PR. |
-| 2 | [#32 — Makefile and issue-backed CI](https://github.com/Aha43/FriendlyGames/issues/32) | Human commands delegate to existing scripts; CI verifies issue/milestone/sprint tracking without weakening check/backend/browser gates. Claude implements. |
-| 3 | [#33 — Opening-turn bug](https://github.com/Aha43/FriendlyGames/issues/33) | Reproduce the real create/join path, establish whether seats, display or authoritative turn disagree, and fix it with a meaningful regression. |
-| 4 | [#34 — Release qualification](https://github.com/Aha43/FriendlyGames/issues/34) | Review the combined result, prepare 0.1.1/version notes and owner commands, and record actual commits after authorised deployment. |
+| 2 | [#33 — Opening-turn triage and confirmed fix](https://github.com/Aha43/FriendlyGames/issues/33) | Read-only inspection of the live game's seats/moves first; establish whether display, assignment or authoritative turn disagree. Then fix a confirmed defect with a regression. No Makefile dependency. |
+| 3 | [#32 — Makefile commands](https://github.com/Aha43/FriendlyGames/issues/32) | Human commands delegate to existing scripts; existing CI uses the same check commands. No metadata gate in this PR. |
+| 4 | [#36 — Minimal PR tracking check](https://github.com/Aha43/FriendlyGames/issues/36) | Require one primary closing issue and a version milestone, without weakening application checks or gating labels. |
+| 5 | [#34 — Release qualification](https://github.com/Aha43/FriendlyGames/issues/34) | Review the combined result, prepare 0.1.1/version notes and owner commands, and record actual commits after authorised deployment. |
 
-Merge planning before tooling. Finish/review/merge one issue before the next. The
-owner approves merges and shipping; Codex approval alone is not authorisation.
+Read-only #33 triage may start immediately, before this planning PR merges. It
+must not create sessions, players or games, submit moves or repair the live game.
+Merge the accepted plan before implementation; fix a confirmed bug before tooling,
+using existing commands. Finish/review/merge one implementation issue at a time.
+The owner approves merges and shipping; Codex approval alone is not authorisation.
 
 ## Opening-turn report
 
@@ -53,7 +58,8 @@ existing deployment guards and owner authorisation remain.
 
 ## Exit evidence
 
-- Every coding PR has its primary issue, target version and sprint label.
+- Every coding PR has its primary issue and target version, and belongs to this
+  ordered sprint plan. Labels are optional.
 - Command/help/CI behaviour is verified, including failure paths.
 - On two devices, a new game's actual White player gets the first legal turn;
   Black is rejected server-side until White moves. Seats, orientation and labels
@@ -61,8 +67,12 @@ existing deployment guards and owner authorisation remain.
 - Existing games, identities, moves, histories and tallies survive.
 - Relevant checks pass, the integrated result is reviewed and the owner accepts
   the patch. Report failed/flaky runs honestly.
+- If the implementer cannot run real Supabase, disclose the limitation. Stand-in
+  evidence is supplementary; current-head real-stack CI backend/e2e jobs are
+  authoritative. Codex may also verify locally.
 - Version/changelog and actual deployed commits are recorded. If the original game
   is unfinished, keep #11 open and say so.
 
-Pin explanations (#20) are the next proposed feature sprint. Games, clocks,
-ratings, authentication, park navigation and review automation are outside this one.
+Pin explanations (#20) are the next proposed feature sprint. Deployment
+orchestration (#37) is future work, not Sprint 3. Games, clocks, ratings,
+authentication, park navigation and review automation are outside this one.
