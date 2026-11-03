@@ -22,6 +22,7 @@ Local play on one device remains available separately.
 - [Development workflow](docs/development.md)
 - [Version roadmap](docs/roadmap.md)
 - [Sprint 3 — Correct starts and repeatable development](docs/sprint-03.md)
+- [Sprint 4 — Captured pieces at a glance](docs/sprint-04.md)
 - [Changelog](CHANGELOG.md)
 - [Agent guidance](AGENTS.md)
 
