@@ -6,11 +6,30 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
+Nothing yet.
+
+## v0.1.2 — Captured pieces at a glance (2026-11-03)
+
+Sprint 4. The release date is when this version was prepared; the `v0.1.2` tag marks the
+accepted commit.
+
 ### Added
 
 - Each player's plate shows the pieces they have captured, "Captured by White" and
-  "Captured by Black", in shared and local games and when reviewing a finished game.
-  Existing games show their captures straight away (#44).
+  "Captured by Black", on a light strip so both colours stand out against the wood. This
+  works in shared and local games and when reviewing a finished game. Existing games show
+  their captures straight away, from their saved moves (#44, PR #47).
+
+### Development
+
+- Sprint 4 plan and the v0.1.2 milestone (#43, PR #46).
+
+### Known limitations
+
+- Email entry is prototype access: email ownership isn't checked.
+- The lobby says "1 moves" for a single move.
+- The first real game with Harald is still being played, so the v0.1.0 acceptance (#11)
+  stays open.
 
 ## v0.1.1 — Correct starts and repeatable development (2026-11-01)
 
