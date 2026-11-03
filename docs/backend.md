@@ -121,7 +121,8 @@ silently. Reconcile existing duplicates first:
   server committed, retrying with the same ID returns the same game instead of a second
   one. Because only the token's hash is stored, the retry cannot return the lost token:
   it issues a new one and the old link stops working (`invitation` is `null` once the
-  friend has joined). `POST /games/:id/invitation` does the same for the creator at any
+  friend has joined). The same `requestId` with another friend or game type is a different
+  game: `409 request_id_reused`, and nothing is changed. `POST /games/:id/invitation` does the same for the creator at any
   time while nobody has joined, e.g. from a device that never received the link. Issuing
   and redeeming lock the same invitation row, so they cannot interleave.
 - The creator shares the token as a link by hand. Possession of it lets one player

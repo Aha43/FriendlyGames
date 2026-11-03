@@ -84,10 +84,31 @@ describe('creating Chess960', () => {
     });
     expect(joined.body.game).toMatchObject({ id: game.id, status: 'active', chess960: { initialFen: game.chess960.initialFen } });
 
-    // The same request ID for standard chess is a different game: refused, not the wrong game.
-    const reused = await create(arne, harald, { requestId, type: 'chess' });
+    // The same request ID for standard chess, or for another friend, is a different game:
+    // refused, not answered with the wrong game, and its invitation is left alone.
+    const invitation = () => sql`select token_hash, redeemed_by from game_invitations where game_id = ${game.id}`;
+    const before = await invitation();
+    const other = await newPlayer('Mallory');
+    for (const body of [{ requestId, type: 'chess' }, { requestId, friendEmail: other.email }]) {
+      const reused = await create(arne, harald, body);
+      expect(reused.status).toBe(409);
+      expect(reused.body.error.code).toBe('request_id_reused');
+    }
+    expect(await invitation()).toEqual(before);
+    // The friend's email in other letter case is the same friend.
+    const sameFriend = await create(arne, harald, { requestId, friendEmail: harald.email.toUpperCase() });
+    expect(sameFriend.body).toMatchObject({ duplicate: true, game: { id: game.id }, invitation: null });
+  });
+
+  it('treats a standard-chess creation retry for another friend as a different game', async () => {
+    const [arne, harald, other] = await Promise.all([newPlayer('Arne'), newPlayer('Harald'), newPlayer('Mallory')]);
+    const requestId = randomUUID();
+    const body = { friendEmail: harald.email, requestId };
+    expect((await call('POST', '/games', { credential: arne.credential, body })).status).toBe(201);
+    const reused = await call('POST', '/games', { credential: arne.credential, body: { ...body, friendEmail: other.email } });
     expect(reused.status).toBe(409);
     expect(reused.body.error.code).toBe('request_id_reused');
+    expect((await call('POST', '/games', { credential: arne.credential, body })).body.duplicate).toBe(true);
   });
 
   it('creates one game when the same creation arrives twice at once', async () => {
