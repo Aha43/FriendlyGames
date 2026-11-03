@@ -12,10 +12,11 @@ One issue still means one branch and one focused PR.
 | --- | --- | --- |
 | [v0.1.0 — First game with Harald](https://github.com/Aha43/FriendlyGames/milestone/3) | The deployed friends-only chess baseline. | Historical Sprints 1–2, unique email and email entry. The real game is underway; [#11](https://github.com/Aha43/FriendlyGames/issues/11) stays open until its finished-game, resume and shared-history acceptance is confirmed. |
 | [v0.1.1 — Correct starts and repeatable development](https://github.com/Aha43/FriendlyGames/milestone/4) | Correct first-turn/player presentation, repeatable human commands and a traceable release. | Active [Sprint 3](sprint-03.md): read-only [bug triage #33](https://github.com/Aha43/FriendlyGames/issues/33) and a confirmed fix first, then separate Makefile/CI issues and release qualification. |
-| [v0.2.0 — Learn the board while playing](https://github.com/Aha43/FriendlyGames/milestone/5) | The next small chess learning aid. | Proposed Sprint 4 starts with [pin explanations #20](https://github.com/Aha43/FriendlyGames/issues/20). Refine scope after the first-game findings; do not start before Sprint 3 is accepted. |
+| [v0.1.2 — Captured pieces at a glance](https://github.com/Aha43/FriendlyGames/milestone/6) | Make captured pieces easy to see during existing and new games. | Queued [Sprint 4](sprint-04.md): captured-piece rows [#44](https://github.com/Aha43/FriendlyGames/issues/44), then patch qualification [#45](https://github.com/Aha43/FriendlyGames/issues/45). Finalize v0.1.1 first. |
+| [v0.2.0 — Learn the board while playing](https://github.com/Aha43/FriendlyGames/milestone/5) | The next small chess learning aid. | Proposed after the captured-piece patch (Sprint 5 candidate), starting with [pin explanations #20](https://github.com/Aha43/FriendlyGames/issues/20). Refine scope after real-game findings. |
 
-`package.json` currently says `0.1.0`. That is the baseline source version, not a
-claim that a version tag/release or every first-game acceptance step exists. Actual
+`package.json` is the source version; read it rather than maintaining a second
+current-version value here. It is not proof of a tag/release or first-game acceptance. Actual
 site/backend commits are in [deployment.md](deployment.md). Patch work can ship
 while the long-running first game continues; do not close its acceptance issue
 just because a patch or CI run passed.

@@ -1,8 +1,9 @@
 # Development workflow
 
 The [roadmap](roadmap.md) names version destinations. The active route is
-[Sprint 3](sprint-03.md), targeting v0.1.1. Keep the process small enough to use
-between moves of a real game.
+[Sprint 3](sprint-03.md), targeting v0.1.1, with release qualification in #34 / #42.
+After that release is finalized, [Sprint 4](sprint-04.md) delivers the v0.1.2
+captured-piece patch. Keep the process small enough to use between moves of a real game.
 
 ## Planning and implementation
 
@@ -91,8 +92,8 @@ been verified. Any future review loop must be bounded and tied to the current he
 `package.json` is the source version. A release issue prepares a patch/minor bump,
 matching lockfile, changelog, integrated checks and deployment order. The owner
 authorises tags, publishing and milestone acceptance. The v0.1.1 release issue
-is #34; it must not pretend the original real-game acceptance (#11) is done if
-Arne and Harald are still playing.
+is #34, followed by #45 for v0.1.2. Neither may infer that the original real-game
+acceptance (#11) is done while Arne and Harald are still playing.
 
 Merging to main **auto-deploys the frontend** through Workers Builds. Treat merge
 approval accordingly. Backend/function/schema changes are a separate deliberate
