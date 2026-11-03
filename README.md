@@ -23,6 +23,8 @@ Local play on one device remains available separately.
 - [Version roadmap](docs/roadmap.md)
 - [Sprint 3 — Correct starts and repeatable development](docs/sprint-03.md)
 - [Sprint 4 — Captured pieces at a glance](docs/sprint-04.md)
+- [Sprint 5 — Chess and Fischer Random](docs/sprint-05.md) (next release)
+- [Game-type architecture plan](docs/game-types.md)
 - [Changelog](CHANGELOG.md)
 - [Agent guidance](AGENTS.md)
 

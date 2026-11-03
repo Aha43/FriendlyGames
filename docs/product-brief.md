@@ -52,6 +52,19 @@ and support resignation. Specify exact chess behavior in implementation issues.
 Leave room for participant lists but defer multiplayer games and teams. Start with
 one game type and direct code rather than a framework for hypothetical games.
 
+## Next selected release — two game types
+
+Owner decision, 2026-11-03: add **Fischer Random (Chess960)** alongside standard
+chess as the first step towards offering many games. This is planned v0.2.0 work,
+not a claim that the variant is already live. See [Sprint 5](sprint-05.md) and the
+[game-type plan](game-types.md).
+
+Share the park, board/pieces, identity, lobby, invitations, saves and per-type
+history while selecting the correct rules from each saved game's type/version.
+The rules engine must support actual Chess960 castling; shuffled placement alone
+does not meet the owner's request. Preserve existing standard-chess games through
+compatible rollout. More game types and different player counts remain future work.
+
 ## Technical and delivery direction
 
 React + TypeScript + Vite and Supabase are proposed, inspired by NamWeb. Reuse
@@ -61,7 +74,7 @@ review practices; its desktop packaging machinery is not needed here.
 
 ## Deferred
 
-Verified authentication, automatic email invitations, teams, additional games,
+Verified authentication, automatic email invitations, teams, games beyond the two selected types,
 ratings, matchmaking, chat, clocks and formal seasons. Licensing and public
 visibility remain owner decisions; private visibility alone does not settle
 hosting access or data security.
