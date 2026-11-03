@@ -1,5 +1,6 @@
 // Browser client for the game-api Edge Function (contract: docs/backend.md).
 // Never log request headers or bodies: they carry the device credential and invitation tokens.
+import { SUPPORTED_TYPES } from '../games/registry';
 
 export type Seat = 'white' | 'black';
 
@@ -10,7 +11,8 @@ export interface PlayerSummary {
 
 export interface SharedGame {
   id: string;
-  type: 'chess';
+  /** The game type; only types this client asked for are sent (see src/games/registry.ts). */
+  type: string;
   schemaVersion: number;
   status: 'waiting' | 'active' | 'finished';
   result: 'white' | 'black' | 'draw' | null;
@@ -27,13 +29,18 @@ export interface SharedGame {
   updatedAt: string;
   players: Record<Seat, PlayerSummary | null>;
   yourSeat: Seat;
-  chess: { initialFen: string; moves: string[]; turn: Seat };
+  /** The seat to move, for any type. */
+  turn: Seat;
+  /** Moves played so far, for any type. */
+  moveCount: number;
+  /** Standard chess only. */
+  chess?: { initialFen: string; moves: string[]; turn: Seat };
   /** The game started from this one with "Play again", if any. */
   rematchGameId: string | null;
 }
 
 export interface HistoryEntry {
-  gameType: 'chess';
+  gameType: string;
   opponent: PlayerSummary;
   wins: number;
   draws: number;
@@ -110,9 +117,11 @@ async function request<T>(
   body?: unknown,
   repeat: Repeat = 'safe',
 ): Promise<T> {
+  // Every game request says which game types this client can show (#53); the server sends no others.
+  const url = path === '/players' ? path : `${path}${path.includes('?') ? '&' : '?'}types=${SUPPORTED_TYPES.join(',')}`;
   for (let attempt = 0; ; attempt++) {
     try {
-      return await attemptRequest<T>(method, path, credential, body);
+      return await attemptRequest<T>(method, url, credential, body);
     } catch (error) {
       if (attempt >= RETRY_DELAYS_MS.length || !repeatable(error, repeat)) throw error;
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));

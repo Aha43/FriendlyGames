@@ -22,6 +22,7 @@ async function enterEmail(page: Page, email: string) {
   await page.getByRole('button', { name: 'Continue' }).click();
 }
 
+// Game requests end in `?types=…` (#53), so a route for a whole path ends in `?*`.
 // Seeing the other player's change takes one 4 s poll plus one server call, so the same
 // budget as a fresh load covers it (see LOAD_BUDGET in fixtures.ts).
 const SYNC = { timeout: LOAD_BUDGET };
@@ -69,10 +70,10 @@ test('two players create, join, play, refresh, recover from a failed send and re
   await arne.getByLabel('Friend’s email').fill(`harald-${run}@example.test`);
 
   // The game is created, but the answer (with the only copy of the link) is lost.
-  await loseResponses(arne, '**/game-api/games');
+  await loseResponses(arne, '**/game-api/games?*');
   await arne.getByRole('button', { name: 'Create game' }).click();
   await expect(arne.getByText(/Couldn’t confirm whether the game was created/)).toBeVisible();
-  await arne.unroute('**/game-api/games');
+  await arne.unroute('**/game-api/games?*');
   // Retrying finds the same game and issues a working link; no second game appears.
   await arne.getByRole('button', { name: 'Try again' }).click();
   const link = await arne.getByLabel('Invitation link', { exact: true }).inputValue();
@@ -111,14 +112,14 @@ test('two players create, join, play, refresh, recover from a failed send and re
   // Arne's move is saved, but the answer is lost: the page doesn't claim either outcome,
   // and Retry (same request ID) confirms it without playing it twice.
   // Reads are cut too, so polling cannot settle the move before the player uses Retry.
-  await loseResponses(arne, '**/game-api/games/*/actions');
+  await loseResponses(arne, '**/game-api/games/*/actions?*');
   await arne.route('**/game-api/games/*', (route) =>
     route.request().method() === 'GET' ? route.abort('connectionreset') : route.fallback(),
   );
   await move(arne, 'g1', 'f3');
   await expect(arne.getByText(/Couldn’t confirm whether your move was saved/)).toBeVisible();
   await expect(square(arne, 'g1')).toHaveAccessibleName('g1, white knight'); // last confirmed position
-  await arne.unroute('**/game-api/games/*/actions');
+  await arne.unroute('**/game-api/games/*/actions?*');
   await arne.getByRole('button', { name: 'Retry' }).click();
   await arne.unroute('**/game-api/games/*');
   await expect(arne.getByRole('status')).toHaveText('Harald’s move');
@@ -313,7 +314,7 @@ test('momentary server failures: safe requests are repeated, including email ent
   expect(entries).toBe(3); // email (503, repeated → new email), then email and name
 
   // Creating a game: the same once.
-  await rejectNextOnce(arne, '**/game-api/games');
+  await rejectNextOnce(arne, '**/game-api/games?*');
   await arne.getByLabel('Friend’s email').fill(`harald-${run}@example.test`);
   await arne.getByRole('button', { name: 'Create game' }).click();
   const link = await arne.getByLabel('Invitation link', { exact: true }).inputValue();
@@ -497,14 +498,14 @@ test('the creator opens while waiting; the friend joins later; captures show for
   const captures = (page: Page, name: string) =>
     page.locator('.player-plate', { hasText: name }).locator('.player-captures');
   await expect(captures(arne, 'Arne (you)')).toHaveText(/Captured by White:\s*None yet/);
-  await loseResponses(arne, '**/game-api/games/*/actions');
+  await loseResponses(arne, '**/game-api/games/*/actions?*');
   await arne.route('**/game-api/games/*', (route) =>
     route.request().method() === 'GET' ? route.abort('connectionreset') : route.fallback(),
   );
   await move(arne, 'e4', 'd5');
   await expect(arne.getByText(/Couldn’t confirm whether your move was saved/)).toBeVisible();
   await expect(captures(arne, 'Arne (you)')).toHaveText(/None yet/);
-  await arne.unroute('**/game-api/games/*/actions');
+  await arne.unroute('**/game-api/games/*/actions?*');
   await arne.getByRole('button', { name: 'Retry' }).click();
   await arne.unroute('**/game-api/games/*');
   await expect(arne.getByRole('status')).toHaveText('Harald’s move');

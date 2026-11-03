@@ -139,9 +139,9 @@ silently. Reconcile existing duplicates first:
 
 ## History and rematches
 
-- `GET /history` lists the player's finished chess games per opponent, newest first,
-  with a tally computed over all of them (not a page of recent games). Only the
-  player's own games appear; scores are per game type.
+- `GET /history` lists the player's finished games per game type and opponent, newest
+  first, with a tally computed over all of them (not a page of recent games). Only the
+  player's own games of the types the client reads appear (see Game types).
 - `POST /games/:id/rematch` ("Play again") starts a new, active game for the same two
   players with colours swapped. No invitation is needed. `games.rematch_of` is unique,
   so whichever player asks first creates it and the other is given the same game; each
@@ -162,9 +162,10 @@ resignation). An action names the revision it was based on and a client-generate
 3. rejects a stale `expectedRevision` with `409 stale_revision` and the current game,
 4. rejects games that are over (`game_finished`); while waiting, rejects anything but a move by
    the creator (`not_started`; see "Opening while waiting"),
-5. for a move: checks it is the player's turn and that the move is legal by replaying
-   the stored moves with chess.js; a promotion must name its piece, and only a
-   promotion may,
+5. for anything but a resignation: checks the action has the game type's shape, that it
+   is the player's turn and that the type's adapter accepts it (for standard chess,
+   by replaying the stored moves with chess.js; a promotion must name its piece, and only a
+   promotion may),
 6. stores the new move list, revision and any outcome, and records the action.
 
 So two actions at the same revision yield exactly one accepted update, and a retried
@@ -174,17 +175,43 @@ Outcomes are derived from the moves: checkmate, stalemate, insufficient material
 threefold repetition and the fifty-move rule end the game automatically. Resignation
 ends it as a win for the other player. Draw offers, undo and clocks are deferred.
 
+## Game types (#53)
+
+The common service (`game-api/api.ts`) owns players, credentials, membership, invitations,
+transactions and row locks, revisions, request IDs, results, archives, rematches and
+history. A small adapter per stored `(game_type, schema_version)` owns that type's start,
+saved payload, actions, turn, move count, view and outcome (`game-api/gameTypes.ts`). A
+static registry picks the adapter from the stored row; nothing falls back to chess.
+
+- **Enabled types**: only `chess` (schema 1, chess.js, unchanged). `chess960` is reserved
+  for #54 and cannot be created yet.
+- **Which types a client reads**: every game request may carry `?types=chess,chess960`.
+  Omitted means `chess` only, which is what every client before #53 expects (it reads
+  `.chess.moves`). Unknown names are ignored. This is compatibility metadata, never
+  authorization: membership rules are unchanged.
+- **Lists and history** leave out games the client does not read, and games no adapter
+  on this server reads (an unknown type or schema version). A mixed lobby still loads.
+- **Direct requests** (`GET /games/:id`, actions, rematch, invitation renewal and redeem)
+  on such a game get `422 unsupported_game` before anything is written or returned; the
+  record is kept as it is. For a non-participant it stays `404 game_not_found`.
+- **Creation** takes an optional `type` (omitted means `chess`); a type that is not
+  enabled, or that the client does not read, gets `400 unsupported_game_type`.
+- Seats (White/Black) and results (white/black/draw) are still chess-family columns. A
+  future non-chess type would bring its own seats, results, adapter and presenter; see
+  [game-types.md](game-types.md).
+
 ## API
 
 Base URL: `<project>/functions/v1/game-api`. Requests and responses are JSON. All
-endpoints except `GET /health` and `POST /players` need `X-Device-Credential`.
+endpoints except `GET /health` and `POST /players` need `X-Device-Credential`. All game
+endpoints accept the `types` query parameter described under Game types.
 
 | Method and path | Body | Success |
 |---|---|---|
 | `GET /health` | | `200 { ok: true, commit, pooled }` (no credential; checks the database; `pooled` says whether the connection pooler is used) |
 | `POST /players` | `{ email, displayName? }` | `200 { player: { id, displayName, email }, deviceCredential, created: false }` for an existing player; `201 { …, created: true }` for a new email with `displayName`; `404 player_not_found` for a new email without it |
 | `GET /me` | | `200 { player: { id, displayName, email } }` |
-| `POST /games` | `{ friendEmail, requestId? }` | `201 { game, invitation: { token }, duplicate: false }`; a retry with the same `requestId` gets `200 { game, invitation, duplicate: true }` |
+| `POST /games` | `{ friendEmail, requestId?, type? }` | `201 { game, invitation: { token }, duplicate: false }`; a retry with the same `requestId` gets `200 { game, invitation, duplicate: true }` |
 | `POST /games/:id/invitation` | | `200 { game, invitation: { token } }` (creator only, game still waiting) |
 | `POST /invitations/redeem` | `{ token }` | `200 { game }` |
 | `GET /games` | | `200 { games: [game…] }` (newest activity first, at most 200) |
@@ -210,22 +237,27 @@ A **game** looks like:
   "createdAt": "…", "updatedAt": "…",
   "players": { "white": { "id": "…", "displayName": "Arne" }, "black": null },
   "yourSeat": "white",
+  "turn": "white",
+  "moveCount": 2,
   "chess": { "initialFen": "…", "moves": ["e2e4", "c7c5"], "turn": "white" },
   "rematchGameId": null
 }
 ```
 
+`turn` and `moveCount` are present for every type. `chess` is present for standard
+chess only; another type will carry its own field.
+
 Errors are `{ "error": { "code", "message", … } }`:
 
 | Status | Codes |
 |---|---|
-| 400 | `bad_request` (invalid body or fields) |
+| 400 | `bad_request` (invalid body or fields, or an action of another game type), `unsupported_game_type` |
 | 401 | `unauthenticated` (missing or unknown credential) |
 | 403 | `not_creator` |
 | 404 | `not_found`, `player_not_found`, `game_not_found`, `invitation_not_found` |
 | 409 | `stale_revision` (includes `game`), `not_your_turn`, `not_started`, `not_finished`, `game_finished`, `invitation_used`, `already_participant`, `request_id_reused` |
 | 413 | `too_large` |
-| 422 | `illegal_move` |
+| 422 | `illegal_move`, `unsupported_game` (a game this server or client cannot read) |
 
 ## Web client
 
@@ -251,6 +283,10 @@ Errors are `{ "error": { "code", "message", … } }`:
   otherwise reported as the game changing first.
 - A stale revision (another tab or device moved first) replaces the board with the
   server's game and says so. There is no offline move queue.
+- Every game request names the types the client can show (`src/games/registry.ts`, sent as
+  `types`). The lobby uses the common `turn` and `moveCount`; the game page is the
+  chess-family presenter. A game it cannot show (`unsupported_game`, or a type it does not
+  know) is explained with "needs a newer version… Reload the page", never drawn as chess.
 
 ## Data model
 

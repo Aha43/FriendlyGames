@@ -84,14 +84,14 @@ function GameLinks({ games, label }: { games: SharedGame[]; label: string }) {
     <ul className="game-links" aria-label={label}>
       {games.map((game) => {
         const opponent = opponentName(game);
-        const yourTurn = game.status !== 'finished' && game.chess.turn === game.yourSeat;
+        const yourTurn = game.status !== 'finished' && game.turn === game.yourSeat;
         return (
           <li key={game.id}>
             <a href={`#/game/${game.id}`} className={`game-link${yourTurn ? ' game-link-your-turn' : ''}`}>
               <span className="game-link-title">{opponent ? `vs ${opponent}` : 'New game'}</span>
               <span className="game-link-status">{describeGame(game)}</span>
               <span className="game-link-meta">
-                You play {game.yourSeat === 'white' ? 'White' : 'Black'} · {game.chess.moves.length} moves
+                You play {game.yourSeat === 'white' ? 'White' : 'Black'} · {game.moveCount} moves
               </span>
             </a>
           </li>

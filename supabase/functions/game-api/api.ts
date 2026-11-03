@@ -1,19 +1,9 @@
 // Request handling for the shared-game API. Clients submit actions; the server derives every
-// position and outcome from the stored move list with the shared chess rules.
+// position and outcome from the stored record with the rules of the game's type (gameTypes.ts).
 import type { Sql, TransactionSql } from 'postgres';
-import {
-  applyMove,
-  gameStatus,
-  newGame,
-  outcomeOf,
-  replay,
-  type GameRecord,
-  type GameResult,
-  type PromotionPiece,
-  type Termination,
-} from '../_shared/chess/game.ts';
+import type { GameResult, Termination } from '../_shared/chess/game.ts';
+import { adapterFor, clientTypes, creatableAdapter, type GameTypeAdapter, type Seat, type TypedAction } from './gameTypes.ts';
 
-type Seat = 'white' | 'black';
 type Db = Sql | TransactionSql;
 
 interface Player {
@@ -23,7 +13,8 @@ interface Player {
 
 export interface GameView {
   id: string;
-  type: 'chess';
+  /** The game type, e.g. "chess". Clients read type-specific fields (e.g. `chess`) only for types they know. */
+  type: string;
   schemaVersion: number;
   status: 'waiting' | 'active' | 'finished';
   result: GameResult | null;
@@ -33,9 +24,26 @@ export interface GameView {
   updatedAt: string;
   players: Record<Seat, Player | null>;
   yourSeat: Seat;
-  chess: { initialFen: string; moves: string[]; turn: Seat };
+  /** The seat to move, for any type (#53). */
+  turn: Seat;
+  /** Moves played so far, for any type (#53). */
+  moveCount: number;
+  /** Standard chess only: the saved record and the side to move. */
+  chess?: { initialFen: string; moves: string[]; turn: Seat };
   /** The game started from this one with "Play again", if any. */
   rematchGameId: string | null;
+}
+
+/** A game this client cannot read: its type was not asked for (`types`) or this server lacks it. */
+const UNSUPPORTED = () =>
+  new ApiError(422, 'unsupported_game', 'This game needs a newer version of FriendlyGames. Reload the page to update.');
+
+/** The adapter for a stored game the client can read, or an unsupported_game error. */
+function readable(row: Record<string, unknown>, types: string[]): GameTypeAdapter {
+  const type = row.game_type as string;
+  const adapter = types.includes(type) ? adapterFor(type, row.schema_version as number) : null;
+  if (!adapter) throw UNSUPPORTED();
+  return adapter;
 }
 
 class ApiError extends Error {
@@ -71,7 +79,6 @@ function corsHeaders(request: Request, config: ApiConfig): Record<string, string
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SECRET = /^[A-Za-z0-9_-]{43}$/; // 32 random bytes, base64url
-const SQUARE = /^[a-h][1-8]$/;
 const EMAIL = /^[^@\s]+@[^@\s]+$/;
 const MAX_BODY_BYTES = 4096;
 
@@ -90,7 +97,9 @@ export async function handleRequest(request: Request, sql: Sql, config: ApiConfi
 async function route(request: Request, sql: Sql, config: ApiConfig): Promise<Response> {
 
   try {
-    const path = new URL(request.url).pathname.replace(/^.*?\/game-api/, '') || '/';
+    const url = new URL(request.url);
+    const path = url.pathname.replace(/^.*?\/game-api/, '') || '/';
+    const types = clientTypes(url);
     const route = `${request.method} ${path.replace(/\/+$/, '') || '/'}`;
     const gameMatch = path.match(/^\/games\/([^/]+)(\/actions|\/invitation|\/rematch)?\/?$/);
 
@@ -105,25 +114,25 @@ async function route(request: Request, sql: Sql, config: ApiConfig): Promise<Res
 
     const player = await authenticate(sql, request);
     if (route === 'GET /me') return json(200, { player: await loadMe(sql, player.id) });
-    if (route === 'GET /games') return json(200, { games: await loadViews(sql, player.id) });
-    if (route === 'GET /history') return json(200, { history: await loadHistory(sql, player.id) });
+    if (route === 'GET /games') return json(200, { games: await loadViews(sql, player.id, types) });
+    if (route === 'GET /history') return json(200, { history: await loadHistory(sql, player.id, types) });
     if (route === 'POST /games') {
-      const { status, body } = await createGame(sql, player, await readBody(request));
+      const { status, body } = await createGame(sql, player, await readBody(request), types);
       return json(status, body);
     }
-    if (route === 'POST /invitations/redeem') return json(200, await redeemInvitation(sql, player, await readBody(request)));
+    if (route === 'POST /invitations/redeem') return json(200, await redeemInvitation(sql, player, await readBody(request), types));
     if (gameMatch && !gameMatch[2] && request.method === 'GET') {
-      return json(200, { game: await loadView(sql, player.id, gameMatch[1]) });
+      return json(200, { game: await loadView(sql, player.id, gameMatch[1], types) });
     }
     if (gameMatch && gameMatch[2] === '/rematch' && request.method === 'POST') {
-      const { status, body } = await startRematch(sql, player, gameMatch[1]);
+      const { status, body } = await startRematch(sql, player, gameMatch[1], types);
       return json(status, body);
     }
     if (gameMatch && gameMatch[2] === '/invitation' && request.method === 'POST') {
-      return json(200, await regenerateInvitation(sql, player, gameMatch[1]));
+      return json(200, await regenerateInvitation(sql, player, gameMatch[1], types));
     }
     if (gameMatch && gameMatch[2] === '/actions' && request.method === 'POST') {
-      return json(200, await submitAction(sql, player, gameMatch[1], await readBody(request)));
+      return json(200, await submitAction(sql, player, gameMatch[1], await readBody(request), types));
     }
     throw new ApiError(404, 'not_found', 'No such endpoint.');
   } catch (error) {
@@ -262,12 +271,13 @@ async function loadMe(sql: Sql, playerId: string) {
 
 interface GameRow {
   id: string;
+  game_type: string;
   schema_version: number;
   status: GameView['status'];
   result: GameResult | null;
   termination: Termination | null;
   revision: number;
-  payload: { initialFen: string; moves: string[] };
+  payload: unknown;
   created_at: Date;
   updated_at: Date;
   your_seat: Seat;
@@ -275,13 +285,12 @@ interface GameRow {
   rematch_id: string | null;
 }
 
-function toView(row: GameRow): GameView {
+function toView(row: GameRow, adapter: GameTypeAdapter): GameView {
   const players: Record<Seat, Player | null> = { white: null, black: null };
   for (const p of row.participants) players[p.seat] = { id: p.id, displayName: p.displayName };
-  const record: GameRecord = { schemaVersion: 1, ...row.payload };
   return {
     id: row.id,
-    type: 'chess',
+    type: row.game_type,
     schemaVersion: row.schema_version,
     status: row.status,
     result: row.result,
@@ -291,15 +300,16 @@ function toView(row: GameRow): GameView {
     updatedAt: row.updated_at.toISOString(),
     players,
     yourSeat: row.your_seat,
-    chess: { ...row.payload, turn: replay(record).turn() === 'w' ? 'white' : 'black' },
+    turn: adapter.turn(row.payload),
+    moveCount: adapter.moveCount(row.payload),
+    ...adapter.view(row.payload),
     rematchGameId: row.rematch_id,
   };
 }
 
-/** Games the player takes part in, newest activity first; `gameId` narrows to one. */
-async function loadViews(sql: Db, playerId: string, gameId: string | null = null): Promise<GameView[]> {
-  const rows = await sql<GameRow[]>`
-    select g.id, g.schema_version, g.status, g.result, g.termination, g.revision, g.payload,
+async function loadRows(sql: Db, playerId: string, gameId: string | null, types: string[] | null): Promise<GameRow[]> {
+  return await sql<GameRow[]>`
+    select g.id, g.game_type, g.schema_version, g.status, g.result, g.termination, g.revision, g.payload,
            g.created_at, g.updated_at, me.seat as your_seat,
            (select json_agg(json_build_object('seat', p.seat, 'id', p.player_id, 'displayName', pl.display_name))
               from game_participants p join players pl on pl.id = p.player_id
@@ -307,37 +317,55 @@ async function loadViews(sql: Db, playerId: string, gameId: string | null = null
            (select r.id from games r where r.rematch_of = g.id) as rematch_id
       from games g
       join game_participants me on me.game_id = g.id and me.player_id = ${playerId}
-     where ${gameId}::uuid is null or g.id = ${gameId}::uuid
+     where (${gameId}::uuid is null or g.id = ${gameId}::uuid)
+       and (${types}::text[] is null or g.game_type = any(${types}::text[]))
      order by g.updated_at desc
      limit 200`;
-  return rows.map(toView);
 }
 
-/** One game, only for its participants. Anyone else gets the same answer as for a missing game. */
-async function loadView(sql: Db, playerId: string, gameId: string): Promise<GameView> {
-  const [view] = UUID.test(gameId) ? await loadViews(sql, playerId, gameId) : [];
-  if (!view) throw new ApiError(404, 'game_not_found', 'Game not found.');
-  return view;
+/**
+ * The player's games of the types this client reads, newest activity first. A game stored in a
+ * schema version this server cannot read is left out (and left untouched), never guessed at.
+ */
+async function loadViews(sql: Db, playerId: string, types: string[]): Promise<GameView[]> {
+  const rows = await loadRows(sql, playerId, null, types);
+  return rows.flatMap((row) => {
+    const adapter = adapterFor(row.game_type, row.schema_version);
+    return adapter ? [toView(row, adapter)] : [];
+  });
 }
 
-async function createGame(sql: Sql, player: Player, body: Record<string, unknown>) {
+/** One game, only for its participants (anyone else: not found); unsupported_game if unreadable. */
+async function loadView(sql: Db, playerId: string, gameId: string, types: string[]): Promise<GameView> {
+  const [row] = UUID.test(gameId) ? await loadRows(sql, playerId, gameId, null) : [];
+  if (!row) throw new ApiError(404, 'game_not_found', 'Game not found.');
+  return toView(row, readable(row as unknown as Record<string, unknown>, types));
+}
+
+async function createGame(sql: Sql, player: Player, body: Record<string, unknown>, types: string[]) {
   const friendEmail = requireEmail(body, 'friendEmail');
   const requestId = body.requestId ?? null;
   if (requestId !== null && (typeof requestId !== 'string' || !UUID.test(requestId))) {
     throw new ApiError(400, 'bad_request', '"requestId" must be a UUID.');
   }
-  const { initialFen, moves } = newGame();
+  // Omitted type means standard chess, as for every client before #53.
+  const type = body.type ?? 'chess';
+  const adapter = typeof type === 'string' && types.includes(type) ? creatableAdapter(type) : null;
+  if (!adapter) throw new ApiError(400, 'unsupported_game_type', 'This game type is not available.');
 
   const created = await sql.begin(async (tx) => {
     // A request ID makes creation retryable: a second request with it finds the first game.
     const [game] = await tx`
-      insert into games (game_type, status, payload, created_by, create_request_id)
-      values ('chess', 'waiting', ${tx.json({ initialFen, moves })}, ${player.id}, ${requestId})
+      insert into games (game_type, schema_version, status, payload, created_by, create_request_id)
+      values (${adapter.type}, ${adapter.schemaVersion}, 'waiting', ${tx.json(adapter.create() as never)}, ${player.id}, ${requestId})
       on conflict (created_by, create_request_id) do nothing
       returning id`;
     if (!game) {
       const [earlier] = await tx`
-        select id from games where created_by = ${player.id} and create_request_id = ${requestId}`;
+        select id, game_type from games where created_by = ${player.id} and create_request_id = ${requestId}`;
+      if (earlier.game_type !== adapter.type) {
+        throw new ApiError(409, 'request_id_reused', 'This request ID was already used to create a different game.');
+      }
       // The first response (and its token) may have been lost: issue a fresh link if still unused.
       return { gameId: earlier.id as string, token: await reissueInvitation(tx, earlier.id), duplicate: true };
     }
@@ -354,7 +382,7 @@ async function createGame(sql: Sql, player: Player, body: Record<string, unknown
   return {
     status: created.duplicate ? 200 : 201,
     body: {
-      game: await loadView(sql, player.id, created.gameId),
+      game: await loadView(sql, player.id, created.gameId, types),
       invitation: created.token ? { token: created.token } : null,
       duplicate: created.duplicate,
     },
@@ -377,22 +405,23 @@ async function reissueInvitation(tx: TransactionSql, gameId: string): Promise<st
 }
 
 /** A new invitation link for the creator of a game nobody has joined yet. */
-async function regenerateInvitation(sql: Sql, player: Player, gameId: string) {
+async function regenerateInvitation(sql: Sql, player: Player, gameId: string, types: string[]) {
   if (!UUID.test(gameId)) throw new ApiError(404, 'game_not_found', 'Game not found.');
   const [game] = await sql`
-    select g.created_by from games g
+    select g.created_by, g.game_type, g.schema_version from games g
       join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
      where g.id = ${gameId}`;
   if (!game) throw new ApiError(404, 'game_not_found', 'Game not found.');
+  readable(game, types);
   if (game.created_by !== player.id) {
     throw new ApiError(403, 'not_creator', 'Only the player who created the game can invite.');
   }
   const token = await sql.begin((tx) => reissueInvitation(tx, gameId));
   if (!token) throw new ApiError(409, 'invitation_used', 'Your friend has already joined.');
-  return { game: await loadView(sql, player.id, gameId), invitation: { token } };
+  return { game: await loadView(sql, player.id, gameId, types), invitation: { token } };
 }
 
-async function redeemInvitation(sql: Sql, player: Player, body: Record<string, unknown>) {
+async function redeemInvitation(sql: Sql, player: Player, body: Record<string, unknown>, types: string[]) {
   const token = body.token;
   if (typeof token !== 'string' || !SECRET.test(token)) {
     throw new ApiError(404, 'invitation_not_found', 'Invitation not found.');
@@ -402,10 +431,13 @@ async function redeemInvitation(sql: Sql, player: Player, body: Record<string, u
   const gameId = await sql.begin(async (tx) => {
     // Locking the invitation serialises competing claims: exactly one can take the seat.
     const [invitation] = await tx`
-      select game_id, seat, redeemed_by from game_invitations
-       where token_hash = decode(${tokenHash}, 'hex')
-         for update`;
+      select i.game_id, i.seat, i.redeemed_by, g.game_type, g.schema_version
+        from game_invitations i join games g on g.id = i.game_id
+       where i.token_hash = decode(${tokenHash}, 'hex')
+         for update of i`;
     if (!invitation) throw new ApiError(404, 'invitation_not_found', 'Invitation not found.');
+    // Never seat a player in a game their client cannot show.
+    readable(invitation, types);
     if (invitation.redeemed_by === player.id) return invitation.game_id as string; // retry by the same player
     if (invitation.redeemed_by) throw new ApiError(409, 'invitation_used', 'This invitation has already been used.');
 
@@ -424,13 +456,13 @@ async function redeemInvitation(sql: Sql, player: Player, body: Record<string, u
        where id = ${invitation.game_id} and status = 'waiting'`;
     return invitation.game_id as string;
   });
-  return { game: await loadView(sql, player.id, gameId) };
+  return { game: await loadView(sql, player.id, gameId, types) };
 }
 
 // ---------- history and rematches ----------
 
 export interface HistoryEntry {
-  gameType: 'chess';
+  gameType: string;
   opponent: Player;
   wins: number;
   draws: number;
@@ -446,31 +478,35 @@ export interface HistoryEntry {
 }
 
 /** Finished games per opponent, newest first, with an exact tally. Only the player's own games. */
-async function loadHistory(sql: Sql, playerId: string): Promise<HistoryEntry[]> {
+async function loadHistory(sql: Sql, playerId: string, types: string[]): Promise<HistoryEntry[]> {
   const rows = await sql`
-    select g.id, g.result, g.termination, g.updated_at as finished_at, me.seat as your_seat,
-           jsonb_array_length(g.payload -> 'moves') as move_count,
+    select g.id, g.game_type, g.schema_version, g.payload, g.result, g.termination,
+           g.updated_at as finished_at, me.seat as your_seat,
            opp.player_id as opponent_id, pl.display_name as opponent_name
       from games g
       join game_participants me on me.game_id = g.id and me.player_id = ${playerId}
       join game_participants opp on opp.game_id = g.id and opp.player_id <> ${playerId}
       join players pl on pl.id = opp.player_id
-     where g.status = 'finished' and g.game_type = 'chess'
+     where g.status = 'finished' and g.game_type = any(${types}::text[])
      order by g.updated_at desc, g.id`;
 
+  // One entry per game type AND opponent: results of different types are never combined.
   const byOpponent = new Map<string, HistoryEntry>();
   for (const row of rows) {
-    let entry = byOpponent.get(row.opponent_id);
+    const adapter = adapterFor(row.game_type, row.schema_version);
+    if (!adapter) continue; // a schema this server cannot read: left out, left untouched
+    const key = `${row.game_type}:${row.opponent_id}`;
+    let entry = byOpponent.get(key);
     if (!entry) {
       entry = {
-        gameType: 'chess',
+        gameType: row.game_type,
         opponent: { id: row.opponent_id, displayName: row.opponent_name },
         wins: 0,
         draws: 0,
         losses: 0,
         games: [],
       };
-      byOpponent.set(row.opponent_id, entry);
+      byOpponent.set(key, entry);
     }
     const outcome = row.result === 'draw' ? 'draw' : row.result === row.your_seat ? 'win' : 'loss';
     entry[outcome === 'win' ? 'wins' : outcome === 'loss' ? 'losses' : 'draws']++;
@@ -480,7 +516,7 @@ async function loadHistory(sql: Sql, playerId: string): Promise<HistoryEntry[]> 
       outcome,
       termination: row.termination,
       yourSeat: row.your_seat,
-      moveCount: row.move_count,
+      moveCount: adapter.moveCount(row.payload),
     });
   }
   return [...byOpponent.values()];
@@ -490,21 +526,24 @@ async function loadHistory(sql: Sql, playerId: string): Promise<HistoryEntry[]> 
  * "Play again": a new game between the same two players, colours swapped, no invitation needed.
  * Each finished game has at most one rematch, so a second request (from either player) finds it.
  */
-async function startRematch(sql: Sql, player: Player, gameId: string) {
+async function startRematch(sql: Sql, player: Player, gameId: string, types: string[]) {
   if (!UUID.test(gameId)) throw new ApiError(404, 'game_not_found', 'Game not found.');
-  const { initialFen, moves } = newGame();
 
   const started = await sql.begin(async (tx) => {
     const [source] = await tx`
-      select g.status from games g
+      select g.status, g.game_type, g.schema_version from games g
         join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
        where g.id = ${gameId}`;
     if (!source) throw new ApiError(404, 'game_not_found', 'Game not found.');
+    readable(source, types);
     if (source.status !== 'finished') throw new ApiError(409, 'not_finished', 'This game is still going.');
+    // "Play again" keeps the game type, with that type's current rules and a fresh start.
+    const adapter = creatableAdapter(source.game_type);
+    if (!adapter) throw UNSUPPORTED();
 
     const [game] = await tx`
-      insert into games (game_type, status, payload, created_by, rematch_of)
-      values ('chess', 'active', ${tx.json({ initialFen, moves })}, ${player.id}, ${gameId})
+      insert into games (game_type, schema_version, status, payload, created_by, rematch_of)
+      values (${adapter.type}, ${adapter.schemaVersion}, 'active', ${tx.json(adapter.create() as never)}, ${player.id}, ${gameId})
       on conflict (rematch_of) do nothing
       returning id`;
     if (!game) {
@@ -520,17 +559,20 @@ async function startRematch(sql: Sql, player: Player, gameId: string) {
 
   return {
     status: started.duplicate ? 200 : 201,
-    body: { game: await loadView(sql, player.id, started.gameId), duplicate: started.duplicate },
+    body: { game: await loadView(sql, player.id, started.gameId, types), duplicate: started.duplicate },
   };
 }
 
-type Action = { type: 'move'; from: string; to: string; promotion?: PromotionPiece } | { type: 'resign' };
-
-function parseAction(body: Record<string, unknown>): { requestId: string; expectedRevision: number; action: Action } {
+/** The common parts of an action request; the action itself is read by the game's type. */
+function parseActionRequest(body: Record<string, unknown>): {
+  requestId: string;
+  expectedRevision: number;
+  action: Record<string, unknown> | undefined;
+} {
   const { requestId, expectedRevision, action } = body as {
     requestId?: unknown;
     expectedRevision?: unknown;
-    action?: Record<string, unknown>;
+    action?: unknown;
   };
   if (typeof requestId !== 'string' || !UUID.test(requestId)) {
     throw new ApiError(400, 'bad_request', '"requestId" must be a UUID.');
@@ -538,52 +580,43 @@ function parseAction(body: Record<string, unknown>): { requestId: string; expect
   if (!Number.isInteger(expectedRevision) || (expectedRevision as number) < 0) {
     throw new ApiError(400, 'bad_request', '"expectedRevision" must be a non-negative integer.');
   }
-  if (action?.type === 'resign') return { requestId, expectedRevision: expectedRevision as number, action: { type: 'resign' } };
-  if (action?.type === 'move') {
-    const { from, to, promotion } = action;
-    if (
-      typeof from === 'string' && SQUARE.test(from) &&
-      typeof to === 'string' && SQUARE.test(to) &&
-      (promotion === undefined || (typeof promotion === 'string' && ['q', 'r', 'b', 'n'].includes(promotion)))
-    ) {
-      return {
-        requestId,
-        expectedRevision: expectedRevision as number,
-        action: { type: 'move', from, to, promotion: promotion as PromotionPiece | undefined },
-      };
-    }
-  }
-  throw new ApiError(400, 'bad_request', '"action" must be a move {type, from, to, promotion?} or {type: "resign"}.');
+  const raw = action && typeof action === 'object' && !Array.isArray(action) ? (action as Record<string, unknown>) : undefined;
+  return { requestId, expectedRevision: expectedRevision as number, action: raw };
 }
 
-async function submitAction(sql: Sql, player: Player, gameId: string, body: Record<string, unknown>) {
+async function submitAction(sql: Sql, player: Player, gameId: string, body: Record<string, unknown>, types: string[]) {
   if (!UUID.test(gameId)) throw new ApiError(404, 'game_not_found', 'Game not found.');
-  const { requestId, expectedRevision, action } = parseAction(body);
-  const requested = action.type === 'move' ? `${action.from}${action.to}${action.promotion ?? ''}` : null;
+  const { requestId, expectedRevision, action: raw } = parseActionRequest(body);
 
   return await sql.begin(async (tx) => {
     // The row lock serialises actions on one game; the revision check rejects stale clients.
     const [game] = await tx`
-      select g.status, g.revision, g.payload, g.created_by, me.seat
+      select g.game_type, g.schema_version, g.status, g.revision, g.payload, g.created_by, me.seat
         from games g
         join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
        where g.id = ${gameId}
          for update of g`;
     if (!game) throw new ApiError(404, 'game_not_found', 'Game not found.');
+    const adapter = readable(game, types);
+
+    // Resigning is common to every type; anything else is read by the game's type.
+    const action: TypedAction | null = raw?.type === 'resign' ? { type: 'resign' } : adapter.parseAction(raw);
+    if (!action) throw new ApiError(400, 'bad_request', `"action" is not a valid ${adapter.type} action or {type: "resign"}.`);
+    const stored = action.type === 'resign' ? { kind: 'resign', move: null } : adapter.stored(action);
 
     const [earlier] = await tx`
       select kind, move from game_actions
        where game_id = ${gameId} and player_id = ${player.id} and request_id = ${requestId}`;
     if (earlier) {
-      if (earlier.kind === action.type && earlier.move === requested) {
-        return { game: await loadView(tx, player.id, gameId), duplicate: true };
+      if (earlier.kind === stored.kind && earlier.move === stored.move) {
+        return { game: await loadView(tx, player.id, gameId, types), duplicate: true };
       }
       throw new ApiError(409, 'request_id_reused', 'This request ID was already used for a different action.');
     }
 
     if (game.revision !== expectedRevision) {
       throw new ApiError(409, 'stale_revision', 'The game has changed. Refresh and try again.', {
-        game: await loadView(tx, player.id, gameId),
+        game: await loadView(tx, player.id, gameId, types),
       });
     }
     // While waiting for the friend (#33), only the creator may act, and only by moving on their
@@ -595,25 +628,23 @@ async function submitAction(sql: Sql, player: Player, gameId: string, body: Reco
     if (game.status === 'finished') throw new ApiError(409, 'game_finished', 'This game is over.');
 
     const seat = game.seat as Seat;
-    let record: GameRecord = { schemaVersion: 1, ...game.payload };
+    let payload: unknown = game.payload;
     let outcome: { result: GameResult; termination: Termination } | null;
 
-    if (action.type === 'move') {
-      if ((replay(record).turn() === 'w' ? 'white' : 'black') !== seat) {
-        throw new ApiError(409, 'not_your_turn', 'It is not your turn.');
-      }
-      const next = applyMove(record, action.from, action.to, action.promotion);
-      if (!next) throw new ApiError(422, 'illegal_move', 'That move is not allowed.');
-      record = next;
-      outcome = outcomeOf(gameStatus(replay(record)));
-    } else {
+    if (action.type === 'resign') {
       outcome = { result: seat === 'white' ? 'black' : 'white', termination: 'resignation' };
+    } else {
+      if (adapter.turn(payload) !== seat) throw new ApiError(409, 'not_your_turn', 'It is not your turn.');
+      const applied = adapter.apply(payload, seat, action);
+      if ('error' in applied) throw new ApiError(applied.error.status, applied.error.code, applied.error.message);
+      payload = applied.payload;
+      outcome = applied.outcome;
     }
 
     const revision = game.revision + 1;
     await tx`
       update games
-         set payload = ${tx.json({ initialFen: record.initialFen, moves: record.moves })},
+         set payload = ${tx.json(payload as never)},
              revision = ${revision},
              status = ${outcome ? 'finished' : game.status},
              result = ${outcome?.result ?? null},
@@ -622,8 +653,8 @@ async function submitAction(sql: Sql, player: Player, gameId: string, body: Reco
        where id = ${gameId}`;
     await tx`
       insert into game_actions (game_id, player_id, request_id, kind, move, revision)
-      values (${gameId}, ${player.id}, ${requestId}, ${action.type}, ${requested}, ${revision})`;
+      values (${gameId}, ${player.id}, ${requestId}, ${stored.kind}, ${stored.move}, ${revision})`;
 
-    return { game: await loadView(tx, player.id, gameId), duplicate: false };
+    return { game: await loadView(tx, player.id, gameId, types), duplicate: false };
   });
 }

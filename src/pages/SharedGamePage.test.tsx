@@ -22,6 +22,8 @@ function game(overrides: Partial<SharedGame> = {}, moves: string[] = []): Shared
     updatedAt: '2026-10-11T10:00:00Z',
     players: { white: { id: 'p-arne', displayName: 'Arne' }, black: { id: 'p-harald', displayName: 'Harald' } },
     yourSeat: 'white',
+    turn: moves.length % 2 === 0 ? 'white' : 'black',
+    moveCount: moves.length,
     chess: { initialFen: START, moves, turn: moves.length % 2 === 0 ? 'white' : 'black' },
     rematchGameId: null,
     ...overrides,
@@ -453,5 +455,25 @@ describe('shared game', () => {
       await user.click(screen.getByRole('button', { name: 'Final position' }));
       expect(captures('Harald')).toHaveTextContent('1 white pawn');
     });
+  });
+});
+
+describe('a game this version cannot show (#53)', () => {
+  it('explains the refusal and offers a way back, without a board', async () => {
+    vi.spyOn(gameApi, 'getGame').mockRejectedValue(
+      new ApiError(422, 'unsupported_game', 'This game needs a newer version of FriendlyGames.'),
+    );
+    render(<SharedGamePage identity={identity} gameId={GAME_ID} onIdentityRejected={vi.fn()} />);
+    expect(await screen.findByRole('heading', { name: 'Can’t show this game' })).toBeInTheDocument();
+    expect(screen.getByText(/needs a newer version of FriendlyGames\. Reload the page/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Your games' })).toHaveAttribute('href', '#/');
+    expect(screen.queryByRole('grid')).not.toBeInTheDocument();
+  });
+
+  it('does not draw a type it does not know as chess', async () => {
+    vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: { ...game(), type: 'checkers', chess: undefined } });
+    render(<SharedGamePage identity={identity} gameId={GAME_ID} onIdentityRejected={vi.fn()} />);
+    expect(await screen.findByRole('heading', { name: 'Can’t show this game' })).toBeInTheDocument();
+    expect(screen.queryByRole('grid')).not.toBeInTheDocument();
   });
 });

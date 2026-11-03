@@ -21,6 +21,8 @@ function game(overrides: Partial<SharedGame> = {}): SharedGame {
     updatedAt: '2026-10-11T10:00:00Z',
     players: { white: { id: 'p-arne', displayName: 'Arne' }, black: { id: 'p-harald', displayName: 'Harald' } },
     yourSeat: 'white',
+    turn: 'white',
+    moveCount: 0,
     chess: { initialFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', moves: [], turn: 'white' },
     rematchGameId: null,
     ...overrides,
@@ -153,6 +155,15 @@ describe('onboarding', () => {
     expect(window.location.hash).toBe(`#/game/${GAME_ID}`);
   });
 
+  it('explains an invitation to a game this version cannot show', async () => {
+    signIn();
+    window.location.hash = `#/join/${TOKEN}`;
+    vi.spyOn(gameApi, 'redeemInvitation').mockRejectedValue(new ApiError(422, 'unsupported_game', 'newer'));
+    render(<App />);
+    expect(await screen.findByText(/needs a newer version of FriendlyGames\. Reload the page/)).toBeInTheDocument();
+    expect(window.location.hash).toBe(`#/join/${TOKEN}`);
+  });
+
   it('asks an invited player to introduce themselves first', () => {
     window.location.hash = `#/join/${TOKEN}`;
     render(<App />);
@@ -208,7 +219,12 @@ describe('lobby', () => {
     vi.spyOn(gameApi, 'listGames').mockResolvedValue({
       games: [
         game(),
-        game({ id: '22222222-2222-3333-4444-555555555555', chess: { ...game().chess, moves: ['e2e4'], turn: 'black' } }),
+        game({
+          id: '22222222-2222-3333-4444-555555555555',
+          turn: 'black',
+          moveCount: 1,
+          chess: { ...game().chess!, moves: ['e2e4'], turn: 'black' },
+        }),
         game({
           id: '33333333-2222-3333-4444-555555555555',
           status: 'finished',

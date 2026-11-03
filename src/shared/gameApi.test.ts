@@ -100,3 +100,19 @@ describe('momentary server failures', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('game types this client reads (#53)', () => {
+  it('names them on every game request, but not on email entry', async () => {
+    fetchMock.mockImplementation(async () => reply(200, { games: [], history: [], game: { id: 'g1' }, player: {} }));
+    await settle(gameApi.listGames(CRED));
+    await settle(gameApi.history(CRED));
+    await settle(gameApi.getGame(CRED, 'g1'));
+    await settle(action());
+    await settle(gameApi.redeemInvitation(CRED, 'T'));
+    await settle(gameApi.enterPlayer('a@example.test'));
+    const urls = fetchMock.mock.calls.map((call) => new URL(call[0] as string));
+    expect(urls.slice(0, 5).map((url) => url.searchParams.get('types'))).toEqual(Array(5).fill('chess'));
+    expect(urls[3].pathname).toMatch(/\/games\/g1\/actions$/);
+    expect(urls[5].search).toBe('');
+  });
+});
