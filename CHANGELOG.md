@@ -6,7 +6,11 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
-Nothing yet.
+### Development
+
+- Proof of the Chess960 rules engine and saved format: chessops for Chess960 (not yet
+  shipped), fixtures run in Node, the browser, Deno and the Supabase Edge runtime, and a
+  decision record with the licence and publication proposal (#52).
 
 ## v0.1.2 — Captured pieces at a glance (2026-11-03)
 

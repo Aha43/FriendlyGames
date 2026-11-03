@@ -415,3 +415,7 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # The game API authenticates players by device credential, not Supabase Auth JWTs.
 [functions.game-api]
 verify_jwt = false
+
+# Chess960 engine proof (#52): local/CI only, never deployed (see the function's header).
+[functions.chess960-proof]
+verify_jwt = false

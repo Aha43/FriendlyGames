@@ -1,0 +1,22 @@
+{
+  "version": "5",
+  "specifiers": {
+    "npm:chessops@0.15.1": "0.15.1"
+  },
+  "npm": {
+    "@badrap/result@0.3.1": {
+      "integrity": "sha512-ECvpsyZYknoRD0peG1K+UkX5llld3TyK1Ot9Cq2epSoWK19nyzpGKVl98sadSmohu5wHNuiDl+Ex9SVdcIjiFg=="
+    },
+    "chessops@0.15.1": {
+      "integrity": "sha512-hQDwv90AFkrPEsRJBebh3ZE+xDga25TCCv4lavNT2plZmd33UKNFYaZsE+7rafMbnBRrDEWUVsSYFqY3qCIGZw==",
+      "dependencies": [
+        "@badrap/result"
+      ]
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "npm:chessops@0.15.1"
+    ]
+  }
+}
