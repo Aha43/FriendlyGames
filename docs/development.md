@@ -1,10 +1,10 @@
 # Development workflow
 
-The [roadmap](roadmap.md) names version destinations. The next implementation is
-[Sprint 4](sprint-04.md), the v0.1.2 captured-piece patch. Its entry condition is
-finalizing the preceding [Sprint 3](sprint-03.md) release through #34 / #42.
-Once that is done, Sprint 4 is active without another guidance edit.
-Keep the process small enough to use between moves of a real game.
+The [roadmap](roadmap.md) names version destinations. The active route is
+[Sprint 5](sprint-05.md), v0.2.0 — Chess and Fischer Random. Merge its planning PR
+before implementation; review the #52 engine/format decision before downstream work.
+See [game-type boundaries](game-types.md). Keep the process small enough to use
+between moves of a real game.
 
 ## Planning and implementation
 
@@ -93,8 +93,9 @@ been verified. Any future review loop must be bounded and tied to the current he
 `package.json` is the source version. A release issue prepares a patch/minor bump,
 matching lockfile, changelog, integrated checks and deployment order. The owner
 authorises tags, publishing and milestone acceptance. The v0.1.1 release issue
-is #34, followed by #45 for v0.1.2. Neither may infer that the original real-game
-acceptance (#11) is done while Arne and Harald are still playing.
+is #56 for v0.2.0, with #49 supplying the first owner-run `make release` path.
+Version acceptance must not infer that the original real-game acceptance (#11)
+is done while Arne and Harald are still playing.
 
 Merging to main **auto-deploys the frontend** through Workers Builds. Treat merge
 approval accordingly. Backend/function/schema changes are a separate deliberate
@@ -103,8 +104,9 @@ existing-data cases and plan the site/backend order. The prototype has one hoste
 backend and local development; do not provision staging or paid services by inference.
 
 Future #37 will prepare an explicit backup → backend → site release path and
-review the corresponding publishing settings. It is outside Sprint 3; no current
-Cloudflare setting is changed by this plan.
+review the corresponding publishing settings. It remains outside Sprint 5;
+no current Cloudflare setting is changed by this plan. For Chess960, owner-deploy
+the reviewed additive backend before merging the UI that exposes the new type.
 
 Use [deployment.md](deployment.md) for actual commands, secrets, rollback and the
 deployed-version log. Local version/HEAD, green CI or a preview does not prove
@@ -119,6 +121,9 @@ history. Never log private emails, credentials or invitations.
 ## Hosting and repository decisions
 
 The repository remains private. No project open-source license is selected;
-third-party assets retain their recorded licences. Do not make it public, add a
+the owner is willing to publish the source and adopt a compatible licence for
+the Chess960 engine. #52 prepares that concrete proposal; this plan does not
+change visibility or select the project's licence. Third-party assets retain
+their recorded licences. Do not make it public, add a
 licence, change access controls or create cloud resources merely to work around
 a tooling limitation. Those are owner decisions.

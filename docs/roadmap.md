@@ -11,9 +11,9 @@ One issue still means one branch and one focused PR.
 | Version | Result | Route and evidence |
 | --- | --- | --- |
 | [v0.1.0 — First game with Harald](https://github.com/Aha43/FriendlyGames/milestone/3) | The deployed friends-only chess baseline. | Historical Sprints 1–2, unique email and email entry. The real game is underway; [#11](https://github.com/Aha43/FriendlyGames/issues/11) stays open until its finished-game, resume and shared-history acceptance is confirmed. |
-| [v0.1.1 — Correct starts and repeatable development](https://github.com/Aha43/FriendlyGames/milestone/4) | Correct first-turn/player presentation, repeatable human commands and a traceable release. | Active [Sprint 3](sprint-03.md): read-only [bug triage #33](https://github.com/Aha43/FriendlyGames/issues/33) and a confirmed fix first, then separate Makefile/CI issues and release qualification. |
-| [v0.1.2 — Captured pieces at a glance](https://github.com/Aha43/FriendlyGames/milestone/6) | Make captured pieces easy to see during existing and new games. | Queued [Sprint 4](sprint-04.md): captured-piece rows [#44](https://github.com/Aha43/FriendlyGames/issues/44), then patch qualification [#45](https://github.com/Aha43/FriendlyGames/issues/45). Finalize v0.1.1 first. |
-| [v0.2.0 — Learn the board while playing](https://github.com/Aha43/FriendlyGames/milestone/5) | The next small chess learning aid. | Proposed after the captured-piece patch (Sprint 5 candidate), starting with [pin explanations #20](https://github.com/Aha43/FriendlyGames/issues/20). Refine scope after real-game findings. |
+| [v0.1.1 — Correct starts and repeatable development](https://github.com/Aha43/FriendlyGames/milestone/4) | Correct starts and repeatable development. | Released; historical [Sprint 3](sprint-03.md), tag/release and actual deployments recorded separately. |
+| [v0.1.2 — Captured pieces at a glance](https://github.com/Aha43/FriendlyGames/milestone/6) | Captured pieces visible in existing/new games and replay. | Released; historical [Sprint 4](sprint-04.md), with the owner's real-game observation recorded. |
+| [v0.2.0 — Chess and Fischer Random](https://github.com/Aha43/FriendlyGames/milestone/5) | Two persisted game types, shared services and correct type-specific rules; first release via `make release`. | Selected [Sprint 5](sprint-05.md): engine/format proof first, then type boundary, Chess960 backend and UI, #49 and release qualification. [Architecture](game-types.md). |
 
 `package.json` is the source version; read it rather than maintaining a second
 current-version value here. It is not proof of a tag/release or first-game acceptance. Actual
@@ -62,10 +62,13 @@ deployment remains separate and guarded. Plan compatible schema/API changes and
 deployment order; record separate frontend/backend commits when they differ.
 A local version or green PR is not proof of deployed state.
 
-[Deployment orchestration #37](https://github.com/Aha43/FriendlyGames/issues/37)
-is future v0.2.0 candidate work, not Sprint 3: prepare one explicit backup →
-backend → site release path before changing automatic publishing. Until then,
-keep the current owner-approved deployment procedure and disclose its gap.
+[Release command #49](https://github.com/Aha43/FriendlyGames/issues/49) is selected
+for Sprint 5: v0.2.0 will be the first release tagged/published by the explicit
+owner-run command. It does not deploy. [Deployment orchestration #37](https://github.com/Aha43/FriendlyGames/issues/37),
+[pin explanations #20](https://github.com/Aha43/FriendlyGames/issues/20) and
+[colour choice #38](https://github.com/Aha43/FriendlyGames/issues/38) remain
+unscheduled backlog. Keep the existing deployment procedure and disclose its gap;
+no Cloudflare setting changes by inference.
 
 ## Sources
 

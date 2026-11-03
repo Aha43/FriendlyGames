@@ -7,8 +7,9 @@
 - The owner decides product tradeoffs and approves shipping.
 
 Read README.md, docs/product-brief.md, docs/roadmap.md, docs/development.md and
-the active issue/sprint before implementation. The active sprint is currently
-docs/sprint-03.md. Historical sprint documents remain design records.
+the active issue/sprint before implementation. The active route is Sprint 5:
+docs/sprint-05.md and docs/game-types.md. Its engine/format proof is reviewed before
+downstream implementation. Historical sprint documents remain design records.
 
 ## Working rules
 
@@ -22,8 +23,9 @@ docs/sprint-03.md. Historical sprint documents remain design records.
   Do not repair live game data as an incidental part of a code fix.
 - Implement the smallest complete result that meets the issue's acceptance criteria.
 - Preserve the friendly park atmosphere while keeping the board readable and usable.
-- Do not build a generic game engine, teams, ratings, chat or verified authentication
-  before the first chess milestone needs them.
+- The selected types are standard chess and Fischer Random (Chess960). Build the
+  small shared boundary needed by these two, not a generic plugin engine. Teams,
+  ratings, chat and verified authentication require separate owner-selected work.
 - Keep game rules separate from presentation and persistence.
 - Validate production moves on the server and use revision-based atomic updates.
 - Preserve complete chess move history; a current board position alone is insufficient.
