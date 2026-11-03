@@ -78,6 +78,24 @@ existing deployment guards and owner authorisation remain.
 - Version/changelog and actual deployed commits are recorded. If the original game
   is unfinished, keep #11 open and say so.
 
+## Qualification for v0.1.1 (#34, 2026-11-01)
+
+The integrated result is `main` at `2e1eeef` plus the release PR (version 0.1.1, changelog,
+records). Compared with the last v0.1.0-era record (`94749e1`), only #39 changes the app at
+runtime (`api.ts` and four frontend files); #35, #40 and #41 change planning, tooling, CI
+and docs.
+
+| Exit evidence | Status |
+| --- | --- |
+| Every coding PR has a primary issue and version | #39 → #33, #40 → #32, #41 → #36, all v0.1.1; the tracking check now enforces it |
+| Commands and CI verified, including failures | Makefile and tracking fixture tests, including deliberately broken versions; a real tracking failure and pass on PR #41; CI runs `make check`/`up`/`test-backend`/`e2e` |
+| White moves first, also before Black joins; Black rejected server-side | Backend `opening-while-waiting` tests; desktop and phone journeys for both join orders. In production the owner played d4 in the waiting game with Harald |
+| Existing games, identities, moves and history survive | No migration in v0.1.1; history, rematch and email-entry tests unchanged and passing; the owner's games intact |
+| Checks pass, honestly reported | `make verify` on the release branch: 136 unit/tooling, 56 backend, 24/24 browser, first run, no retries. Backend and browser tests ran on a stand-in here; the real-stack CI on the release PR is authoritative |
+| Version, changelog and deployed commits recorded | 0.1.1 in `package.json`/lockfile; changelog section; `5c8b481` deploy recorded. The release row is added after merge from `make prod-status` |
+| Owner accepts the patch | Pending: release PR review, then the owner's tag/release decision |
+| First game with Harald | In progress, so #11 and v0.1.0 stay open |
+
 Pin explanations (#20) are the next proposed feature sprint. Deployment
 orchestration (#37) is future work, not Sprint 3. Games, clocks, ratings,
 authentication, park navigation and review automation are outside this one.

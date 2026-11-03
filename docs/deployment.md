@@ -106,6 +106,23 @@ with `players.credential_hash`, so each player's first browser keeps working; br
 by email entry stop working until the new version is redeployed. Leave the
 migration in place (forward-only; harmless to the old version).
 
+### Releasing a version
+
+A release PR bumps `package.json`/`package-lock.json` and moves the changelog's
+`Unreleased` entries into a dated version section (docs/roadmap.md). After the owner merges
+it and any backend deploy is done:
+
+```bash
+git checkout main && git pull
+make prod-status                                   # record the live site/backend commits
+git tag -a vX.Y.Z -m "vX.Y.Z — <milestone title>"  # on the merged release commit
+git push origin vX.Y.Z
+gh release create vX.Y.Z --title "vX.Y.Z — <milestone title>" --notes "<the changelog section>"
+```
+
+Tags and releases are the owner's decision; add the release to "Deployed versions" with
+the commits `make prod-status` reported.
+
 ## Verifying a deployment
 
 ```bash
@@ -164,6 +181,7 @@ deploy script refuses to deploy without the secret and requires that flag.
 | 2026-10-18 | `025ff34` | `025ff34` | First production deployment (#11). Site: `https://friendlygames.arne-halvorsen.workers.dev` (Worker `friendlygames`, built by Workers Builds from `main`). Backend: Supabase project `friendlygames` (ref `hxiwclhyxisoqpljrytw`, Central EU / Frankfurt, Free plan, keep-alive on), reached through the transaction pooler. |
 | 2026-11-01 | `7da615c` | `7da615c` | One player per email (#27, #28). Before the migration, two unused duplicate test players (`92fc3f7d`, `acd55ac5`) had their email detached after an owner-approved backup and review; no players, games or history were deleted. |
 | 2026-11-01 | `2f58dcd` | `2f58dcd` | Email entry from any browser (#29, #30): `player_credentials` migration; existing browsers kept working. Prototype: email ownership isn't checked. Owner verified existing browsers and email entry from a private window. |
+| 2026-11-01 | `5c8b481` | `5c8b481` | Opening while waiting (#33, #39): function only, no migration. The owner deployed the backend after the merge and reported it done (the deploy script only finishes when `/health` reports that commit with the pooler), then played a saved opening (d4) in the waiting game with Harald. The site was later rebuilt from `8a5c7ee` (#40) and `2e1eeef` (#41); those changed only tooling and docs, not the app. |
 
 ### First deployment: verification and limits (2026-10-18)
 
