@@ -362,10 +362,13 @@ async function createGame(sql: Sql, player: Player, body: Record<string, unknown
       returning id`;
     if (!game) {
       const [earlier] = await tx`
-        select id, game_type from games where created_by = ${player.id} and create_request_id = ${requestId}`;
+        select id, game_type, schema_version from games where created_by = ${player.id} and create_request_id = ${requestId}`;
       if (earlier.game_type !== adapter.type) {
         throw new ApiError(409, 'request_id_reused', 'This request ID was already used to create a different game.');
       }
+      // Same type, but possibly a stored version this server or client cannot read: refuse before
+      // touching its invitation, as POST /games/:id/invitation does.
+      readable(earlier, types);
       // The first response (and its token) may have been lost: issue a fresh link if still unused.
       return { gameId: earlier.id as string, token: await reissueInvitation(tx, earlier.id), duplicate: true };
     }

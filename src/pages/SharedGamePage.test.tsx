@@ -470,6 +470,13 @@ describe('a game this version cannot show (#53)', () => {
     expect(screen.queryByRole('grid')).not.toBeInTheDocument();
   });
 
+  it('does not replay a chess record in a schema version it does not know', async () => {
+    vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: { ...game(), schemaVersion: 2 } });
+    render(<SharedGamePage identity={identity} gameId={GAME_ID} onIdentityRejected={vi.fn()} />);
+    expect(await screen.findByRole('heading', { name: 'Can’t show this game' })).toBeInTheDocument();
+    expect(screen.queryByRole('grid')).not.toBeInTheDocument();
+  });
+
   it('does not draw a type it does not know as chess', async () => {
     vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: { ...game(), type: 'checkers', chess: undefined } });
     render(<SharedGamePage identity={identity} gameId={GAME_ID} onIdentityRejected={vi.fn()} />);

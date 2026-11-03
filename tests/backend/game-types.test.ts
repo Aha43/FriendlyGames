@@ -113,6 +113,31 @@ describe('a game this server or client cannot read', () => {
     expect((await call('GET', `/games/${active}`, { credential: outsider.credential })).body.error.code).toBe('game_not_found');
   });
 
+  it('refuses a creation retry that finds an unreadable game, without renewing its invitation', async () => {
+    const arne = await newPlayer('Arne');
+    const requestId = randomUUID();
+    const [game] = await sql`
+      insert into games (game_type, schema_version, status, revision, payload, created_by, create_request_id)
+      values ('chess', 99, 'waiting', 0, ${sql.json({ future: 'format' })}, ${arne.id}, ${requestId})
+      returning id`;
+    await sql`insert into game_participants (game_id, player_id, seat) values (${game.id}, ${arne.id}, 'white')`;
+    await sql`
+      insert into game_invitations (game_id, token_hash, seat, invited_email)
+      values (${game.id}, decode(md5(${randomUUID()}) || md5(${randomUUID()}), 'hex'), 'black', 'friend@example.test')`;
+    const invitation = () => sql`select encode(token_hash, 'hex') as hash, created_at from game_invitations where game_id = ${game.id}`;
+    const before = await invitation();
+
+    const retry = await call('POST', '/games', {
+      credential: arne.credential,
+      body: { friendEmail: 'friend@example.test', requestId },
+    });
+    expect(retry.status).toBe(422);
+    expect(retry.body.error.code).toBe('unsupported_game');
+    expect(retry.body).not.toHaveProperty('invitation');
+    expect(await invitation()).toEqual(before);
+    expect(await rowOf(game.id)).toMatchObject({ schema_version: 99, revision: 0, actions: 0 });
+  });
+
   it('refuses a game whose type the client did not ask for, before any write', async () => {
     const [arne, harald] = await Promise.all([newPlayer('Arne'), newPlayer('Harald')]);
     const created = await call('POST', '/games', { credential: arne.credential, body: { friendEmail: harald.email } });

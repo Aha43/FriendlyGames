@@ -191,8 +191,8 @@ static registry picks the adapter from the stored row; nothing falls back to che
   authorization: membership rules are unchanged.
 - **Lists and history** leave out games the client does not read, and games no adapter
   on this server reads (an unknown type or schema version). A mixed lobby still loads.
-- **Direct requests** (`GET /games/:id`, actions, rematch, invitation renewal and redeem)
-  on such a game get `422 unsupported_game` before anything is written or returned; the
+- **Direct requests** (`GET /games/:id`, actions, rematch, invitation renewal and redeem,
+  and a creation retry whose request ID finds such a game) get `422 unsupported_game` before anything is written or returned; the
   record is kept as it is. For a non-participant it stays `404 game_not_found`.
 - **Creation** takes an optional `type` (omitted means `chess`); a type that is not
   enabled, or that the client does not read, gets `400 unsupported_game_type`.

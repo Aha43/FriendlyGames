@@ -157,9 +157,25 @@ async function attemptRequest<T>(method: 'GET' | 'POST', path: string, credentia
   }
   if (!response.ok) {
     const error = (data as { error?: { code?: string; message?: string; game?: SharedGame } } | null)?.error;
-    throw new ApiError(response.status, error?.code ?? 'unknown', error?.message ?? 'Request failed.', error?.game);
+    const game = error?.game ? withCommonFields(error.game) : undefined;
+    throw new ApiError(response.status, error?.code ?? 'unknown', error?.message ?? 'Request failed.', game);
+  }
+  if (data && typeof data === 'object') {
+    const body = data as { game?: SharedGame; games?: SharedGame[] };
+    if (body.game) body.game = withCommonFields(body.game);
+    if (Array.isArray(body.games)) body.games = body.games.map(withCommonFields);
   }
   return data as T;
+}
+
+/**
+ * A backend from before #53 sends chess games without the common `turn` and `moveCount`.
+ * The web client publishes on merge, before the owner deploys the backend, so fill them in
+ * from the chess view rather than show "undefined moves" in the meantime.
+ */
+function withCommonFields(game: SharedGame): SharedGame {
+  if ((game.turn !== undefined && game.moveCount !== undefined) || !game.chess) return game;
+  return { ...game, turn: game.turn ?? game.chess.turn, moveCount: game.moveCount ?? game.chess.moves.length };
 }
 
 export const gameApi = {

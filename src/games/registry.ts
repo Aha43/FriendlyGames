@@ -4,8 +4,9 @@ import type { SharedGame } from '../shared/gameApi';
 
 export type GameFamily = 'chess';
 
-export const GAME_TYPES: Record<string, { label: string; family: GameFamily }> = {
-  chess: { label: 'Chess', family: 'chess' },
+/** Each type with the saved schema versions this client can replay. */
+export const GAME_TYPES: Record<string, { label: string; family: GameFamily; schemaVersions: readonly number[] }> = {
+  chess: { label: 'Chess', family: 'chess', schemaVersions: [1] },
 };
 
 /** Sent as `types` with every game request. */
@@ -15,7 +16,8 @@ export const SUPPORTED_TYPES: readonly string[] = Object.keys(GAME_TYPES);
 export type ChessGame = SharedGame & { chess: NonNullable<SharedGame['chess']> };
 
 export function isChessGame(game: SharedGame): game is ChessGame {
-  return GAME_TYPES[game.type]?.family === 'chess' && game.chess !== undefined;
+  const known = GAME_TYPES[game.type];
+  return known?.family === 'chess' && known.schemaVersions.includes(game.schemaVersion) && game.chess !== undefined;
 }
 
 export const UNSUPPORTED_GAME_TEXT = 'This game needs a newer version of FriendlyGames. Reload the page to update.';

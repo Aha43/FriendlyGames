@@ -56,7 +56,8 @@ the old hard-coded chess backend must not be used to read Chess960 games.
   action shape, stored notation, turn, legality/outcome, move count and the view. Resign is
   common. #54 adds a `chess960` adapter and its migration; nothing else in `api.ts` should
   need a new branch.
-- **Frontend**: `src/games/registry.ts` lists the types the client shows and their family.
+- **Frontend**: `src/games/registry.ts` lists the types the client shows, their family
+  and the schema versions it replays; anything else is refused, not drawn.
   `gameApi` sends them as `types` on every game request. Shared chrome uses the common
   `turn`/`moveCount`; `SharedGamePage` is the chess-family presenter and refuses anything
   else with an explicit message.
@@ -71,8 +72,10 @@ the old hard-coded chess backend must not be used to read Chess960 games.
 
 ### Rollout and rollback
 
-1. Deploy the #53 backend (`make deploy-backend`, owner) and let the frontend publish. No
-   data changes; old cached clients keep working because omitted `types` means chess.
+1. Deploy the #53 backend (`make deploy-backend`, owner). The frontend publishes on merge,
+   possibly first: until the backend is deployed, it takes `turn`/`moveCount` from the old
+   chess view (`gameApi.ts`), and the old backend ignores `types`. No data changes; old
+   cached clients keep working because omitted `types` means chess.
 2. Only then may #54's migration and backend create `chess960` records.
 3. Once such records exist, the supported rollback is to the #53 dispatcher or later, which
    leaves unknown types out and refuses them explicitly. Rolling back to the pre-#53

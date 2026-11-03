@@ -116,3 +116,33 @@ describe('game types this client reads (#53)', () => {
     expect(urls[5].search).toBe('');
   });
 });
+
+describe('a backend from before #53 (during rollout)', () => {
+  // The web client publishes on merge; the owner deploys the backend afterwards.
+  const legacy = (moves: string[]) => ({
+    id: 'g1',
+    type: 'chess',
+    schemaVersion: 1,
+    chess: { initialFen: 'start', moves, turn: moves.length % 2 ? 'black' : 'white' },
+  });
+
+  it('gets turn and moveCount from the chess view, in lists, games and conflicts', async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply(200, { games: [legacy(['e2e4']), legacy([])] }))
+      .mockResolvedValueOnce(reply(200, { game: legacy(['e2e4', 'e7e5']) }))
+      .mockResolvedValueOnce(reply(409, { error: { code: 'stale_revision', message: 'x', game: legacy(['d2d4']) } }));
+    const list = await settle(gameApi.listGames(CRED));
+    expect((list as { value: { games: unknown[] } }).value.games).toMatchObject([
+      { turn: 'black', moveCount: 1 },
+      { turn: 'white', moveCount: 0 },
+    ]);
+    expect(await settle(gameApi.getGame(CRED, 'g1'))).toMatchObject({ value: { game: { turn: 'white', moveCount: 2 } } });
+    const conflict = (await settle(action())) as { error: ApiError };
+    expect(conflict.error.game).toMatchObject({ turn: 'black', moveCount: 1 });
+  });
+
+  it('keeps what a current backend sends', async () => {
+    fetchMock.mockResolvedValueOnce(reply(200, { game: { ...legacy(['e2e4']), turn: 'black', moveCount: 1 } }));
+    expect(await settle(gameApi.getGame(CRED, 'g1'))).toMatchObject({ value: { game: { turn: 'black', moveCount: 1 } } });
+  });
+});
