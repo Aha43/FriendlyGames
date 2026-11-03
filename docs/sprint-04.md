@@ -67,3 +67,21 @@ The learning aid remains the next proposed feature direction after this patch.
 - Package version remains unchanged in planning/feature work. #45 prepares 0.1.2 and
   release notes. Only the owner accepts the patch and authorizes tags/releases.
 - First-game acceptance #11 stays separate; a passing patch does not complete it.
+
+## Qualification for v0.1.2 (#45, 2026-11-03)
+
+The integrated result is `main` at `18cde1f` plus the release PR (version 0.1.2, changelog,
+records). Compared with `v0.1.1` (`62b1bcd`), only #47 changes the app: the capture helper in
+the shared chess rules, the player plates, the two tables and styles. #46 is planning.
+
+| Evidence | Status |
+| --- | --- |
+| Captures correct, derived from saved moves | Helper tests: repeats and order, en passant, promotion without capture, promotion capture and a promoted queen captured, castling, sparse custom start. They fail if captures are inferred from missing material |
+| Shared, local and review; both orientations | Component tests and desktop/phone journeys: capture by each colour, lost reply with Retry counted once, refresh, review at an earlier move, local restart |
+| Readable on desktop and phone, board unchanged | 28-capture game at 1366, Pixel 7 and 320 px from both sides: same board width as an empty game, no horizontal scroll; the light strip added after the black pieces read poorly on the preview |
+| Existing games and history intact | Frontend only; no migration, API or backend deploy. The owner saw the captures in the ongoing game with Harald |
+| Checks | `make verify` on the release branch, first run, no retries: 149 unit/tooling, 56 backend, 24/24 browser (backend and browser on a stand-in here); real-stack CI on the release PR is authoritative |
+| Live state | Site `18cde1f` (Workers Builds success), backend `5c8b481` (unchanged); see deployment.md |
+| Owner acceptance | Pending: release PR review, then the owner's tag/release decision |
+| First game with Harald | Still in progress, so #11 stays open |
+
