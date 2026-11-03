@@ -121,6 +121,9 @@ history. Never log private emails, credentials or invitations.
 ## Hosting and repository decisions
 
 The repository remains private. No project open-source license is selected;
-third-party assets retain their recorded licences. Do not make it public, add a
+the owner is willing to publish the source and adopt a compatible licence for
+the Chess960 engine. #52 prepares that concrete proposal; this plan does not
+change visibility or select the project's licence. Third-party assets retain
+their recorded licences. Do not make it public, add a
 licence, change access controls or create cloud resources merely to work around
 a tooling limitation. Those are owner decisions.

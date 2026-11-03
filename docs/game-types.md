@@ -18,10 +18,12 @@ must use the stored type and version rather than relabel a chess replay. Only
 reviewed additive migrations extend constraints or add required representation.
 
 Cached old clients are part of rollout: their lobby reads `.chess.moves` and
-cannot interpret arbitrary new type views. Define an additive capability/contract
-opt-in before sending Chess960 views. Legacy listings/history remain chess-only;
+cannot interpret arbitrary new type views. Use one `types` query parameter
+(e.g. `types=chess,chess960`) for opt-in, not a new versioned API or capability
+framework. Omitted `types` means chess-only. Legacy listings/history remain chess-only;
 an unsupported direct game request gets an explicit safe response, never a payload
-replayed under orthodox rules. New clients opt in to supported types. Test this
+replayed under orthodox rules. Apply this guard before invitation/action/rematch
+writes for a type the client has not opted into. New clients opt in to supported types. Test this
 with existing clients both before and after Chess960 records exist.
 
 ## Small shared boundary
@@ -62,10 +64,11 @@ is a valid member; no seed/index picker is required. Retrying creation never
 rerolls. Same-type rematch swaps colours and generates one fresh random start;
 retries/concurrent rematches find that same game. Tallies remain separate by type.
 
-Use explicit legal castle controls on the selected king (touch and keyboard,
+For Chess960, use explicit legal castle controls on the selected king (touch and keyboard,
 with final king/rook squares). A normal king move must never silently select a
 castle, including ambiguous destinations or a stationary king. The persisted
-action/notation must preserve this distinction. Local Chess960 has its own save.
+action/notation must preserve this distinction. Standard chess retains today's
+king-two-squares interaction. Local Chess960 has its own save.
 
 ## First gate: engine and record proof (#52)
 
@@ -77,7 +80,10 @@ open PR when planning; its existence is not released-library support.
 #52 must recommend a maintained engine strategy, exact version/licence/notices,
 stable initial-rights/action encoding and replay schema, with executable castling,
 promotion/en-passant/draw/capture fixtures and browser plus real Supabase Edge
-runtime evidence. Exhaustively check the 960 starts. It may retain chess.js for
+runtime evidence. If the implementer's container registry is blocked, its browser
+and Deno proof plus a passing current-head real Edge-runtime fixture in CI meets
+the runtime gate. Codex may additionally verify locally. Exhaustively check the
+960 starts. It may retain chess.js for
 legacy chess and add a separate Chess960 adapter. A replacement needs replay and
 behaviour compatibility evidence; do not build castling patches around a shuffled
 orthodox board or ship with castling disabled.
@@ -85,3 +91,20 @@ orthodox board or ship with castling disabled.
 Codex reviews that concrete decision before #53–#55. Update this contract if the
 proof changes the design; bring actual dependency/licence/product tradeoffs to
 the owner. No rules dependency or record format is selected by this planning PR.
+
+## Owner licence preference
+
+After Claude's plan review, the owner stated willingness to make FriendlyGames
+public and adopt a compatible open-source licence for a needed library. Evaluate
+a released library first, including [chessops](https://github.com/niklasf/chessops),
+whose upstream documents Chess960 support and GPL-3.0-or-later licensing. Do not
+build a custom castling layer merely to preserve the previous private/no-licence
+position; such a layer is not authorized by this preference.
+
+#52 still verifies the exact package/version, rules and notices. It prepares the
+concrete project-licence and corresponding-source/publication proposal for review
+before distributing a GPL-containing browser build. GPL source requirements do
+not specifically mandate a public GitHub repository; see the [GNU FAQ](https://www.gnu.org/licenses/gpl-faq.en.html#GPLRequireSourcePostedPublic).
+Public source is the owner's acceptable practical route, not permission to expose
+player data, backups or credentials. This plan changes neither visibility nor
+the project's licence; those concrete publication steps follow the reviewed proof.

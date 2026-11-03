@@ -23,6 +23,10 @@ Merge the planning PR before Claude starts #52. One issue/branch/PR at a time;
 Codex reviews each exact head and the owner approves merges/deploys/releases.
 If the proof reveals a material tradeoff or changes feasibility, revise the plan
 before implementing; a shuffled board with incomplete castling is not a release.
+The owner accepts making the source public and adopting a compatible open-source
+licence if needed for the selected library. #52 evaluates that route first and
+prepares concrete publication/licence steps; no custom castling exception or
+repository visibility change is authorized by this planning PR.
 
 ## Acceptance
 
