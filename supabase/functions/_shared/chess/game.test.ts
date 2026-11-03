@@ -1,4 +1,4 @@
-import { applyMove, gameStatus, legalTargets, moveList, newGame, outcomeOf, replay, type GameRecord } from './game.ts';
+import { applyMove, capturedPieces, gameStatus, legalTargets, moveList, newGame, outcomeOf, replay, type GameRecord } from './game.ts';
 
 /** Play moves given as "e2e4" strings, failing the test if any is rejected. */
 function play(record: GameRecord, ...moves: string[]): GameRecord {
@@ -121,5 +121,41 @@ describe('outcomeOf', () => {
     const stalemate = play(newGame('7k/8/6K1/8/8/8/8/5Q2 w - - 0 1'), 'f1f7');
     expect(outcomeOf(gameStatus(replay(stalemate)))).toEqual({ result: 'draw', termination: 'stalemate' });
     expect(outcomeOf(gameStatus(replay(newGame())))).toBeNull();
+  });
+});
+
+describe('captured pieces (#44)', () => {
+  const from = (fen: string): GameRecord => ({ schemaVersion: 1, initialFen: fen, moves: [] });
+
+  it('starts empty and lists each side’s captures, repeats included, most valuable first', () => {
+    expect(capturedPieces(newGame())).toEqual({ w: [], b: [] });
+    // 1.e4 d5 2.exd5 Qxd5 3.Nc3 Qxa2 4.Rxa2 Nc6 5.Nb5 Nb4 6.Nxa7 Rxa7 7.Rxa7
+    const game = play(newGame(), 'e2e4', 'd7d5', 'e4d5', 'd8d5', 'b1c3', 'd5a2', 'a1a2', 'b8c6', 'c3b5', 'c6b4', 'b5a7', 'a8a7', 'a2a7');
+    expect(capturedPieces(game)).toEqual({ w: ['q', 'r', 'p', 'p'], b: ['n', 'p', 'p'] });
+  });
+
+  it('counts en passant as capturing a pawn', () => {
+    const game = play(newGame(), 'e2e4', 'a7a6', 'e4e5', 'd7d5', 'e5d6');
+    expect(capturedPieces(game)).toEqual({ w: ['p'], b: [] });
+  });
+
+  it('does not count promotion itself, castling or king moves as captures', () => {
+    const promotion = play(from('8/P6k/8/8/8/8/8/K7 w - - 0 1'), 'a7a8q');
+    expect(capturedPieces(promotion)).toEqual({ w: [], b: [] });
+    const castled = play(from('r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1'), 'e1g1', 'e8c8', 'g1h1');
+    expect(capturedPieces(castled)).toEqual({ w: [], b: [] });
+  });
+
+  it('counts a promotion capture once, as its victim, and a promoted piece by what it became', () => {
+    // b7xa8=Q takes a rook; Black's rook then takes the new queen.
+    const game = play(from('rr5k/1P6/8/8/8/8/8/K7 w - - 0 1'), 'b7a8q', 'b8a8');
+    expect(capturedPieces(game)).toEqual({ w: ['r'], b: ['q'] });
+  });
+
+  it('never treats pieces missing from a custom start as captured', () => {
+    // A sparse position: only kings and one pawn each, nothing has been taken yet.
+    const sparse = from('4k3/4p3/8/8/8/8/4P3/4K3 w - - 0 1');
+    expect(capturedPieces(sparse)).toEqual({ w: [], b: [] });
+    expect(capturedPieces(play(sparse, 'e2e4', 'e7e5'))).toEqual({ w: [], b: [] });
   });
 });

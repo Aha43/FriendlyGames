@@ -120,3 +120,21 @@ export function outcomeOf(status: GameStatus): { result: GameResult; termination
   if (status.kind === 'draw') return { result: 'draw', termination: status.reason };
   return null;
 }
+
+/** Most valuable first: the order captured pieces are listed in. */
+const CAPTURE_ORDER: PieceType[] = ['q', 'r', 'b', 'n', 'p'];
+
+/**
+ * The pieces each side has captured, from the moves actually played after the initial
+ * position (#44): `w` holds the black pieces White took, `b` the white pieces Black took.
+ * En passant counts; promotion alone does not; a promoted piece captured later counts as
+ * what it had become. Pieces absent from a custom starting position were never captured.
+ */
+export function capturedPieces(record: GameRecord): Record<Color, PieceType[]> {
+  const captured: Record<Color, PieceType[]> = { w: [], b: [] };
+  for (const move of replay(record).history({ verbose: true })) {
+    if (move.captured) captured[move.color].push(move.captured);
+  }
+  for (const list of Object.values(captured)) list.sort((a, b) => CAPTURE_ORDER.indexOf(a) - CAPTURE_ORDER.indexOf(b));
+  return captured;
+}

@@ -13,7 +13,7 @@ export type Board = (Piece | null)[][];
 
 export const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const;
 
-const PIECE_NAMES: Record<PieceType, string> = {
+export const PIECE_NAMES: Record<PieceType, string> = {
   k: 'king',
   q: 'queen',
   r: 'rook',

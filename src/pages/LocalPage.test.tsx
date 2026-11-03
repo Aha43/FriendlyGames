@@ -262,4 +262,20 @@ describe('local play', () => {
     const rules = screen.getByRole('link', { name: 'Rules by chess.js, BSD license' });
     expect(rules).toHaveAttribute('href', '/licenses/chess.js.txt');
   });
+
+  it('shows captured pieces and clears them for a new game (#44)', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const row = (colour: string) => screen.getByText(`Captured by ${colour}:`).closest('p')!;
+    expect(row('White')).toHaveTextContent('None yet');
+    await clickMoves(user, 'e2e4', 'd7d5', 'e4d5', 'd8d5');
+    expect(row('White')).toHaveTextContent('Captured by White: 1 black pawn');
+    expect(row('Black')).toHaveTextContent('Captured by Black: 1 white pawn');
+
+    await user.click(screen.getByRole('button', { name: 'New game' }));
+    await user.click(screen.getByRole('button', { name: 'Start over' }));
+    expect(row('White')).toHaveTextContent('Captured by White: None yet');
+    expect(row('Black')).toHaveTextContent('Captured by Black: None yet');
+  });
 });
+

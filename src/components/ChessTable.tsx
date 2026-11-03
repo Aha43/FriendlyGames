@@ -1,7 +1,7 @@
 // Local play: both sides on this device, kept in this browser only.
 import { useEffect, useMemo, useState } from 'react';
 import type { Color } from '@shared/chess/board.ts';
-import { applyMove, gameStatus, newGame, replay, type GameRecord, type GameStatus } from '@shared/chess/game.ts';
+import { applyMove, capturedPieces, gameStatus, newGame, replay, type GameRecord, type GameStatus } from '@shared/chess/game.ts';
 import { loadGame, saveGame } from '../chess/storage';
 import MoveList from './MoveList';
 import PlayBoard from './PlayBoard';
@@ -40,6 +40,7 @@ export default function ChessTable({ players }: ChessTableProps) {
 
   const chess = useMemo(() => replay(record), [record]);
   const status = gameStatus(chess);
+  const captured = useMemo(() => capturedPieces(record), [record]);
 
   function startNewGame() {
     setRecord(newGame());
@@ -53,7 +54,7 @@ export default function ChessTable({ players }: ChessTableProps) {
   return (
     <>
       <section className="table" aria-label={`Chess: ${players.w} vs ${players.b}`}>
-        <PlayerPlate name={players.b} color="b" badge={badgeFor('b', status)} />
+        <PlayerPlate name={players.b} color="b" badge={badgeFor('b', status)} captured={captured.b} />
         <PlayBoard
           key={boardKey}
           record={record}
@@ -66,7 +67,7 @@ export default function ChessTable({ players }: ChessTableProps) {
           onNotice={setNotice}
           explainBlocked={() => `It’s ${players[chess.turn()]}’s turn.`}
         />
-        <PlayerPlate name={players.w} color="w" badge={badgeFor('w', status)} />
+        <PlayerPlate name={players.w} color="w" badge={badgeFor('w', status)} captured={captured.w} />
       </section>
 
       <section className="game-panel" aria-label="This game">

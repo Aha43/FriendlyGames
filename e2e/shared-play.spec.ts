@@ -448,7 +448,7 @@ test('an invited player who already has a player joins as that player from anoth
   });
 });
 
-test('the creator opens while waiting; the friend joins later and replies (#33)', async ({ openContext }, testInfo) => {
+test('the creator opens while waiting; the friend joins later; captures show for both (#33, #44)', async ({ openContext }, testInfo) => {
   test.slow();
   const run = `${Date.now()}-${testInfo.project.name}`;
   const arne = await (await openContext('arne')).newPage();
@@ -487,8 +487,51 @@ test('the creator opens while waiting; the friend joins later and replies (#33)'
   await expect(harald.getByRole('list', { name: 'Moves' })).toContainText('e4');
 
   // He replies; Arne sees it and it is White's move again.
-  await move(harald, 'e7', 'e5');
+  await move(harald, 'd7', 'd5');
   await expect(harald.getByRole('status')).toHaveText('Arne’s move');
-  await expect(square(arne, 'e5')).toHaveAccessibleName('e5, black pawn', SYNC);
+  await expect(square(arne, 'd5')).toHaveAccessibleName('d5, black pawn', SYNC);
   await expect(arne.getByRole('status')).toHaveText('Your move');
+
+  // Captured pieces (#44). Arne takes on d5, but the answer is lost: the row waits, and Retry
+  // (same request ID) adds the pawn exactly once.
+  const captures = (page: Page, name: string) =>
+    page.locator('.player-plate', { hasText: name }).locator('.player-captures');
+  await expect(captures(arne, 'Arne (you)')).toHaveText(/Captured by White:\s*None yet/);
+  await loseResponses(arne, '**/game-api/games/*/actions');
+  await arne.route('**/game-api/games/*', (route) =>
+    route.request().method() === 'GET' ? route.abort('connectionreset') : route.fallback(),
+  );
+  await move(arne, 'e4', 'd5');
+  await expect(arne.getByText(/Couldn’t confirm whether your move was saved/)).toBeVisible();
+  await expect(captures(arne, 'Arne (you)')).toHaveText(/None yet/);
+  await arne.unroute('**/game-api/games/*/actions');
+  await arne.getByRole('button', { name: 'Retry' }).click();
+  await arne.unroute('**/game-api/games/*');
+  await expect(arne.getByRole('status')).toHaveText('Harald’s move');
+  await expect(captures(arne, 'Arne (you)')).toHaveText(/Captured by White:\s*1 black pawn/);
+
+  // Harald recaptures with the queen; both sessions show both rows.
+  await expect(captures(harald, 'Arne')).toHaveText(/Captured by White:\s*1 black pawn/, SYNC);
+  await move(harald, 'd8', 'd5');
+  await expect(captures(harald, 'Harald (you)')).toHaveText(/Captured by Black:\s*1 white pawn/);
+  await expect(captures(arne, 'Harald')).toHaveText(/Captured by Black:\s*1 white pawn/, SYNC);
+
+  // After a refresh they come back from the saved moves, once each.
+  await Promise.all([arne.reload(), harald.reload()]);
+  await Promise.all([openTable(arne), openTable(harald)]);
+  for (const [page, white, black] of [[arne, 'Arne (you)', 'Harald'], [harald, 'Arne', 'Harald (you)']] as const) {
+    await expect(captures(page, white)).toHaveText(/Captured by White:\s*1 black pawn$/);
+    await expect(captures(page, black)).toHaveText(/Captured by Black:\s*1 white pawn$/);
+    await expect(captures(page, white).locator('img')).toHaveCount(1);
+  }
+
+  // Finished-game review shows only the captures up to the reviewed move.
+  await harald.getByRole('button', { name: 'Resign…' }).click();
+  await harald.getByRole('button', { name: 'Resign', exact: true }).click();
+  await expect(arne.getByRole('status')).toHaveText('Harald resigned. You win', SYNC);
+  await arne.getByRole('button', { name: 'Previous move' }).click();
+  await expect(captures(arne, 'Arne (you)')).toHaveText(/1 black pawn/);
+  await expect(captures(arne, 'Harald')).toHaveText(/None yet/);
+  await arne.getByRole('button', { name: 'Final position' }).click();
+  await expect(captures(arne, 'Harald')).toHaveText(/1 white pawn/);
 });
