@@ -19,11 +19,11 @@ export function describeGame(game: SharedGame): string {
   const opponent = opponentName(game) ?? 'your friend';
   if (game.status === 'waiting') {
     // The creator may open before the friend joins (#33); then the empty seat is to move.
-    return game.chess.turn === game.yourSeat
+    return game.turn === game.yourSeat
       ? `Your move. ${opponentName(game) ?? 'Your friend'} can join at any time`
       : `Your move is saved. Waiting for ${opponent} to join`;
   }
-  if (game.status === 'active') return game.chess.turn === game.yourSeat ? 'Your move' : `${opponent}’s move`;
+  if (game.status === 'active') return game.turn === game.yourSeat ? 'Your move' : `${opponent}’s move`;
 
   const youWon = game.result === game.yourSeat;
   switch (game.termination) {

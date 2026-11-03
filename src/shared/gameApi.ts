@@ -1,5 +1,6 @@
 // Browser client for the game-api Edge Function (contract: docs/backend.md).
 // Never log request headers or bodies: they carry the device credential and invitation tokens.
+import { SUPPORTED_TYPES } from '../games/registry';
 
 export type Seat = 'white' | 'black';
 
@@ -10,7 +11,8 @@ export interface PlayerSummary {
 
 export interface SharedGame {
   id: string;
-  type: 'chess';
+  /** The game type; only types this client asked for are sent (see src/games/registry.ts). */
+  type: string;
   schemaVersion: number;
   status: 'waiting' | 'active' | 'finished';
   result: 'white' | 'black' | 'draw' | null;
@@ -27,13 +29,18 @@ export interface SharedGame {
   updatedAt: string;
   players: Record<Seat, PlayerSummary | null>;
   yourSeat: Seat;
-  chess: { initialFen: string; moves: string[]; turn: Seat };
+  /** The seat to move, for any type. */
+  turn: Seat;
+  /** Moves played so far, for any type. */
+  moveCount: number;
+  /** Standard chess only. */
+  chess?: { initialFen: string; moves: string[]; turn: Seat };
   /** The game started from this one with "Play again", if any. */
   rematchGameId: string | null;
 }
 
 export interface HistoryEntry {
-  gameType: 'chess';
+  gameType: string;
   opponent: PlayerSummary;
   wins: number;
   draws: number;
@@ -110,9 +117,11 @@ async function request<T>(
   body?: unknown,
   repeat: Repeat = 'safe',
 ): Promise<T> {
+  // Every game request says which game types this client can show (#53); the server sends no others.
+  const url = path === '/players' ? path : `${path}${path.includes('?') ? '&' : '?'}types=${SUPPORTED_TYPES.join(',')}`;
   for (let attempt = 0; ; attempt++) {
     try {
-      return await attemptRequest<T>(method, path, credential, body);
+      return await attemptRequest<T>(method, url, credential, body);
     } catch (error) {
       if (attempt >= RETRY_DELAYS_MS.length || !repeatable(error, repeat)) throw error;
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
@@ -148,9 +157,25 @@ async function attemptRequest<T>(method: 'GET' | 'POST', path: string, credentia
   }
   if (!response.ok) {
     const error = (data as { error?: { code?: string; message?: string; game?: SharedGame } } | null)?.error;
-    throw new ApiError(response.status, error?.code ?? 'unknown', error?.message ?? 'Request failed.', error?.game);
+    const game = error?.game ? withCommonFields(error.game) : undefined;
+    throw new ApiError(response.status, error?.code ?? 'unknown', error?.message ?? 'Request failed.', game);
+  }
+  if (data && typeof data === 'object') {
+    const body = data as { game?: SharedGame; games?: SharedGame[] };
+    if (body.game) body.game = withCommonFields(body.game);
+    if (Array.isArray(body.games)) body.games = body.games.map(withCommonFields);
   }
   return data as T;
+}
+
+/**
+ * A backend from before #53 sends chess games without the common `turn` and `moveCount`.
+ * The web client publishes on merge, before the owner deploys the backend, so fill them in
+ * from the chess view rather than show "undefined moves" in the meantime.
+ */
+function withCommonFields(game: SharedGame): SharedGame {
+  if ((game.turn !== undefined && game.moveCount !== undefined) || !game.chess) return game;
+  return { ...game, turn: game.turn ?? game.chess.turn, moveCount: game.moveCount ?? game.chess.moves.length };
 }
 
 export const gameApi = {

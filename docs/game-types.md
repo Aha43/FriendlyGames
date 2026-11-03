@@ -48,6 +48,39 @@ Unknown types/schema versions fail explicitly and preserve their records. This
 compatible dispatcher is the supported rollback boundary once new records exist;
 the old hard-coded chess backend must not be used to read Chess960 games.
 
+## The boundary as built (#53)
+
+- **Backend**: `supabase/functions/game-api/gameTypes.ts` holds the adapter interface, the
+  standard-chess adapter (chess.js, schema 1, record and wire format unchanged) and the
+  static registry. `api.ts` is the common service and calls the adapter for start state,
+  action shape, stored notation, turn, legality/outcome, move count and the view. Resign is
+  common. #54 adds a `chess960` adapter and its migration; nothing else in `api.ts` should
+  need a new branch.
+- **Frontend**: `src/games/registry.ts` lists the types the client shows, their family
+  and the schema versions it replays; anything else is refused, not drawn.
+  `gameApi` sends them as `types` on every game request. Shared chrome uses the common
+  `turn`/`moveCount`; `SharedGamePage` is the chess-family presenter and refuses anything
+  else with an explicit message.
+- **Still chess-family**: White/Black seats, white/black/draw results, terminations, the
+  `game_actions.move` pattern and history's per-seat outcome. A non-chess type would add
+  its own adapter, presenter, and (by migration) its own seats/results, keeping the common
+  lifecycle.
+- **Characterised legacy client**: a request without `types` sees exactly the old chess
+  views; a game no adapter reads (tested with a schema-99 fixture, standing in for future
+  rows) is left out of lists/history and refused on direct requests, with the row
+  unchanged (`tests/backend/game-types.test.ts`).
+
+### Rollout and rollback
+
+1. Deploy the #53 backend (`make deploy-backend`, owner). The frontend publishes on merge,
+   possibly first: until the backend is deployed, it takes `turn`/`moveCount` from the old
+   chess view (`gameApi.ts`), and the old backend ignores `types`. No data changes; old
+   cached clients keep working because omitted `types` means chess.
+2. Only then may #54's migration and backend create `chess960` records.
+3. Once such records exist, the supported rollback is to the #53 dispatcher or later, which
+   leaves unknown types out and refuses them explicitly. Rolling back to the pre-#53
+   backend is unsafe: it would replay Chess960 records with orthodox rules.
+
 ## Fischer Random contract
 
 Use the [FIDE Chess960 Guidelines II](https://handbook.fide.com/chapter/e012023):

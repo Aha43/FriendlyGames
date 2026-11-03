@@ -11,6 +11,10 @@ versions live in `package.json`; actual deployments are recorded separately in
 - Proof of the Chess960 rules engine and saved format: chessops for Chess960 (not yet
   shipped), fixtures run in Node, the browser, Deno and the Supabase Edge runtime, and a
   decision record with the licence and publication proposal (#52).
+- Game-type boundary: the server picks a rules adapter by each game's stored type and
+  version, and clients say which types they can show (`types`). Standard chess is still
+  the only type and plays exactly as before; a game a client cannot show is explained
+  instead of being drawn as chess (#53).
 
 ## v0.1.2 — Captured pieces at a glance (2026-11-03)
 

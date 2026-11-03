@@ -10,6 +10,7 @@ import PlayerPlate, { type PlateBadge } from '../components/PlayerPlate';
 import { badgeFor } from '../shared/badges';
 import { describeGame, opponentName, other } from '../shared/describe';
 import { ApiError, gameApi, NetworkError, type GameAction, type Seat, type SharedGame } from '../shared/gameApi';
+import { isChessGame, UNSUPPORTED_GAME_TEXT, type ChessGame } from '../games/registry';
 import { forgetInvitation, invitationFor, rememberInvitation, type Identity } from '../shared/identity';
 import { newRequestId } from '../shared/requestId';
 import { navigate } from '../shared/route';
@@ -35,7 +36,7 @@ interface Pending {
  * the game has moved past the revision the action was based on, so something was saved: either
  * this action, or something else first (then the action was refused as stale).
  */
-function wasSaved(pending: Pending, game: SharedGame): boolean {
+function wasSaved(pending: Pending, game: ChessGame): boolean {
   if (pending.action.type === 'resign') {
     return game.termination === 'resignation' && game.result !== game.yourSeat;
   }
@@ -50,8 +51,10 @@ interface SharedGamePageProps {
 }
 
 export default function SharedGamePage({ identity, gameId, onIdentityRejected }: SharedGamePageProps) {
-  const [game, setGame] = useState<SharedGame | null>(null);
+  const [game, setGame] = useState<ChessGame | null>(null);
   const [missing, setMissing] = useState(false);
+  // A game this client cannot show (a type it does not know, #53): explained, never guessed at.
+  const [unsupported, setUnsupported] = useState(false);
   const [offline, setOffline] = useState(false);
   const [pending, setPending] = useState<Pending | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -69,6 +72,10 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
 
   /** Accept a confirmed game from the server, never going back to an older revision. */
   const accept = useCallback((next: SharedGame) => {
+    if (!isChessGame(next)) {
+      setUnsupported(true);
+      return;
+    }
     setGame((current) => (current && current.id === next.id && current.revision > next.revision ? current : next));
     if (next.status !== 'waiting') forgetInvitation(next.id);
   }, []);
@@ -82,6 +89,7 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
       if (e instanceof NetworkError || (e instanceof ApiError && e.status >= 500)) setOffline(true);
       else if (e instanceof ApiError && e.status === 401) onIdentityRejected();
       else if (e instanceof ApiError && e.status === 404) setMissing(true);
+      else if (e instanceof ApiError && e.code === 'unsupported_game') setUnsupported(true);
     }
   }, [identity.credential, gameId, accept, onIdentityRejected]);
 
@@ -177,6 +185,20 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
     if (!confirmed || !pendingMove) return confirmed;
     return applyMove(confirmed, pendingMove.from, pendingMove.to, pendingMove.promotion) ?? confirmed;
   }, [confirmed, pendingMove, viewPly]);
+
+  if (unsupported) {
+    return (
+      <div className="page">
+        <section className="card">
+          <h2>Can’t show this game</h2>
+          <p>{UNSUPPORTED_GAME_TEXT}</p>
+          <a className="button" href="#/">
+            Your games
+          </a>
+        </section>
+      </div>
+    );
+  }
 
   if (missing) {
     return (

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, gameApi, NetworkError } from '../shared/gameApi';
+import { UNSUPPORTED_GAME_TEXT } from '../games/registry';
 import type { Identity } from '../shared/identity';
 import { navigate } from '../shared/route';
 
@@ -7,6 +8,7 @@ const MESSAGES: Record<string, string> = {
   invitation_used: 'This invitation has already been used by someone else.',
   invitation_not_found: 'This invitation link isn’t valid. Check that it was copied completely.',
   already_participant: 'This is your own invitation. Send the link to your friend.',
+  unsupported_game: UNSUPPORTED_GAME_TEXT,
 };
 
 interface JoinPageProps {
