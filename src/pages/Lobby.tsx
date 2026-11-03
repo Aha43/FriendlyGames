@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import ChessHistory from '../components/ChessHistory';
 import InvitationShare from '../components/InvitationShare';
 import { describeGame, opponentName } from '../shared/describe';
@@ -18,6 +18,8 @@ export default function Lobby({ identity, onIdentityRejected }: LobbyProps) {
   const [games, setGames] = useState<SharedGame[] | null>(null);
   const [history, setHistory] = useState<HistoryEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // An answer that arrives after the lobby has closed is ignored (its timers are already cleared).
+  const open = useRef(false);
 
   const refresh = useCallback(async () => {
     // Games and history load independently, so one failing does not hide the other.
@@ -25,6 +27,7 @@ export default function Lobby({ identity, onIdentityRejected }: LobbyProps) {
       gameApi.listGames(identity.credential),
       gameApi.history(identity.credential),
     ]);
+    if (!open.current) return;
     if (games.status === 'fulfilled') {
       setGames(games.value.games);
       for (const game of games.value.games) if (game.status !== 'waiting') forgetInvitation(game.id);
@@ -37,12 +40,14 @@ export default function Lobby({ identity, onIdentityRejected }: LobbyProps) {
   }, [identity.credential, onIdentityRejected]);
 
   useEffect(() => {
+    open.current = true;
     const first = setTimeout(refresh, 0);
     const timer = setInterval(() => document.visibilityState === 'visible' && refresh(), REFRESH_MS);
     const onVisible = () => document.visibilityState === 'visible' && refresh();
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', refresh);
     return () => {
+      open.current = false;
       clearTimeout(first);
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);

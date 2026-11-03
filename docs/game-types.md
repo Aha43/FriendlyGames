@@ -72,6 +72,12 @@ king-two-squares interaction. Local Chess960 has its own save.
 
 ## First gate: engine and record proof (#52)
 
+**Proposed outcome:** [decision 0001](decisions/0001-chess960-engine.md). chessops 0.15.1 for
+`chess960` only (chess.js stays for `chess`), Shredder-FEN start, UCI moves with castling saved as
+king onto its own rook, an explicit `castle` action and `game_actions.kind = 'castle'` (#54
+migration). Publish the source under GPL-3.0-or-later before #55 ships chessops to browsers.
+
+
 Installed chess.js 1.4.0 is not established as Chess960-capable. An isolated probe
 with king c1 and rooks a1/h1 offered c1→e1 as O-O, not the required g1/f1 result.
 [Upstream Chess960 work](https://github.com/jhlywa/chess.js/pull/575) was still an

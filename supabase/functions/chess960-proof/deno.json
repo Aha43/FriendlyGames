@@ -1,0 +1,5 @@
+{
+  "imports": {
+    "chessops/": "npm:/chessops@0.15.1/"
+  }
+}

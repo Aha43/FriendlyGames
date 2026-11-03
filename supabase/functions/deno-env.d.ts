@@ -3,4 +3,5 @@
 declare namespace Deno {
   const env: { get(key: string): string | undefined };
   function serve(handler: (request: Request) => Response | Promise<Response>): unknown;
+  const version: { deno: string; v8: string; typescript: string } | undefined;
 }
