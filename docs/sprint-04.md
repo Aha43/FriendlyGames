@@ -23,7 +23,8 @@ New findings are triaged separately rather than added to this patch by default.
 ## Product and technical contract
 
 Show rows **Captured by White** and **Captured by Black**, close to the corresponding
-player plates. White's row contains captured black pieces. Reuse the existing SVGs,
+player plates, inside each plate as a second line or directly under it. White's row
+contains captured black pieces. Reuse the existing SVGs,
 show repeated pieces in a stable type order and use a quiet **None yet** when empty.
 Keep the capturing player's row with their plate when the board faces Black. Rows
 wrap on narrow phones; they must not obscure or shrink the board to make room.
@@ -37,7 +38,9 @@ promotion itself, castling and initially missing pieces are not captures.
 Local and shared games, resumed existing games and finished-game review all use the
 same pure helper. Earlier-ply review shows only captures at that ply. Shared trays
 show confirmed captures until an unsaved move resolves; the board retains its existing
-pending indication. A failed move must not leave a captured piece in the tray, and a
+pending indication. During saving, an optimistic board may briefly show the victim gone
+before the confirmed tray adds it. This is intentional, not a consistency defect.
+A failed move must not leave a captured piece in the tray, and a
 committed-but-lost response must not count it twice. A new game/rematch starts empty.
 
 No new persisted fields, migration, backend rule/API change or production data repair
@@ -51,7 +54,9 @@ The learning aid remains the next proposed feature direction after this patch.
   Verify ordinary and capture-heavy layouts on desktop and phone, including 320px,
   both player orientations and readable rows without horizontal scrolling.
 - Exercise capture by each colour, refresh/resume, pending/failure recovery, local reset
-  and finished-game replay. Tests must fail when capture derivation/display breaks.
+  and finished-game replay. Extend existing journeys with capture assertions where
+  practical rather than adding a single long journey duplicating those flows.
+  Tests must fail when capture derivation/display breaks.
 - Use `make check` and relevant browser journeys; the release issue runs relevant
   integrated checks. Preserve real Supabase CI and disclose any stand-in limitations.
 - Existing live games and identities are untouched. No production-writing tests without

@@ -1,9 +1,10 @@
 # Development workflow
 
-The [roadmap](roadmap.md) names version destinations. The active route is
-[Sprint 3](sprint-03.md), targeting v0.1.1, with release qualification in #34 / #42.
-After that release is finalized, [Sprint 4](sprint-04.md) delivers the v0.1.2
-captured-piece patch. Keep the process small enough to use between moves of a real game.
+The [roadmap](roadmap.md) names version destinations. The next implementation is
+[Sprint 4](sprint-04.md), the v0.1.2 captured-piece patch. Its entry condition is
+finalizing the preceding [Sprint 3](sprint-03.md) release through #34 / #42.
+Once that is done, Sprint 4 is active without another guidance edit.
+Keep the process small enough to use between moves of a real game.
 
 ## Planning and implementation
 
