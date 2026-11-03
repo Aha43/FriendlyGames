@@ -73,6 +73,9 @@ Five deliberate breakages each fail the suite: ordinary moves allowed to castle;
   "moves": ["e2e4", "e7e5", "f1g1"] }
 ```
 
+- **As built (#54)** the version lives in `games.schema_version` and the payload is
+  `{ initialFen, moves }`, the same layout as standard chess; the record above is what the
+  rules module replays.
 - **`initialFen`** is Shredder-FEN. The castling field names the **rooks' files** (`GEge`), so each right is tied to a specific rook from the start.
 - **The start** is generated once by the server (`randomStartIndex` → `startFen`) and saved before the game is returned. Retries and refreshes read it, and never reroll.
 - **`moves`** are UCI. Castling is the **king onto its own rook** (`f1g1` above is a swap-castle; `b1a1`, `c1h1`). An ordinary king move can never land on its own piece, so the saved move means "castle" even when the king does not change square.

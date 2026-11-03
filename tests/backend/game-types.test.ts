@@ -1,6 +1,6 @@
-// Game-type boundary (#53), against the real local backend. Standard chess is the only enabled
-// type; a chess row in an unknown schema version stands in for "a game this server or client
-// cannot read" (the next type's records will be such rows for older clients).
+// Game-type boundary (#53), against the real local backend. A chess row in an unknown schema
+// version stands in for "a game this server cannot read"; Chess960 games as seen by a client
+// that reads only chess are in chess960.test.ts.
 import { afterAll, describe, expect, it } from 'vitest';
 import { call, db, move, newPlayer, playMoves, randomUUID, resign, startGame, type TestPlayer } from './client';
 
@@ -46,15 +46,16 @@ describe('the types a client asks for', () => {
     }
   });
 
-  it('creates standard chess by default or by name; other types are not available yet', async () => {
+  it('creates standard chess by default or by name; unknown types are refused', async () => {
     const [arne, harald] = await Promise.all([newPlayer('Arne'), newPlayer('Harald')]);
     const create = (body: Record<string, unknown>, query = '') =>
       call('POST', `/games${query}`, { credential: arne.credential, body: { friendEmail: harald.email, ...body } });
 
     expect((await create({})).body.game.type).toBe('chess');
     expect((await create({ type: 'chess' })).body.game.type).toBe('chess');
-    for (const type of ['chess960', 'checkers', 7]) {
-      const refused = await create({ type }, '?types=chess,chess960');
+    // Chess960 needs a client that reads it (tests/backend/chess960.test.ts).
+    for (const [type, query] of [['chess960', ''], ['chess960', '?types=chess'], ['checkers', '?types=chess,checkers'], [7, '']]) {
+      const refused = await create({ type }, query as string);
       expect(refused.status).toBe(400);
       expect(refused.body.error.code).toBe('unsupported_game_type');
     }

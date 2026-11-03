@@ -15,6 +15,9 @@ versions live in `package.json`; actual deployments are recorded separately in
   version, and clients say which types they can show (`types`). Standard chess is still
   the only type and plays exactly as before; a game a client cannot show is explained
   instead of being drawn as chess (#53).
+- Fischer Random (Chess960) on the server: a fair random start saved once per game, explicit
+  castling, all chess outcomes, retries, history per type and "Play again". Not selectable in
+  the app yet (#55); clients that read only chess never see these games (#54).
 
 ## v0.1.2 — Captured pieces at a glance (2026-11-03)
 

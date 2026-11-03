@@ -605,13 +605,19 @@ async function submitAction(sql: Sql, player: Player, gameId: string, body: Reco
     // Resigning is common to every type; anything else is read by the game's type.
     const action: TypedAction | null = raw?.type === 'resign' ? { type: 'resign' } : adapter.parseAction(raw);
     if (!action) throw new ApiError(400, 'bad_request', `"action" is not a valid ${adapter.type} action or {type: "resign"}.`);
-    const stored = action.type === 'resign' ? { kind: 'resign', move: null } : adapter.stored(action);
 
+    // A request ID seen before: the same action again (a retry after a lost reply) gets the
+    // current game; anything else is a client bug. Decided before the turn, revision or rules,
+    // which may all have moved on since the first attempt was saved.
     const [earlier] = await tx`
       select kind, move from game_actions
        where game_id = ${gameId} and player_id = ${player.id} and request_id = ${requestId}`;
     if (earlier) {
-      if (earlier.kind === stored.kind && earlier.move === stored.move) {
+      const same =
+        action.type === 'resign'
+          ? earlier.kind === 'resign'
+          : adapter.isRetryOf({ kind: earlier.kind as string, move: earlier.move as string | null }, action);
+      if (same) {
         return { game: await loadView(tx, player.id, gameId, types), duplicate: true };
       }
       throw new ApiError(409, 'request_id_reused', 'This request ID was already used for a different action.');
@@ -633,6 +639,7 @@ async function submitAction(sql: Sql, player: Player, gameId: string, body: Reco
     const seat = game.seat as Seat;
     let payload: unknown = game.payload;
     let outcome: { result: GameResult; termination: Termination } | null;
+    let stored: { kind: string; move: string | null } = { kind: 'resign', move: null };
 
     if (action.type === 'resign') {
       outcome = { result: seat === 'white' ? 'black' : 'white', termination: 'resignation' };
@@ -642,6 +649,7 @@ async function submitAction(sql: Sql, player: Player, gameId: string, body: Reco
       if ('error' in applied) throw new ApiError(applied.error.status, applied.error.code, applied.error.message);
       payload = applied.payload;
       outcome = applied.outcome;
+      stored = applied.stored;
     }
 
     const revision = game.revision + 1;
