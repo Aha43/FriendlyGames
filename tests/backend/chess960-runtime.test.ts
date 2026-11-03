@@ -14,6 +14,7 @@ describe.skipIf(process.env.FG_NO_EDGE_RUNTIME === '1')('Chess960 rules in the E
     expect(body.failures).toEqual([]);
     expect(response.status).toBe(200);
     expect(body.checks).toBe(7);
-    expect(body.runtime.deno).toMatch(/^2\./);
+    // The Edge runtime reports e.g. "supabase-edge-runtime-1.74.0 (compatible with Deno v2.1.4)".
+    expect(body.runtime.deno).toMatch(/(^|Deno v)2\.\d+/);
   });
 });
