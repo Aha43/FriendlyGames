@@ -6,7 +6,11 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- Each player's plate shows the pieces they have captured, "Captured by White" and
+  "Captured by Black", in shared and local games and when reviewing a finished game.
+  Existing games show their captures straight away (#44).
 
 ## v0.1.1 — Correct starts and repeatable development (2026-11-01)
 

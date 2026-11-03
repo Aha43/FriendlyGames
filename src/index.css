@@ -324,14 +324,44 @@ h2 {
 /* ---------- players ---------- */
 
 .player-plate {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
   padding: 0.4rem 0.6rem;
   border-radius: 10px;
   color: var(--wood-text);
   border: 1px solid transparent;
   min-width: 0;
+}
+
+.player-plate-main {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+/* Captured pieces (#44): a second line in the plate; wraps rather than widening the table. */
+.player-captures {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem 0.4rem;
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  min-height: 1.5rem;
+}
+
+.player-captures-label { opacity: 0.8; }
+.player-captures-none { opacity: 0.6; font-style: italic; }
+
+.player-captures-pieces {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.player-captures-pieces img {
+  width: 1.4rem;
+  height: 1.4rem;
+  margin-right: -0.2rem;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
 }
 
 .player-plate-active {

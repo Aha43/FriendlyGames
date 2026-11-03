@@ -32,15 +32,20 @@ test('play a local game, refresh, and start over', async ({ page }) => {
 
   await move(page, 'h5', 'f7');
   await expect(status).toHaveText('Checkmate. White wins');
+  const captures = (colour: string) => page.locator('.player-captures', { hasText: `Captured by ${colour}:` });
+  await expect(captures('White')).toHaveText(/Captured by White:\s*1 black pawn/);
+  await expect(captures('Black')).toHaveText(/Captured by Black:\s*None yet/);
 
   await page.reload();
   await expect(status).toHaveText('Checkmate. White wins');
   await expect(square(page, 'f7')).toHaveAccessibleName('f7, white queen');
   await expect(page.getByRole('list', { name: 'Moves' })).toContainText('Qxf7#');
+  await expect(captures('White')).toHaveText(/1 black pawn/);
 
   await page.getByRole('button', { name: 'New game' }).click();
   await expect(status).toHaveText('White to move');
   await expect(square(page, 'e2')).toHaveAccessibleName('e2, white pawn');
+  await expect(captures('White')).toHaveText(/None yet/);
 });
 
 test('promotion dialog holds keyboard focus and hands it back to the board', async ({ page }) => {

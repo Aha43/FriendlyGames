@@ -360,4 +360,98 @@ describe('shared game', () => {
     render(<SharedGamePage identity={identity} gameId={GAME_ID} onIdentityRejected={onIdentityRejected} />);
     await vi.waitFor(() => expect(onIdentityRejected).toHaveBeenCalled());
   });
+
+  describe('captured pieces (#44)', () => {
+    /** The captures line in the plate of the player with this visible name. */
+    const captures = (name: string) => screen.getByText(name).closest('.player-plate')!.querySelector('.player-captures')!;
+    const EXCHANGE = ['e2e4', 'd7d5', 'e4d5', 'd8d5'];
+
+    it('shows what each side captured in its own plate, with accessible counts', async () => {
+      await renderPage(game({}, EXCHANGE));
+      expect(captures('Arne (you)')).toHaveTextContent('Captured by White: 1 black pawn');
+      expect(captures('Harald')).toHaveTextContent('Captured by Black: 1 white pawn');
+      expect(captures('Arne (you)').querySelectorAll('img')).toHaveLength(1);
+      expect(captures('Arne (you)').querySelector('img')).toHaveAttribute('alt', '');
+    });
+
+    it('keeps each row with its capturing player when the board faces Black', async () => {
+      await renderPage(
+        game(
+          {
+            yourSeat: 'black',
+            players: { white: { id: 'p-harald', displayName: 'Harald' }, black: { id: 'p-arne', displayName: 'Arne' } },
+          },
+          [...EXCHANGE, 'g1f3', 'd5a2'],
+        ),
+      );
+      expect(captures('Arne (you)')).toHaveTextContent('Captured by Black: 2 white pawns');
+      expect(captures('Harald')).toHaveTextContent('Captured by White: 1 black pawn');
+    });
+
+    it('starts with None yet', async () => {
+      await renderPage(game());
+      expect(captures('Arne (you)')).toHaveTextContent('Captured by White: None yet');
+      expect(captures('Harald')).toHaveTextContent('Captured by Black: None yet');
+    });
+
+    it('adds a capture only when the server confirms it, and exactly once', async () => {
+      const user = userEvent.setup();
+      await renderPage(game({}, ['e2e4', 'd7d5']));
+      const reply = deferred<{ game: SharedGame; duplicate: boolean }>();
+      vi.spyOn(gameApi, 'submitAction').mockReturnValue(reply.promise);
+      await user.click(square('e4'));
+      await user.click(square('d5'));
+      // The board shows the capture as unsaved; the row waits for the server.
+      expect(square('d5')).toHaveAccessibleName('d5, white pawn, not saved yet');
+      expect(captures('Arne (you)')).toHaveTextContent('Captured by White: None yet');
+
+      await act(async () => reply.resolve({ game: game({}, ['e2e4', 'd7d5', 'e4d5']), duplicate: false }));
+      expect(captures('Arne (you)')).toHaveTextContent('Captured by White: 1 black pawn');
+    });
+
+    it('leaves the rows unchanged when a capture is refused', async () => {
+      const user = userEvent.setup();
+      const before = game({}, ['e2e4', 'd7d5']);
+      await renderPage(before);
+      vi.spyOn(gameApi, 'submitAction').mockRejectedValue(
+        new ApiError(409, 'stale_revision', 'changed', game({}, ['e2e4', 'd7d5', 'b1c3', 'b8c6'])),
+      );
+      await user.click(square('e4'));
+      await user.click(square('d5'));
+      expect(await screen.findByText(/The game changed before your move was saved/)).toBeInTheDocument();
+      expect(captures('Arne (you)')).toHaveTextContent('Captured by White: None yet');
+    });
+
+    it('counts a capture once after a lost reply is retried', async () => {
+      const user = userEvent.setup();
+      await renderPage(game({}, ['e2e4', 'd7d5']));
+      const submit = vi
+        .spyOn(gameApi, 'submitAction')
+        .mockRejectedValueOnce(new NetworkError('lost'))
+        .mockResolvedValueOnce({ game: game({}, ['e2e4', 'd7d5', 'e4d5']), duplicate: true });
+      await user.click(square('e4'));
+      await user.click(square('d5'));
+      await user.click(await screen.findByRole('button', { name: 'Retry' }));
+      expect(submit.mock.calls[1][2]).toBe(submit.mock.calls[0][2]); // same request ID
+      expect(await screen.findByText('Captured by White:')).toBeInTheDocument();
+      expect(captures('Arne (you)')).toHaveTextContent('Captured by White: 1 black pawn');
+    });
+
+    it('shows only the captures up to the reviewed move', async () => {
+      const user = userEvent.setup();
+      await renderPage(game({ status: 'finished', result: 'black', termination: 'resignation' }, EXCHANGE));
+      expect(captures('Arne (you)')).toHaveTextContent('1 black pawn');
+      expect(captures('Harald')).toHaveTextContent('1 white pawn');
+
+      await user.click(screen.getByRole('button', { name: 'Previous move' }));
+      expect(captures('Arne (you)')).toHaveTextContent('1 black pawn');
+      expect(captures('Harald')).toHaveTextContent('None yet');
+
+      await user.click(screen.getByRole('button', { name: 'Start position' }));
+      expect(captures('Arne (you)')).toHaveTextContent('None yet');
+
+      await user.click(screen.getByRole('button', { name: 'Final position' }));
+      expect(captures('Harald')).toHaveTextContent('1 white pawn');
+    });
+  });
 });

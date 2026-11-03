@@ -2,7 +2,7 @@
 // confirmed position, plus a move that is visibly "saving" until the server accepts it.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Color } from '@shared/chess/board.ts';
-import { applyMove, gameStatus, replay, type GameRecord, type PromotionPiece } from '@shared/chess/game.ts';
+import { applyMove, capturedPieces, gameStatus, replay, type GameRecord, type PromotionPiece } from '@shared/chess/game.ts';
 import InvitationShare from '../components/InvitationShare';
 import MoveList from '../components/MoveList';
 import PlayBoard from '../components/PlayBoard';
@@ -166,6 +166,12 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
     [game],
   );
   const pendingMove = active && !active.failure && active.action.type === 'move' ? active.action : null;
+  // Captured pieces come from the confirmed record (at the reviewed move, if any), never from an
+  // unsaved move: the board shows that one as pending, the rows add it once the server confirms.
+  const captured = useMemo(
+    () => (confirmed ? capturedPieces(viewPly === null ? confirmed : { ...confirmed, moves: confirmed.moves.slice(0, viewPly) }) : null),
+    [confirmed, viewPly],
+  );
   const shown = useMemo(() => {
     if (confirmed && viewPly !== null) return { ...confirmed, moves: confirmed.moves.slice(0, viewPly) };
     if (!confirmed || !pendingMove) return confirmed;
@@ -229,7 +235,7 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
   return (
     <>
       <section className="table" aria-label={`Chess: you vs ${opponent ?? 'your friend'}`}>
-        <PlayerPlate name={opponent ?? 'Waiting for friend'} color={colorOf(them)} badge={badge(them)} />
+        <PlayerPlate name={opponent ?? 'Waiting for friend'} color={colorOf(them)} badge={badge(them)} captured={captured?.[colorOf(them)]} />
         <PlayBoard
           record={shown}
           movable={myTurn ? colorOf(me) : null}
@@ -241,7 +247,7 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
           onNotice={setNotice}
           explainBlocked={explainBlocked}
         />
-        <PlayerPlate name={`${identity.displayName} (you)`} color={colorOf(me)} badge={badge(me)} />
+        <PlayerPlate name={`${identity.displayName} (you)`} color={colorOf(me)} badge={badge(me)} captured={captured?.[colorOf(me)]} />
       </section>
 
       <section className="game-panel" aria-label="This game">
