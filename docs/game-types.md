@@ -76,10 +76,27 @@ the old hard-coded chess backend must not be used to read Chess960 games.
    possibly first: until the backend is deployed, it takes `turn`/`moveCount` from the old
    chess view (`gameApi.ts`), and the old backend ignores `types`. No data changes; old
    cached clients keep working because omitted `types` means chess.
-2. Only then may #54's migration and backend create `chess960` records.
+2. Only then may #54's migration and backend create `chess960` records (deployed as below).
 3. Once such records exist, the supported rollback is to the #53 dispatcher or later, which
    leaves unknown types out and refuses them explicitly. Rolling back to the pre-#53
    backend is unsafe: it would replay Chess960 records with orthodox rules.
+
+### Deploying #54
+
+The migration `20261104120000_chess960_games.sql` only widens three checks
+(`games.game_type`, `game_actions.kind` and `move_has_notation`); every existing row
+already satisfies them and none is rewritten. Tested on a fresh database migrated to #53
+and filled with waiting, active and finished chess games, moves and resignations: the rows
+were byte-identical after the migration, RLS and the finished-game trigger unchanged.
+
+1. Merge; the site publishes. It still asks only for `chess`, so nobody sees or creates a
+   Chess960 game until #55.
+2. `make deploy-backend` (owner): backs up schema and data to `backups/`, pushes the
+   migration, deploys the function (now bundling chessops server-side only) and checks
+   `/health` for the new commit and the pooler.
+3. Check: `make prod-status`; the live lobby and an existing game still open as before.
+4. Rollback: the function can go back to the #53 commit (it leaves Chess960 games out and
+   refuses them). Keep the migration (forward-only, harmless to #53). Never go back before #53.
 
 ## Fischer Random contract
 

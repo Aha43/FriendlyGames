@@ -2,11 +2,21 @@
   "version": "5",
   "specifiers": {
     "npm:chess.js@1.4.0": "1.4.0",
+    "npm:chessops@0.15.1": "0.15.1",
     "npm:postgres@3.4.9": "3.4.9"
   },
   "npm": {
+    "@badrap/result@0.3.1": {
+      "integrity": "sha512-ECvpsyZYknoRD0peG1K+UkX5llld3TyK1Ot9Cq2epSoWK19nyzpGKVl98sadSmohu5wHNuiDl+Ex9SVdcIjiFg=="
+    },
     "chess.js@1.4.0": {
       "integrity": "sha512-BBJgrrtKQOzFLonR0l+k64A98NLemPwNsCskwb+29bRwobUa4iTm51E1kwGPbWXAcfdDa18nad6vpPPKPWarqw=="
+    },
+    "chessops@0.15.1": {
+      "integrity": "sha512-hQDwv90AFkrPEsRJBebh3ZE+xDga25TCCv4lavNT2plZmd33UKNFYaZsE+7rafMbnBRrDEWUVsSYFqY3qCIGZw==",
+      "dependencies": [
+        "@badrap/result"
+      ]
     },
     "postgres@3.4.9": {
       "integrity": "sha512-GD3qdB0x1z9xgFI6cdRD6xu2Sp2WCOEoe3mtnyB5Ee0XrrL5Pe+e4CCnJrRMnL1zYtRDZmQQVbvOttLnKDLnaw=="
@@ -15,6 +25,7 @@
   "workspace": {
     "dependencies": [
       "npm:chess.js@1.4.0",
+      "npm:chessops@0.15.1",
       "npm:postgres@3.4.9"
     ]
   }

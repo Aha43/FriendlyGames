@@ -361,9 +361,14 @@ async function createGame(sql: Sql, player: Player, body: Record<string, unknown
       on conflict (created_by, create_request_id) do nothing
       returning id`;
     if (!game) {
+      // The request's identity is its type and friend: the same ID for another of either is a
+      // different game (a client bug), refused rather than answered with the wrong game.
       const [earlier] = await tx`
-        select id, game_type, schema_version from games where created_by = ${player.id} and create_request_id = ${requestId}`;
-      if (earlier.game_type !== adapter.type) {
+        select g.id, g.game_type, g.schema_version, lower(i.invited_email) as invited_email
+          from games g
+          left join game_invitations i on i.game_id = g.id
+         where g.created_by = ${player.id} and g.create_request_id = ${requestId}`;
+      if (earlier.game_type !== adapter.type || earlier.invited_email !== friendEmail) {
         throw new ApiError(409, 'request_id_reused', 'This request ID was already used to create a different game.');
       }
       // Same type, but possibly a stored version this server or client cannot read: refuse before
@@ -605,13 +610,19 @@ async function submitAction(sql: Sql, player: Player, gameId: string, body: Reco
     // Resigning is common to every type; anything else is read by the game's type.
     const action: TypedAction | null = raw?.type === 'resign' ? { type: 'resign' } : adapter.parseAction(raw);
     if (!action) throw new ApiError(400, 'bad_request', `"action" is not a valid ${adapter.type} action or {type: "resign"}.`);
-    const stored = action.type === 'resign' ? { kind: 'resign', move: null } : adapter.stored(action);
 
+    // A request ID seen before: the same action again (a retry after a lost reply) gets the
+    // current game; anything else is a client bug. Decided before the turn, revision or rules,
+    // which may all have moved on since the first attempt was saved.
     const [earlier] = await tx`
       select kind, move from game_actions
        where game_id = ${gameId} and player_id = ${player.id} and request_id = ${requestId}`;
     if (earlier) {
-      if (earlier.kind === stored.kind && earlier.move === stored.move) {
+      const same =
+        action.type === 'resign'
+          ? earlier.kind === 'resign'
+          : adapter.isRetryOf({ kind: earlier.kind as string, move: earlier.move as string | null }, action);
+      if (same) {
         return { game: await loadView(tx, player.id, gameId, types), duplicate: true };
       }
       throw new ApiError(409, 'request_id_reused', 'This request ID was already used for a different action.');
@@ -633,6 +644,7 @@ async function submitAction(sql: Sql, player: Player, gameId: string, body: Reco
     const seat = game.seat as Seat;
     let payload: unknown = game.payload;
     let outcome: { result: GameResult; termination: Termination } | null;
+    let stored: { kind: string; move: string | null } = { kind: 'resign', move: null };
 
     if (action.type === 'resign') {
       outcome = { result: seat === 'white' ? 'black' : 'white', termination: 'resignation' };
@@ -642,6 +654,7 @@ async function submitAction(sql: Sql, player: Player, gameId: string, body: Reco
       if ('error' in applied) throw new ApiError(applied.error.status, applied.error.code, applied.error.message);
       payload = applied.payload;
       outcome = applied.outcome;
+      stored = applied.stored;
     }
 
     const revision = game.revision + 1;

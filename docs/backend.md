@@ -121,7 +121,8 @@ silently. Reconcile existing duplicates first:
   server committed, retrying with the same ID returns the same game instead of a second
   one. Because only the token's hash is stored, the retry cannot return the lost token:
   it issues a new one and the old link stops working (`invitation` is `null` once the
-  friend has joined). `POST /games/:id/invitation` does the same for the creator at any
+  friend has joined). The same `requestId` with another friend or game type is a different
+  game: `409 request_id_reused`, and nothing is changed. `POST /games/:id/invitation` does the same for the creator at any
   time while nobody has joined, e.g. from a device that never received the link. Issuing
   and redeeming lock the same invitation row, so they cannot interleave.
 - The creator shares the token as a link by hand. Possession of it lets one player
@@ -183,8 +184,8 @@ history. A small adapter per stored `(game_type, schema_version)` owns that type
 saved payload, actions, turn, move count, view and outcome (`game-api/gameTypes.ts`). A
 static registry picks the adapter from the stored row; nothing falls back to chess.
 
-- **Enabled types**: only `chess` (schema 1, chess.js, unchanged). `chess960` is reserved
-  for #54 and cannot be created yet.
+- **Types**: `chess` (schema 1, chess.js, unchanged) and `chess960`, Fischer Random
+  (schema 1, chessops; #54, see below). Players can't choose Chess960 in the web client yet (#55).
 - **Which types a client reads**: every game request may carry `?types=chess,chess960`.
   Omitted means `chess` only, which is what every client before #53 expects (it reads
   `.chess.moves`). Unknown names are ignored. This is compatibility metadata, never
@@ -196,9 +197,34 @@ static registry picks the adapter from the stored row; nothing falls back to che
   record is kept as it is. For a non-participant it stays `404 game_not_found`.
 - **Creation** takes an optional `type` (omitted means `chess`); a type that is not
   enabled, or that the client does not read, gets `400 unsupported_game_type`.
+- **A request ID** found again is compared with what the request asks for, before the turn,
+  revision or rules are looked at (see Actions): a retry may arrive after the game moved on.
 - Seats (White/Black) and results (white/black/draw) are still chess-family columns. A
   future non-chess type would bring its own seats, results, adapter and presenter; see
   [game-types.md](game-types.md).
+
+## Fischer Random (Chess960, #54)
+
+Rules and format: [decision 0001](decisions/0001-chess960-engine.md) and
+[game-types.md](game-types.md).
+
+- **Start**: drawn by the server once per new game, uniformly from the 960 starts, and saved
+  with the game before the reply. Retried creations, joins, refreshes and concurrent rematches
+  read the saved start; nothing rerolls it. "Play again" is Chess960 again, with a new start
+  (which may by chance be the same one), colours swapped.
+- **Saved** like chess: `payload = { initialFen, moves }`, the version in `schema_version`.
+  `initialFen` is Shredder-FEN (castling rights name the rooks' files, e.g. `HAha`); moves are
+  UCI, a castle as the king onto its own rook (`b1h1`).
+- **Actions**: `move` as for chess, plus `{ "type": "castle", "side": "kingside" | "queenside" }`.
+  Kingside is the rook to the king's right (higher file), wherever it started. A `move` that
+  would castle (two squares, or onto its own rook) is refused with `use_castle_action`, so a
+  king step is never a castle by accident; Kb1→c1 is a step even though O-O-O also ends there.
+- **Stored actions**: a castle is `kind = 'castle'`, `move` = its king-onto-rook UCI. A retried
+  castle is recognised by its side, read from that saved move (the rook to the right of the
+  king's start means kingside), not by resolving the castle again on the current board.
+- **Outcomes** as for chess: checkmate, stalemate, insufficient material, threefold
+  repetition (castling rights count) and the fifty-move rule end the game; resignation too.
+- A view carries `chess960: { initialFen, moves, turn }` instead of `chess`.
 
 ## API
 
@@ -220,8 +246,9 @@ endpoints accept the `types` query parameter described under Game types.
 | `POST /games/:id/rematch` | | `201 { game, duplicate: false }`, or `200 { game, duplicate: true }` if it already exists |
 | `POST /games/:id/actions` | `{ requestId, expectedRevision, action }` | `200 { game, duplicate }` |
 
-`action` is `{ "type": "move", "from": "e2", "to": "e4", "promotion"?: "q"|"r"|"b"|"n" }`
-or `{ "type": "resign" }`. `requestId` is a UUID.
+`action` is `{ "type": "move", "from": "e2", "to": "e4", "promotion"?: "q"|"r"|"b"|"n" }`,
+`{ "type": "castle", "side": "kingside"|"queenside" }` (Chess960 only) or `{ "type": "resign" }`.
+`requestId` is a UUID.
 
 A **game** looks like:
 
@@ -257,7 +284,7 @@ Errors are `{ "error": { "code", "message", … } }`:
 | 404 | `not_found`, `player_not_found`, `game_not_found`, `invitation_not_found` |
 | 409 | `stale_revision` (includes `game`), `not_your_turn`, `not_started`, `not_finished`, `game_finished`, `invitation_used`, `already_participant`, `request_id_reused` |
 | 413 | `too_large` |
-| 422 | `illegal_move`, `unsupported_game` (a game this server or client cannot read) |
+| 422 | `illegal_move`, `illegal_castle`, `use_castle_action` (Chess960), `unsupported_game` (a game this server or client cannot read) |
 
 ## Web client
 
