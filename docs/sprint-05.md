@@ -15,9 +15,10 @@ scope; do not begin downstream work until the engine/format proof is reviewed.
 | 2 | [#52 — Engine and record proof](https://github.com/Aha43/FriendlyGames/issues/52) | Executable browser/Edge-runtime proof of all Chess960 castling/start/record cases, with a reviewed dependency/format decision. Stop for review before downstream code. |
 | 3 | [#53 — Type boundary](https://github.com/Aha43/FriendlyGames/issues/53) | Registry/adapters and compatible API/client boundary, with only standard chess enabled and existing behaviour preserved. |
 | 4 | [#54 — Chess960 backend](https://github.com/Aha43/FriendlyGames/issues/54) | Additive storage and complete authoritative second-type creation/actions/history/rematch; owner-deployed before UI exposure. |
-| 5 | [#55 — Two-type UI](https://github.com/Aha43/FriendlyGames/issues/55) | Selector, shared chess board, explicit castle controls, local save isolation and mixed-game desktop/phone journeys. |
-| 6 | [#49 — make release](https://github.com/Aha43/FriendlyGames/issues/49) | Owner-run publication of the exact accepted version commit with real notes and bounded partial-failure recovery; no deploy. |
-| 7 | [#56 — Qualify v0.2.0](https://github.com/Aha43/FriendlyGames/issues/56) | Integrated review, version/lockfile/changelog, actual deployed evidence and owner acceptance; first release via `make release`. |
+| 5 | [#62 — Active implementation guidance](https://github.com/Aha43/FriendlyGames/issues/62) | Documentation housekeeping: align CLAUDE.md with the active route in AGENTS.md and remove completed #33 triage instructions. |
+| 6 | [#55 — Two-type UI](https://github.com/Aha43/FriendlyGames/issues/55) | Selector, shared chess board, explicit castle controls, local save isolation and mixed-game desktop/phone journeys. |
+| 7 | [#49 — make release](https://github.com/Aha43/FriendlyGames/issues/49) | Owner-run publication of the exact accepted version commit with real notes and bounded partial-failure recovery; no deploy. |
+| 8 | [#56 — Qualify v0.2.0](https://github.com/Aha43/FriendlyGames/issues/56) | Integrated review, version/lockfile/changelog, actual deployed evidence and owner acceptance; first release via `make release`. |
 
 Merge the planning PR before Claude starts #52. One issue/branch/PR at a time;
 Codex reviews each exact head and the owner approves merges/deploys/releases.
