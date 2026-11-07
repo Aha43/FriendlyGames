@@ -5,7 +5,7 @@
 .DEFAULT_GOAL := help
 MAKEFLAGS += --no-print-directory
 .PHONY: help setup doctor up down dev phone check test-backend e2e verify build preview version \
-        backup prod-status deploy-backend prod-e2e
+        backup prod-status deploy-backend prod-e2e release
 
 # Public addresses (no secrets). The API address comes from the linked project unless set.
 SITE_ORIGIN ?= https://friendlygames.arne-halvorsen.workers.dev
@@ -36,6 +36,7 @@ help:
 	@echo "  backup          Back up the production database into backups/ (private, git-ignored)"
 	@echo "  deploy-backend  Back up, migrate and deploy the backend from main; the site deploys on merge"
 	@echo "  prod-e2e        Browser journeys against the live site; creates throwaway @example.test players"
+	@echo "  release         Tag and publish the merged release commit of package.json's version (no deploy)"
 
 setup:
 	npm ci
@@ -108,14 +109,19 @@ backup:
 
 prod-status:
 	@[ -n "$(FG_API_URL)" ] || { echo "Unknown API address: run 'supabase link --project-ref <ref>' or set FG_API_URL." >&2; exit 1; }
-	@echo "Site     $(SITE_ORIGIN)"
-	@site=$$(curl -s -o /dev/null -w '%{http_code}' "$(SITE_ORIGIN)/"); \
-	  if [ "$$site" = 200 ]; then echo "         answers (the page footer shows its build commit)"; \
-	  else echo "         did not answer normally (HTTP $$site)"; fi
-	@echo "Backend  $(FG_API_URL)"
-	@health=$$(curl -fsS --max-time 20 "$(FG_API_URL)/health") || { echo "         health check failed: the backend is down, paused or unreachable" >&2; exit 1; }; \
-	  printf '%s' "$$health" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const h=JSON.parse(s);console.log("         commit "+(h.commit||"unknown")+", database "+(h.ok?"ok":"NOT ok")+", pooler "+(h.pooled?"yes":"NO"))})'
-	@echo "Local    $$(git rev-parse --short HEAD) on $$(git rev-parse --abbrev-ref HEAD) (your checkout, for comparison)"
+	@# Read-only. Prints everything, then fails if the site or backend is not healthy (#49: a
+	@# release stops on that).
+	@failed=0; \
+	echo "Site     $(SITE_ORIGIN)"; \
+	site=$$(curl -s -o /dev/null -w '%{http_code}' "$(SITE_ORIGIN)/"); \
+	if [ "$$site" = 200 ]; then echo "         answers (the page footer shows its build commit)"; \
+	else echo "         did not answer normally (HTTP $$site)" >&2; failed=1; fi; \
+	echo "Backend  $(FG_API_URL)"; \
+	if health=$$(curl -fsS --max-time 20 "$(FG_API_URL)/health"); then \
+	  printf '%s' "$$health" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const h=JSON.parse(s);console.log("         commit "+(h.commit||"unknown")+", database "+(h.ok?"ok":"NOT ok")+", pooler "+(h.pooled?"yes":"NO"));process.exit(h.ok?0:1)})' || failed=1; \
+	else echo "         health check failed: the backend is down, paused or unreachable" >&2; failed=1; fi; \
+	echo "Local    $$(git rev-parse --short HEAD) on $$(git rev-parse --abbrev-ref HEAD) (your checkout, for comparison)"; \
+	exit $$failed
 
 deploy-backend:
 	SITE_ORIGIN=$(SITE_ORIGIN) scripts/deploy-backend.sh
@@ -124,3 +130,8 @@ prod-e2e:
 	@[ -n "$(FG_API_URL)" ] || { echo "Unknown API address: run 'supabase link --project-ref <ref>' or set FG_API_URL." >&2; exit 1; }
 	@echo "Running the browser journeys against $(SITE_ORIGIN). They create throwaway @example.test players and games."
 	PLAYWRIGHT_BASE_URL=$(SITE_ORIGIN) FG_API_URL=$(FG_API_URL) npm run e2e
+
+# Owner-run publication (#49): annotated tag + GitHub release for the release commit of the
+# version in package.json. Not part of any other target; does not deploy.
+release:
+	node scripts/release.ts

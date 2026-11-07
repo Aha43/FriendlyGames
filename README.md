@@ -58,10 +58,11 @@ Production commands, run deliberately by the owner (docs/deployment.md):
 
 | Command | What it does |
 | --- | --- |
-| `make prod-status` | Read-only: the live site, and the backend's deployed commit, database and pooler status |
+| `make prod-status` | Read-only: the live site, and the backend's deployed commit, database and pooler status; fails if the site or backend is unhealthy |
 | `make backup` | Back up the production database into `backups/` (private, git-ignored); only complete dumps are kept |
 | `make deploy-backend` | Back up, apply migrations and deploy the function, from a clean, up-to-date `main` (`scripts/deploy-backend.sh`) |
 | `make prod-e2e` | Browser journeys against the live site; they create throwaway `@example.test` players |
+| `make release` | Tag and publish the merged release commit of `package.json`'s version as a GitHub release; does not deploy (docs/deployment.md, "Releasing a version") |
 
 The npm scripts keep working directly. The app talks to the game API at
 `VITE_GAME_API_URL` (see `.env.example`). Unset, it uses the local stack on the same host
