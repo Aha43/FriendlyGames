@@ -16,7 +16,7 @@
     "test:watch": "vitest",
     "check": "npm run lint && npm run typecheck && npm run test && npm run build",
     "e2e": "playwright test",
-    "test:backend": "vitest run --config vitest.backend.config.ts",
+    "test:backend": "vitest run --config vitest.backend.config.ts && vitest run --config vitest.backend-migrations.config.ts",
     "deploy:backend": "scripts/deploy-backend.sh"
   },
   "dependencies": {

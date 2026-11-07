@@ -39,6 +39,13 @@ supabase db reset       # recreate the database from migrations
 supabase stop
 ```
 
+`npm run test:backend` runs `tests/backend/` in parallel, then the migration rehearsals in
+`tests/backend/migrations/` one file at a time. Those drop and recreate schema objects inside
+rolled-back transactions, which would deadlock parallel signups; any new test that changes the
+schema belongs there (a tooling test enforces this). Test players get random unique emails
+(`uniqueSuffix` in `tests/backend/client.ts`), and setup failures name only the operation,
+HTTP status and error code: never print response bodies, credentials or tokens (#60).
+
 - Only the services the API needs run (`supabase/config.toml` disables Studio, Auth,
   Realtime, Storage, mail capture and analytics).
 - Ports are in the 563xx range so the stack can run beside other local Supabase
