@@ -30,6 +30,11 @@ interface Pending {
   action: GameAction;
   /** The move the server saves for this action (a castle as king onto rook), to recognise it later. */
   savedMove: string | null;
+  /**
+   * Squares to mark as "not saved yet", fixed from the position the action was made in. A later
+   * position (e.g. a refresh that already holds this action) must never re-derive them.
+   */
+  highlight: { from: string; to: string } | null;
   /** Set when sending failed: whether it was saved is unknown, and it can be retried as-is. */
   failure: string | null;
 }
@@ -171,15 +176,26 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
       baseMoves: view.record.moves.length,
       action,
       savedMove: action.type === 'resign' ? null : view.rules.savedMove(view.record, action),
+      highlight:
+        action.type === 'move'
+          ? { from: action.from, to: action.to }
+          : action.type === 'castle'
+            ? (view.rules.position(view.record).castles.find((c) => c.side === action.side)?.king ?? null)
+            : null,
       failure: null,
     });
   }
 
   const confirmed = view?.record ?? null;
   const confirmedPosition = useMemo(() => (view ? view.rules.position(view.record) : null), [view]);
-  // A move or castle on its way to the server: drawn on the board, marked as not saved yet.
-  const unsaved: BoardAction | null =
-    active && !active.failure && active.action.type !== 'resign' ? active.action : null;
+  // A move or castle on its way to the server: drawn on the board, marked as not saved yet, but
+  // only over the revision it was made from. Once a newer game arrives (a poll or refresh can
+  // return it, holding this very action, before the reply does) the board shows that game as is.
+  const overlay =
+    active && !active.failure && active.action.type !== 'resign' && game?.revision === active.expectedRevision
+      ? active
+      : null;
+  const unsaved: BoardAction | null = overlay ? (overlay.action as BoardAction) : null;
   // Captured pieces come from the confirmed record (at the reviewed move, if any), never from an
   // unsaved move: the board shows that one as pending, the rows add it once the server confirms.
   const captured = useMemo(() => (view ? view.rules.captured(upTo(view.record, viewPly)) : null), [view, viewPly]);
@@ -190,11 +206,7 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
     return view.rules.apply(view.record, unsaved) ?? view.record;
   }, [view, unsaved, viewPly]);
   const shownPosition = useMemo(() => (view && shown ? view.rules.position(shown) : null), [view, shown]);
-  const pendingMove = !unsaved
-    ? null
-    : unsaved.type === 'move'
-      ? unsaved
-      : (confirmedPosition?.castles.find((c) => c.side === unsaved.side)?.king ?? null);
+  const pendingMove = overlay?.highlight ?? null;
 
   if (unsupported) {
     return (

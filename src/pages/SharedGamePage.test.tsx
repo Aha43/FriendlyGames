@@ -485,6 +485,27 @@ describe('a game this version cannot show (#53)', () => {
   });
 });
 
+describe('a refresh during a save (#55 review)', () => {
+  it('drops the pending highlight once a refreshed game already holds the move', async () => {
+    const user = userEvent.setup();
+    await renderPage(game());
+    const reply = deferred<{ game: SharedGame; duplicate: boolean }>();
+    vi.spyOn(gameApi, 'submitAction').mockReturnValue(reply.promise);
+    await user.click(square('e2'));
+    await user.click(square('e4'));
+    expect(square('e4')).toHaveAccessibleName('e4, white pawn, not saved yet');
+
+    const committed = game({ revision: 2, turn: 'black', moveCount: 1 }, ['e2e4']);
+    vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: committed });
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    expect(square('e4')).toHaveAccessibleName('e4, white pawn');
+    expect(screen.queryAllByRole('gridcell', { name: /not saved yet/ })).toHaveLength(0);
+
+    await act(async () => reply.resolve({ game: committed, duplicate: true }));
+    expect(screen.getByRole('status')).toHaveTextContent('Harald’s move');
+  });
+});
+
 describe('a Fischer Random game (#55)', () => {
   // Kf1 between Rb1 and Rg1 with nothing in the way: both castles legal for White.
   const READY = '1r3kr1/pppppppp/8/8/8/8/PPPPPPPP/1R3KR1 w GBgb - 0 1';
@@ -566,6 +587,33 @@ describe('a Fischer Random game (#55)', () => {
     expect(await screen.findByText('Harald’s move')).toBeInTheDocument();
     expect(screen.queryByText(/Couldn’t confirm/)).not.toBeInTheDocument();
     expect(screen.queryByText(/The game changed before your move was saved/)).not.toBeInTheDocument();
+  });
+
+  it('shows a refreshed game that already holds the castle as is, before the castle’s reply arrives', async () => {
+    // After White's O-O here, Black may castle kingside too: re-applying the unsaved castle to the
+    // refreshed game would castle for Black, and re-deriving its squares would mark Black's king.
+    const user = userEvent.setup();
+    await renderPage(fischer());
+    const reply = deferred<{ game: SharedGame; duplicate: boolean }>();
+    vi.spyOn(gameApi, 'submitAction').mockReturnValue(reply.promise);
+    await user.click(square('f1'));
+    await user.click(castleButton(/Castle kingside/));
+    expect(square('g1')).toHaveAccessibleName('g1, white king, not saved yet');
+
+    const committed = fischer({ revision: 2, turn: 'black', moveCount: 1 }, ['f1g1']);
+    vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: committed });
+    await act(async () => window.dispatchEvent(new Event('focus')));
+
+    expect(square('g1')).toHaveAccessibleName('g1, white king');
+    expect(square('f1')).toHaveAccessibleName('f1, white rook');
+    expect(square('f8')).toHaveAccessibleName('f8, black king');
+    expect(square('g8')).toHaveAccessibleName('g8, black rook');
+    expect(screen.queryAllByRole('gridcell', { name: /not saved yet/ })).toHaveLength(0);
+
+    await act(async () => reply.resolve({ game: committed, duplicate: true }));
+    expect(screen.getByRole('status')).toHaveTextContent('Harald’s move');
+    expect(screen.getByRole('list', { name: 'Moves' })).toHaveTextContent(/^1\.\s*O-O$/);
+    expect(square('f8')).toHaveAccessibleName('f8, black king');
   });
 
   it('reviews from its own start and offers a same-type rematch', async () => {
