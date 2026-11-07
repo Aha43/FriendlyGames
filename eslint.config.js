@@ -23,7 +23,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['vite.config.ts', 'vitest.backend.config.ts', 'eslint.config.js', 'playwright.config.ts', 'e2e/**/*.ts', 'tests/**/*.ts'],
+    files: ['vite.config.ts', 'vitest.backend.config.ts', 'vitest.backend-migrations.config.ts', 'eslint.config.js', 'playwright.config.ts', 'e2e/**/*.ts', 'tests/**/*.ts'],
     languageOptions: { globals: globals.node },
   },
   {

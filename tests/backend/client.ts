@@ -33,24 +33,43 @@ export interface TestPlayer {
   credential: string;
 }
 
-let counter = 0;
+/**
+ * A suffix that is unique across test files, parallel workers and runs, even when several are
+ * made in the same millisecond (#60). A timestamp with a per-file counter was not: every file
+ * starts its counter at zero. 16 random hex digits (64 bits) keep names such as
+ * `Racer1-<suffix>` within the 40-character display-name limit.
+ */
+export function uniqueSuffix(): string {
+  return randomUUID().replaceAll('-', '').slice(0, 16);
+}
+
+/**
+ * A setup failure that names the operation, HTTP status and API error code only. Response bodies
+ * can hold device credentials, invitation tokens and emails, so they are never included (#60).
+ */
+export function setupFailure(operation: string, { status, body }: ApiResponse): Error {
+  const code = body?.error?.code;
+  const shown = typeof code === 'string' && /^[a-z0-9_]{1,64}$/.test(code) ? ` ${code}` : '';
+  return new Error(`${operation} failed: HTTP ${status}${shown}`);
+}
 
 export async function newPlayer(name: string): Promise<TestPlayer> {
-  const email = `${name.toLowerCase()}-${Date.now()}-${counter++}@example.test`;
-  const { status, body } = await call('POST', '/players', { body: { displayName: name, email } });
-  if (status !== 201) throw new Error(`createPlayer failed: ${status} ${JSON.stringify(body)}`);
+  const email = `${name.toLowerCase()}-${uniqueSuffix()}@example.test`;
+  const response = await call('POST', '/players', { body: { displayName: name, email } });
+  if (response.status !== 201) throw setupFailure('createPlayer', response);
+  const { body } = response;
   return { id: body.player.id, name, email, credential: body.deviceCredential };
 }
 
 /** White creates a game inviting Black, Black joins. Returns the joined game. */
 export async function startGame(white: TestPlayer, black: TestPlayer) {
   const created = await call('POST', '/games', { credential: white.credential, body: { friendEmail: black.email } });
-  if (created.status !== 201) throw new Error(`createGame failed: ${created.status}`);
+  if (created.status !== 201) throw setupFailure('createGame', created);
   const joined = await call('POST', '/invitations/redeem', {
     credential: black.credential,
     body: { token: created.body.invitation.token },
   });
-  if (joined.status !== 200) throw new Error(`redeem failed: ${joined.status}`);
+  if (joined.status !== 200) throw setupFailure('redeem', joined);
   return { game: joined.body.game, token: created.body.invitation.token as string };
 }
 
@@ -78,7 +97,7 @@ export async function playMoves(white: TestPlayer, black: TestPlayer, gameId: st
   for (const uci of moves) {
     const player = game.chess.turn === 'white' ? white : black;
     const result = await move(player, gameId, game.revision, uci);
-    if (result.status !== 200) throw new Error(`move ${uci} failed: ${result.status} ${JSON.stringify(result.body)}`);
+    if (result.status !== 200) throw setupFailure(`move ${uci}`, result);
     game = result.body.game;
   }
   return game;

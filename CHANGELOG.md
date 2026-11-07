@@ -18,6 +18,9 @@ versions live in `package.json`; actual deployments are recorded separately in
 - Fischer Random (Chess960) on the server: a fair random start saved once per game, explicit
   castling, all chess outcomes, retries, history per type and "Play again". Not selectable in
   the app yet (#55); clients that read only chess never see these games (#54).
+- Backend tests run reliably in parallel: test players get random unique emails, migration
+  rehearsals that change the schema run afterwards on their own, and setup failures report
+  only the operation, status and error code, never credentials or tokens (#60).
 
 ## v0.1.2 — Captured pieces at a glance (2026-11-03)
 
