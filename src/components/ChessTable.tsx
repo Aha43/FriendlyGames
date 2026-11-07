@@ -1,7 +1,8 @@
-// Local play: both sides on this device, kept in this browser only.
-import { useEffect, useMemo, useState } from 'react';
+// Local play: both sides on this device, kept in this browser only, one saved game per type.
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Color } from '@shared/chess/board.ts';
-import { applyMove, capturedPieces, gameStatus, newGame, replay, type GameRecord, type GameStatus } from '@shared/chess/game.ts';
+import type { ChessFamilyRules, ChessRecord, GameStatus } from '../games/chessFamily';
+import { chessRules } from '../games/chess';
 import { loadGame, saveGame } from '../chess/storage';
 import MoveList from './MoveList';
 import PlayBoard from './PlayBoard';
@@ -17,6 +18,14 @@ const DRAW_TEXT = {
 
 interface ChessTableProps {
   players: Record<Color, string>;
+  /** The type's rules; standard chess unless given. */
+  rules?: ChessFamilyRules;
+  /** Shown in the table's accessible name, e.g. "Chess" or "Fischer Random". */
+  label?: string;
+  /** Shown at the top of the side panel (e.g. the local game type switch). */
+  panelTop?: ReactNode;
+  /** Shown at the end of the side panel (e.g. a short explanation of the type). */
+  panelEnd?: ReactNode;
 }
 
 function statusText(status: GameStatus, players: Record<Color, string>): string {
@@ -30,20 +39,20 @@ function statusText(status: GameStatus, players: Record<Color, string>): string 
   }
 }
 
-export default function ChessTable({ players }: ChessTableProps) {
-  const [record, setRecord] = useState<GameRecord>(() => loadGame() ?? newGame());
+export default function ChessTable({ players, rules = chessRules, label = 'Chess', panelTop, panelEnd }: ChessTableProps) {
+  const [record, setRecord] = useState<ChessRecord>(() => loadGame(rules) ?? rules.newRecord());
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmingNewGame, setConfirmingNewGame] = useState(false);
   const [boardKey, setBoardKey] = useState(0);
 
-  useEffect(() => saveGame(record), [record]);
+  useEffect(() => saveGame(record, rules), [record, rules]);
 
-  const chess = useMemo(() => replay(record), [record]);
-  const status = gameStatus(chess);
-  const captured = useMemo(() => capturedPieces(record), [record]);
+  const position = useMemo(() => rules.position(record), [rules, record]);
+  const status = position.status;
+  const captured = useMemo(() => rules.captured(record), [rules, record]);
 
   function startNewGame() {
-    setRecord(newGame());
+    setRecord(rules.newRecord());
     setNotice(null);
     setConfirmingNewGame(false);
     setBoardKey((k) => k + 1); // reset selection and focus
@@ -53,24 +62,25 @@ export default function ChessTable({ players }: ChessTableProps) {
 
   return (
     <>
-      <section className="table" aria-label={`Chess: ${players.w} vs ${players.b}`}>
+      <section className="table" aria-label={`${label}: ${players.w} vs ${players.b}`}>
         <PlayerPlate name={players.b} color="b" badge={badgeFor('b', status)} captured={captured.b} />
         <PlayBoard
           key={boardKey}
-          record={record}
+          position={position}
           movable="both"
-          onMove={(from, to, promotion) => {
-            const next = applyMove(record, from, to, promotion);
+          onAction={(action) => {
+            const next = rules.apply(record, action);
             if (next) setRecord(next);
             else setNotice('That move isn’t allowed.');
           }}
           onNotice={setNotice}
-          explainBlocked={() => `It’s ${players[chess.turn()]}’s turn.`}
+          explainBlocked={() => `It’s ${players[position.turn]}’s turn.`}
         />
         <PlayerPlate name={players.w} color="w" badge={badgeFor('w', status)} captured={captured.w} />
       </section>
 
       <section className="game-panel" aria-label="This game">
+        {panelTop}
         <p className={`game-status game-status-${status.kind}`} role="status">
           {statusText(status, players)}
         </p>
@@ -78,7 +88,7 @@ export default function ChessTable({ players }: ChessTableProps) {
           {notice}
         </p>
 
-        <MoveList chess={chess} />
+        <MoveList moves={position.moves} />
 
         {confirmingNewGame ? (
           <div className="confirm" role="group" aria-label="Confirm new game">
@@ -99,6 +109,7 @@ export default function ChessTable({ players }: ChessTableProps) {
             New game
           </button>
         )}
+        {panelEnd}
       </section>
     </>
   );

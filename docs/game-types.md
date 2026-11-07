@@ -98,6 +98,27 @@ were byte-identical after the migration, RLS and the finished-game trigger uncha
 4. Rollback: the function can go back to the #53 commit (it leaves Chess960 games out and
    refuses them). Keep the migration (forward-only, harmless to #53). Never go back before #53.
 
+### The two-type client as built (#55)
+
+- **Presentation boundary**: `src/games/chessFamily.ts` defines what the board, plates, move list
+  and review need from a saved game (`Position`, `ChessFamilyRules`). `src/games/chess.ts` wraps the
+  unchanged chess.js rules; `src/games/chess960.ts` wraps the shared chessops module the server
+  uses. The registry (`src/games/registry.ts`) picks the rules from the game's stored type and
+  schema version and its view field (`chess` or `chess960`); anything else is refused, never
+  replayed as chess. Components never call a rules library directly.
+- **Castling**: Fischer Random castles only through explicit controls under the board, shown
+  while the selected king can castle and named with the final king and rook squares; they send
+  `{ type: 'castle', side }`. Ordinary king targets leave out every move chessops would read as
+  a castle. Standard chess keeps its two-square king move and shows no controls.
+- **Shared play**: an unsaved action is drawn from the type's rules; the move the server will
+  save (a castle as king onto rook) is kept with it, so a lost answer settles correctly from the
+  next game state.
+- **Local play**: `#/local` (chess, the original save key) and `#/local/chess960` (its own key);
+  only local Fischer Random draws its start in the browser.
+- **Rollout**: the #54 backend must be live before this merges (the site then asks for
+  `types=chess,chess960` and may create Fischer Random games). Old cached clients still ask
+  for chess only and never see these games.
+
 ## Fischer Random contract
 
 Use the [FIDE Chess960 Guidelines II](https://handbook.fide.com/chapter/e012023):

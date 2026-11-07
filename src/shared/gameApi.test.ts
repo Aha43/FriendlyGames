@@ -102,7 +102,7 @@ describe('momentary server failures', () => {
 });
 
 describe('game types this client reads (#53)', () => {
-  it('names them on every game request, but not on email entry', async () => {
+  it('names them on every game request, but not on email entry (both types since #55)', async () => {
     fetchMock.mockImplementation(async () => reply(200, { games: [], history: [], game: { id: 'g1' }, player: {} }));
     await settle(gameApi.listGames(CRED));
     await settle(gameApi.history(CRED));
@@ -111,7 +111,7 @@ describe('game types this client reads (#53)', () => {
     await settle(gameApi.redeemInvitation(CRED, 'T'));
     await settle(gameApi.enterPlayer('a@example.test'));
     const urls = fetchMock.mock.calls.map((call) => new URL(call[0] as string));
-    expect(urls.slice(0, 5).map((url) => url.searchParams.get('types'))).toEqual(Array(5).fill('chess'));
+    expect(urls.slice(0, 5).map((url) => url.searchParams.get('types'))).toEqual(Array(5).fill('chess,chess960'));
     expect(urls[3].pathname).toMatch(/\/games\/g1\/actions$/);
     expect(urls[5].search).toBe('');
   });

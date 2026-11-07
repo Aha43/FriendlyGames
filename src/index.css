@@ -1065,3 +1065,135 @@ h2 {
 .notice-box p { margin: 0; }
 .notice-box p + p { margin-top: 0.35rem; }
 .notice-box strong { color: var(--ink); }
+
+/* ---------- game types (#55) ---------- */
+
+/* Fischer Random castle controls: under the board, on the frame, while the king is selected. */
+.castle-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 6px;
+}
+
+.castle-button {
+  flex: 1 1 9rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.05rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 10px;
+  border-color: var(--gold);
+  background: var(--paper);
+  color: var(--wood-dark);
+  line-height: 1.25;
+}
+
+.castle-squares {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+/* The game's type, at the top of the panel, so mixed games can't be confused. */
+.game-type {
+  margin: 0 0 0.2rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.game-type-chess960 { color: var(--rust); }
+
+.game-link-type { font-weight: 700; }
+.game-link-type-chess960 { color: var(--rust); }
+
+.about-type {
+  margin: 0.9rem 0 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.about-type summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--wood-dark);
+}
+
+.about-type p { margin: 0.4rem 0 0; }
+
+/* Game picker in "Start a game". */
+.type-picker {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
+}
+
+.type-picker legend {
+  padding: 0;
+  margin-bottom: 0.25rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.form .type-option {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.95rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.form .type-option input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--wood-dark);
+}
+
+.type-explainer {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  border-left: 3px solid var(--gold);
+  padding-left: 0.6rem;
+}
+
+.card .type-explainer p { margin: 0 0 0.35rem; }
+
+/* Local play: chess or Fischer Random, each with its own saved game. */
+.type-switch {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.6rem;
+  padding: 0.2rem;
+  border-radius: 999px;
+  background: var(--paper-edge);
+  width: fit-content;
+  max-width: 100%;
+}
+
+.type-switch a {
+  padding: 0.3rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--wood-dark);
+  text-decoration: none;
+}
+
+.type-switch a[aria-current='page'] {
+  background: var(--wood-dark);
+  color: var(--wood-text);
+}
+
+.type-switch a:focus-visible {
+  outline: 3px solid #2f6fd6;
+  outline-offset: 2px;
+}

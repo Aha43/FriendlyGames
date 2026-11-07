@@ -9,6 +9,9 @@ import SharedGamePage from './pages/SharedGamePage';
 import { forgetIdentity, loadIdentity, type Identity } from './shared/identity';
 import { useRoute } from './shared/route';
 
+/** The corresponding source of every published build (GPL-3.0-or-later, see LICENSE). */
+const SOURCE_URL = 'https://github.com/Aha43/FriendlyGames';
+
 export default function App() {
   const route = useRoute();
   const [identity, setIdentity] = useState<Identity | null>(loadIdentity);
@@ -17,7 +20,7 @@ export default function App() {
 
   let content;
   if (route.page === 'local') {
-    content = <LocalPage />;
+    content = <LocalPage key={route.type} type={route.type} />;
   } else if (rejected) {
     content = (
       <div className="page">
@@ -74,8 +77,10 @@ export default function App() {
 
       <footer className="credits">
         <a href={PIECE_SET_LICENSE_URL}>{PIECE_SET_CREDIT}</a> ·{' '}
-        <a href={`${import.meta.env.BASE_URL}licenses/chess.js.txt`}>Rules by chess.js, BSD license</a> · Park artwork
-        original to FriendlyGames
+        <a href={`${import.meta.env.BASE_URL}licenses/chess.js.txt`}>Rules by chess.js, BSD license</a> ·{' '}
+        <a href={`${import.meta.env.BASE_URL}licenses/chessops.txt`}>Fischer Random rules by chessops, GPL</a> (with{' '}
+        <a href={`${import.meta.env.BASE_URL}licenses/badrap-result.txt`}>@badrap/result, MIT</a>) · Park artwork original
+        to FriendlyGames · <a href={SOURCE_URL}>Source code, GPL-3.0-or-later</a>
         {__BUILD_COMMIT__ && <span className="build"> · Build {__BUILD_COMMIT__.slice(0, 7)}</span>}
       </footer>
     </div>

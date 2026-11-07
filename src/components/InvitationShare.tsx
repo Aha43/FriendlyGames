@@ -4,10 +4,12 @@ import { invitationLink } from '../shared/identity';
 interface InvitationShareProps {
   token: string;
   friend?: string;
+  /** The game type, e.g. "Fischer Random"; named in the text so mixed invitations can't be confused. */
+  gameLabel?: string;
 }
 
 /** The invitation link, to send by hand. Anyone holding it can take the empty seat once. */
-export default function InvitationShare({ token, friend }: InvitationShareProps) {
+export default function InvitationShare({ token, friend, gameLabel = 'Chess' }: InvitationShareProps) {
   const link = invitationLink(token);
   const [copied, setCopied] = useState<'yes' | 'failed' | null>(null);
   const canShare = typeof navigator.share === 'function';
@@ -24,7 +26,7 @@ export default function InvitationShare({ token, friend }: InvitationShareProps)
   return (
     <div className="invite">
       <p>
-        Send this link to {friend ?? 'your friend'} yourself, by message or email. Whoever opens it first takes the
+        Send this {gameLabel} invitation to {friend ?? 'your friend'} yourself, by message or email. Whoever opens it first takes the
         empty seat, so share it only with them.
       </p>
       <label className="invite-link">
@@ -39,7 +41,7 @@ export default function InvitationShare({ token, friend }: InvitationShareProps)
           <button
             type="button"
             className="button"
-            onClick={() => navigator.share({ title: 'Chess in the park', url: link }).catch(() => {})}
+            onClick={() => navigator.share({ title: `${gameLabel} in the park`, url: link }).catch(() => {})}
           >
             Share…
           </button>

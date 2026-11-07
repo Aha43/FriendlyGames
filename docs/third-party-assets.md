@@ -14,15 +14,26 @@ from, who made it, the license it is used under and what that license requires.
 | How we comply | Copy of the license in [`public/licenses/chess.js.txt`](../public/licenses/chess.js.txt), shipped with every build and linked from the page footer. Refresh it when upgrading chess.js |
 | Used for | Move legality, check/checkmate and draw detection in `supabase/functions/_shared/chess/game.ts`, in the browser and in the `game-api` Edge Function |
 
-## Chess960 rules — chessops (proposed, not shipped)
+## Fischer Random rules — chessops
 
 | | |
 |---|---|
-| Package | [`chessops`](https://github.com/niklasf/chessops) 0.15.1 (npm, pinned exactly); dependency [`@badrap/result`](https://github.com/badrap/result) 0.3.1 (MIT) |
+| Package | [`chessops`](https://github.com/niklasf/chessops) 0.15.1 (npm, pinned exactly) |
 | Author | Niklas Fiekas |
 | License | GPL-3.0-or-later (`node_modules/chessops/LICENSE.txt`) |
-| Status | Used only by the Chess960 proof (#52): Vitest, `proofs/chess960` and the local-only `chess960-proof` Edge Function. **Not in the app bundle and not deployed.** See [decision 0001](decisions/0001-chess960-engine.md) |
-| Obligations once shipped | Conveying it in the browser build requires FriendlyGames to be licensed compatibly (proposed GPL-3.0-or-later) with its corresponding source offered (proposed: public repository), plus the licence text with the build |
+| Used for | Fischer Random (Chess960) rules in `supabase/functions/_shared/chess960/rules.ts`: on the server (`game-api`, #54) and, since #55, in the browser build (`src/games/chess960.ts`). Standard chess still uses chess.js. See [decision 0001](decisions/0001-chess960-engine.md) |
+| Obligations | Conveying it in the browser build requires FriendlyGames to be licensed compatibly and its corresponding source offered, with the licence text |
+| How we comply | FriendlyGames is GPL-3.0-or-later ([`LICENSE`](../LICENSE)); the source is the public repository, linked from the page footer; the licence text ships as [`public/licenses/chessops.txt`](../public/licenses/chessops.txt), also linked from the footer. Checklist: [source-publication.md](source-publication.md). Refresh the copy when upgrading chessops |
+
+## chessops dependency — @badrap/result
+
+| | |
+|---|---|
+| Package | [`@badrap/result`](https://github.com/badrap/result) 0.3.1 (npm, via chessops) |
+| Author | Badrap Oy |
+| License | MIT (`node_modules/@badrap/result/LICENSE`) |
+| Obligations | Include the copyright and permission notice with copies |
+| How we comply | Copy in [`public/licenses/badrap-result.txt`](../public/licenses/badrap-result.txt), shipped with every build and linked from the page footer |
 
 ## Database client — postgres.js
 

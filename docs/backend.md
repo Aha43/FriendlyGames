@@ -192,7 +192,7 @@ saved payload, actions, turn, move count, view and outcome (`game-api/gameTypes.
 static registry picks the adapter from the stored row; nothing falls back to chess.
 
 - **Types**: `chess` (schema 1, chess.js, unchanged) and `chess960`, Fischer Random
-  (schema 1, chessops; #54, see below). Players can't choose Chess960 in the web client yet (#55).
+  (schema 1, chessops; #54, see below). The web client offers both since #55.
 - **Which types a client reads**: every game request may carry `?types=chess,chess960`.
   Omitted means `chess` only, which is what every client before #53 expects (it reads
   `.chess.moves`). Unknown names are ignored. This is compatibility metadata, never
