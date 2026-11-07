@@ -24,6 +24,9 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ### Development
 
+- `make release` tags and publishes the merged release commit of `package.json`'s version as a
+  GitHub release: a preflight that writes nothing, only the missing steps on a rerun, and a precise
+  report after a part-way failure. It does not deploy. Run by the owner only (#49).
 - Proof of the Chess960 rules engine and saved format: chessops for Chess960 (not yet
   shipped), fixtures run in Node, the browser, Deno and the Supabase Edge runtime, and a
   decision record with the licence and publication proposal (#52).

@@ -5,12 +5,13 @@ can include chessops for Fischer Random ([decision 0001](decisions/0001-chess960
 Every visitor receives that build, so its corresponding source must be available to them. The
 route the owner chose is a public GitHub repository, linked from every page.
 
-## Checklist before merging #55 (the first build with chessops)
+## Checklist for #55 (the first build with chessops)
 
-Owner decisions are marked **(owner)**; nothing here is done by merging a PR.
+Owner decisions are marked **(owner)**; nothing here is done by merging a PR. Record of
+2026-11-07; #55 merged as `0de954c`.
 
-- [ ] **(owner)** Approve GPL-3.0-or-later as FriendlyGames' licence: the `LICENSE` file and the
-      README "Licence" section added by #55.
+- [x] **(owner)** GPL-3.0-or-later approved as FriendlyGames' licence (the `LICENSE` file and the
+      README "Licence" section added by #55), 2026-11-07, before #55 merged.
 - [x] **(owner)** Repository public: <https://github.com/Aha43/FriendlyGames> (2026-11-07).
 - [x] Public contents reviewed after the switch (2026-11-07, all 87 commits on 58 branches and PR
       heads): no backups, `.env` files, passwords, keys or tokens were ever committed; database
@@ -22,9 +23,15 @@ Owner decisions are marked **(owner)**; nothing here is done by merging a PR.
       password manager (docs/deployment.md); CI uses none of them.
 - [x] Licence texts ship with every build in `public/licenses/` (chess.js, chessops,
       @badrap/result, Cburnett pieces) and are linked from the footer, with the source link.
-- [ ] **(owner)** #54 backend verified live (`make prod-status`) before merging #55.
+- [x] **(owner)** #54 backend deployed and verified live before merging #55, 2026-11-07:
+      `make deploy-backend` from `main` at `f81cf02` (complete backup `backups/20261107T155804Z-*`
+      first, migration `20261104120000_chess960_games.sql` applied), then `make prod-status`:
+      backend commit `f81cf02`, database ok, pooler yes.
+- [x] **(owner)** Existing game checked after that deploy: the ongoing game with Harald opened on
+      the live site with its board and captured pieces intact.
 - [ ] After merge: the footer's build commit is on the public `main`, so the source of the
-      running site is the public commit it names.
+      running site is the public commit it names. `0de954c` is on the public `main`; confirm the
+      live footer names it (or a later public commit) when recording the deployment.
 
 ## Keeping it true
 

@@ -5,7 +5,7 @@
 .DEFAULT_GOAL := help
 MAKEFLAGS += --no-print-directory
 .PHONY: help setup doctor up down dev phone check test-backend e2e verify build preview version \
-        backup prod-status deploy-backend prod-e2e
+        backup prod-status deploy-backend prod-e2e release
 
 # Public addresses (no secrets). The API address comes from the linked project unless set.
 SITE_ORIGIN ?= https://friendlygames.arne-halvorsen.workers.dev
@@ -36,6 +36,7 @@ help:
 	@echo "  backup          Back up the production database into backups/ (private, git-ignored)"
 	@echo "  deploy-backend  Back up, migrate and deploy the backend from main; the site deploys on merge"
 	@echo "  prod-e2e        Browser journeys against the live site; creates throwaway @example.test players"
+	@echo "  release         Tag and publish the merged release commit of package.json's version (no deploy)"
 
 setup:
 	npm ci
@@ -124,3 +125,8 @@ prod-e2e:
 	@[ -n "$(FG_API_URL)" ] || { echo "Unknown API address: run 'supabase link --project-ref <ref>' or set FG_API_URL." >&2; exit 1; }
 	@echo "Running the browser journeys against $(SITE_ORIGIN). They create throwaway @example.test players and games."
 	PLAYWRIGHT_BASE_URL=$(SITE_ORIGIN) FG_API_URL=$(FG_API_URL) npm run e2e
+
+# Owner-run publication (#49): annotated tag + GitHub release for the release commit of the
+# version in package.json. Not part of any other target; does not deploy.
+release:
+	node scripts/release.ts
