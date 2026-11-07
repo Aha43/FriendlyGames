@@ -7,8 +7,11 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { changelogSection, findReleaseCommit, Stop } from '../../scripts/release.ts';
+
+// Each case builds repositories and runs many real git processes: well beyond the 5 s default.
+vi.setConfig({ testTimeout: 60_000 });
 
 const ROOT = resolve(__dirname, '../..');
 const REAL_GIT = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
@@ -67,7 +70,7 @@ exec "$REAL_GIT" "$@"
 
 const CURL = `#!/bin/sh
 [ "$STUB_STATUS" = down ] && exit 22
-case "$*" in *-w*) printf 200 ;; *) echo '{"ok":true,"commit":"abc1234","pooled":true}' ;; esac
+case "$*" in *-w*) printf "\${STUB_SITE:-200}" ;; *) echo '{"ok":true,"commit":"abc1234","pooled":true}' ;; esac
 `;
 
 let dir: string;
@@ -120,9 +123,9 @@ function standardHistory(): string {
 
 const push = () => g('push', '-q', 'origin', 'main');
 
-function run(env: Record<string, string> = {}) {
+function run(env: Record<string, string> = {}, cwd = work) {
   const result = spawnSync('make', ['-s', 'release'], {
-    cwd: work,
+    cwd,
     encoding: 'utf8',
     env: {
       ...process.env,
@@ -292,10 +295,37 @@ describe('preflight refuses without writing anything', () => {
     refuses({ STUB_GH_VIEW: 'network' }, /Couldn't read the v0\.2\.0 release from GitHub .*unknown/);
   });
 
-  it('when the production status check fails', () => {
+  it('when the backend or the website is down', () => {
     standardHistory();
     push();
-    refuses({ STUB_STATUS: 'down' }, /make prod-status failed/);
+    refuses({ STUB_STATUS: 'down' }, /Production is not healthy or could not be checked/);
+    // The site answering 503 is shown, and stops the release before anything is written.
+    const { status, out } = run({ STUB_SITE: '503' });
+    expect(status).not.toBe(0);
+    expect(out).toContain('did not answer normally (HTTP 503)');
+    expect(out).toMatch(/Production is not healthy/);
+    expect(writes()).toEqual([]);
+    expect(remoteTag()).toBe('');
+    expect(releases()).toEqual({});
+  });
+
+  it('in a shallow clone, where a later commit could pass for the version change', () => {
+    standardHistory();
+    writeFileSync(join(work, 'docs.md'), 'deployment record\n');
+    commit('Record the v0.2.0 deployment');
+    push();
+    const shallow = join(dir, 'shallow');
+    execFileSync(REAL_GIT, ['clone', '-q', '--depth', '1', '--branch', 'main', `file://${origin}`, shallow], {
+      env: { ...process.env, ...ISOLATED },
+    });
+    mkdirSync(join(shallow, 'supabase/.temp'), { recursive: true });
+    writeFileSync(join(shallow, 'supabase/.temp/project-ref'), 'testref\n');
+    const { status, out } = run({}, shallow);
+    expect(status, out).not.toBe(0);
+    expect(out).toMatch(/shallow clone.*git fetch --unshallow origin/);
+    expect(writes()).toEqual([]);
+    expect(remoteTag()).toBe('');
+    expect(releases()).toEqual({});
   });
 
   it('without a dated changelog section for the version', () => {

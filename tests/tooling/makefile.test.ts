@@ -28,8 +28,8 @@ case "$name" in
     esac ;;
   curl)
     case "$*" in
-      *-w*) printf 200 ;;
-      *) echo '{"ok":true,"commit":"abc1234","pooled":true}' ;;
+      *-w*) printf "\${STUB_SITE:-200}" ;;
+      *) if [ -n "$STUB_HEALTH" ]; then printf '%s\n' "$STUB_HEALTH"; else echo '{"ok":true,"commit":"abc1234","pooled":true}'; fi ;;
     esac ;;
   docker) [ "$STUB_DOCKER" = down ] && exit 1 ;;
   node) [ "$1" = -v ] && echo v24.11.0 ;;
@@ -207,6 +207,20 @@ describe('production commands', () => {
     });
     expect(status).not.toBe(0);
     expect(out).toContain('health check failed');
+  });
+
+  it('prod-status shows everything but fails when the site does not answer normally', () => {
+    const { status, out } = run(['prod-status'], { STUB_SITE: '503' });
+    expect(status).not.toBe(0);
+    expect(out).toContain('did not answer normally (HTTP 503)');
+    expect(out).toContain('commit abc1234, database ok, pooler yes');
+    expect(out).toMatch(/Local +[0-9a-f]{7}/);
+  });
+
+  it('prod-status fails when the backend reports its database is not ok', () => {
+    const { status, out } = run(['prod-status'], { STUB_HEALTH: '{"ok":false,"commit":"abc1234","pooled":true}' });
+    expect(status).not.toBe(0);
+    expect(out).toContain('database NOT ok');
   });
 
   it('deploy-backend goes through the guarded script, which refuses outside main', () => {

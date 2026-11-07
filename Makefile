@@ -109,14 +109,19 @@ backup:
 
 prod-status:
 	@[ -n "$(FG_API_URL)" ] || { echo "Unknown API address: run 'supabase link --project-ref <ref>' or set FG_API_URL." >&2; exit 1; }
-	@echo "Site     $(SITE_ORIGIN)"
-	@site=$$(curl -s -o /dev/null -w '%{http_code}' "$(SITE_ORIGIN)/"); \
-	  if [ "$$site" = 200 ]; then echo "         answers (the page footer shows its build commit)"; \
-	  else echo "         did not answer normally (HTTP $$site)"; fi
-	@echo "Backend  $(FG_API_URL)"
-	@health=$$(curl -fsS --max-time 20 "$(FG_API_URL)/health") || { echo "         health check failed: the backend is down, paused or unreachable" >&2; exit 1; }; \
-	  printf '%s' "$$health" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const h=JSON.parse(s);console.log("         commit "+(h.commit||"unknown")+", database "+(h.ok?"ok":"NOT ok")+", pooler "+(h.pooled?"yes":"NO"))})'
-	@echo "Local    $$(git rev-parse --short HEAD) on $$(git rev-parse --abbrev-ref HEAD) (your checkout, for comparison)"
+	@# Read-only. Prints everything, then fails if the site or backend is not healthy (#49: a
+	@# release stops on that).
+	@failed=0; \
+	echo "Site     $(SITE_ORIGIN)"; \
+	site=$$(curl -s -o /dev/null -w '%{http_code}' "$(SITE_ORIGIN)/"); \
+	if [ "$$site" = 200 ]; then echo "         answers (the page footer shows its build commit)"; \
+	else echo "         did not answer normally (HTTP $$site)" >&2; failed=1; fi; \
+	echo "Backend  $(FG_API_URL)"; \
+	if health=$$(curl -fsS --max-time 20 "$(FG_API_URL)/health"); then \
+	  printf '%s' "$$health" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const h=JSON.parse(s);console.log("         commit "+(h.commit||"unknown")+", database "+(h.ok?"ok":"NOT ok")+", pooler "+(h.pooled?"yes":"NO"));process.exit(h.ok?0:1)})' || failed=1; \
+	else echo "         health check failed: the backend is down, paused or unreachable" >&2; failed=1; fi; \
+	echo "Local    $$(git rev-parse --short HEAD) on $$(git rev-parse --abbrev-ref HEAD) (your checkout, for comparison)"; \
+	exit $$failed
 
 deploy-backend:
 	SITE_ORIGIN=$(SITE_ORIGIN) scripts/deploy-backend.sh

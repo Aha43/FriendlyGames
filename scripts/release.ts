@@ -93,7 +93,8 @@ function checkLockfile(rev: string, version: string) {
 /**
  * The first-parent commit of `head` where package.json's version changed to `version`. Later
  * commits may touch package.json (or anything else) without changing the version. More than one
- * such change (the version left and came back) is ambiguous and refused.
+ * such change (the version left and came back) is ambiguous and refused. Needs full history: a
+ * commit counts as parentless (the version's first appearance) only in a complete repository.
  */
 export function findReleaseCommit(head: string, version: string): string {
   const cache = new Map<string, string | null>();
@@ -193,6 +194,13 @@ function releaseCommand(): number {
   // Preflight. Nothing below writes a tag or release until "Publishing".
   const branch = gitOk('Reading the branch', 'rev-parse', '--abbrev-ref', 'HEAD');
   if (branch !== 'main') throw new Stop(`Run this on main (you are on ${branch}). Nothing was written.`);
+  // A shallow clone ends its history at a commit that only looks parentless, so a later commit
+  // could be mistaken for the version change. Full history is required.
+  if (gitOk('Reading the repository', 'rev-parse', '--is-shallow-repository') !== 'false') {
+    throw new Stop(
+      "This checkout is a shallow clone, so main's history is incomplete and the release commit can't be found reliably: run git fetch --unshallow origin, then run again. Nothing was written.",
+    );
+  }
   if (gitOk('Reading the status', 'status', '--porcelain', '--untracked-files=normal')) {
     throw new Stop('The checkout has uncommitted or untracked changes: commit, stash or remove them. Nothing was written.');
   }
@@ -249,7 +257,9 @@ function releaseCommand(): number {
 
   say('\nProduction now (read-only; this command does not deploy, and the live site may be a later build):');
   const status = spawnSync('make', ['-s', 'prod-status'], { stdio: 'inherit' });
-  if (status.status !== 0) throw new Stop('make prod-status failed. Nothing was written.');
+  if (status.status !== 0) {
+    throw new Stop('Production is not healthy or could not be checked (make prod-status failed). Nothing was written.');
+  }
 
   const steps = [
     local.kind === 'absent' && remote.kind === 'absent' ? 'create the annotated tag' : null,

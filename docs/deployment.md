@@ -121,8 +121,8 @@ make release
 edit the changelog or close milestones, and nothing else runs it (help, setup, verify, CI and
 deploys never do). Running it is the owner's decision to publish; it asks nothing further.
 
-1. **Preflight, no writes.** Clean `main` (untracked files count) equal to a fresh
-   `origin/main`; `package.json`, `package-lock.json` and a dated changelog section agree on the
+1. **Preflight, no writes.** A full (not shallow) clone; clean `main` (untracked files count)
+   equal to a fresh `origin/main`; `package.json`, `package-lock.json` and a dated changelog section agree on the
    version. The **release commit** is the commit on main's first-parent history where
    `package.json`'s version changed to this version, not the latest commit touching the file,
    so later documentation commits (such as the deployment record) are fine. More than one such
@@ -130,7 +130,8 @@ deploys never do). Running it is the owner's decision to publish; it asks nothin
    origin and the GitHub release: each must be absent or exactly match (same commit, annotated,
    message `vX.Y.Z — <title>`, same title and notes). A conflict, or a lookup that fails, stops
    it: a network or login failure is never taken to mean "absent". Finally it shows
-   `make prod-status`; a failure stops it.
+   `make prod-status`, which fails if the site does not answer HTTP 200 or the backend is down
+   or reports its database not ok; that stops the release.
 2. **Publication, only the missing steps.** An annotated tag on the release commit, pushed to
    origin, then `gh release create vX.Y.Z --verify-tag` with the title and notes from that
    commit's changelog section (a notes file; no release text passes through a shell).
