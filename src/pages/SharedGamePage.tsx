@@ -2,7 +2,7 @@
 // confirmed position, plus a move that is visibly "saving" until the server accepts it.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Color } from '@shared/chess/board.ts';
-import { applyMove, capturedPieces, gameStatus, replay, type GameRecord, type PromotionPiece } from '@shared/chess/game.ts';
+import AboutChess960 from '../components/AboutChess960';
 import InvitationShare from '../components/InvitationShare';
 import MoveList from '../components/MoveList';
 import PlayBoard from '../components/PlayBoard';
@@ -10,7 +10,8 @@ import PlayerPlate, { type PlateBadge } from '../components/PlayerPlate';
 import { badgeFor } from '../shared/badges';
 import { describeGame, opponentName, other } from '../shared/describe';
 import { ApiError, gameApi, NetworkError, type GameAction, type Seat, type SharedGame } from '../shared/gameApi';
-import { isChessGame, UNSUPPORTED_GAME_TEXT, type ChessGame } from '../games/registry';
+import { upTo, type BoardAction } from '../games/chessFamily';
+import { chessFamilyView, GAME_TYPES, UNSUPPORTED_GAME_TEXT, type ChessFamilyView } from '../games/registry';
 import { forgetInvitation, invitationFor, rememberInvitation, type Identity } from '../shared/identity';
 import { newRequestId } from '../shared/requestId';
 import { navigate } from '../shared/route';
@@ -27,6 +28,8 @@ interface Pending {
   /** Number of moves in the game when the action was sent. */
   baseMoves: number;
   action: GameAction;
+  /** The move the server saves for this action (a castle as king onto rook), to recognise it later. */
+  savedMove: string | null;
   /** Set when sending failed: whether it was saved is unknown, and it can be retried as-is. */
   failure: string | null;
 }
@@ -36,12 +39,11 @@ interface Pending {
  * the game has moved past the revision the action was based on, so something was saved: either
  * this action, or something else first (then the action was refused as stale).
  */
-function wasSaved(pending: Pending, game: ChessGame): boolean {
+function wasSaved(pending: Pending, game: SharedGame, view: ChessFamilyView): boolean {
   if (pending.action.type === 'resign') {
     return game.termination === 'resignation' && game.result !== game.yourSeat;
   }
-  const { from, to, promotion } = pending.action;
-  return game.chess.moves[pending.baseMoves] === `${from}${to}${promotion ?? ''}`;
+  return pending.savedMove !== null && view.record.moves[pending.baseMoves] === pending.savedMove;
 }
 
 interface SharedGamePageProps {
@@ -51,7 +53,7 @@ interface SharedGamePageProps {
 }
 
 export default function SharedGamePage({ identity, gameId, onIdentityRejected }: SharedGamePageProps) {
-  const [game, setGame] = useState<ChessGame | null>(null);
+  const [game, setGame] = useState<SharedGame | null>(null);
   const [missing, setMissing] = useState(false);
   // A game this client cannot show (a type it does not know, #53): explained, never guessed at.
   const [unsupported, setUnsupported] = useState(false);
@@ -66,13 +68,16 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
 
   // An unconfirmed action is resolved once the server's game (e.g. from polling) has moved past the
   // revision it was based on: never show "couldn't confirm" next to a board showing the outcome.
-  const resolved = !!(pending?.failure && game && game.revision > pending.expectedRevision);
+  // The game's type decides the rules used to replay and play it (#55); `accept` admits only
+  // games this client can replay, so `view` is set whenever `game` is.
+  const view = useMemo(() => (game ? chessFamilyView(game) : null), [game]);
+  const resolved = !!(pending?.failure && game && view && game.revision > pending.expectedRevision);
   const active = resolved ? null : pending;
-  const changedFirst = resolved && !wasSaved(pending!, game!);
+  const changedFirst = resolved && !wasSaved(pending!, game!, view!);
 
   /** Accept a confirmed game from the server, never going back to an older revision. */
   const accept = useCallback((next: SharedGame) => {
-    if (!isChessGame(next)) {
+    if (!chessFamilyView(next)) {
       setUnsupported(true);
       return;
     }
@@ -135,7 +140,7 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
         // Unknown whether it arrived. Keep it, unsaved, for a retry with the same request ID.
         setPending({
           ...next,
-          failure: `Couldn’t confirm whether your ${next.action.type === 'move' ? 'move' : 'resignation'} was saved: the game server didn’t answer. Retrying is safe; it won’t be applied twice.`,
+          failure: `Couldn’t confirm whether your ${next.action.type === 'resign' ? 'resignation' : 'move'} was saved: the game server didn’t answer. Retrying is safe; it won’t be applied twice.`,
         });
       } else if (e instanceof ApiError && e.status === 401) {
         onIdentityRejected();
@@ -159,32 +164,37 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
   }
 
   function act(action: GameAction) {
-    if (!game || active) return;
+    if (!game || !view || active) return;
     send({
       requestId: newRequestId(),
       expectedRevision: game.revision,
-      baseMoves: game.chess.moves.length,
+      baseMoves: view.record.moves.length,
       action,
+      savedMove: action.type === 'resign' ? null : view.rules.savedMove(view.record, action),
       failure: null,
     });
   }
 
-  const confirmed: GameRecord | null = useMemo(
-    () => (game ? { schemaVersion: 1, initialFen: game.chess.initialFen, moves: game.chess.moves } : null),
-    [game],
-  );
-  const pendingMove = active && !active.failure && active.action.type === 'move' ? active.action : null;
+  const confirmed = view?.record ?? null;
+  const confirmedPosition = useMemo(() => (view ? view.rules.position(view.record) : null), [view]);
+  // A move or castle on its way to the server: drawn on the board, marked as not saved yet.
+  const unsaved: BoardAction | null =
+    active && !active.failure && active.action.type !== 'resign' ? active.action : null;
   // Captured pieces come from the confirmed record (at the reviewed move, if any), never from an
   // unsaved move: the board shows that one as pending, the rows add it once the server confirms.
-  const captured = useMemo(
-    () => (confirmed ? capturedPieces(viewPly === null ? confirmed : { ...confirmed, moves: confirmed.moves.slice(0, viewPly) }) : null),
-    [confirmed, viewPly],
-  );
+  const captured = useMemo(() => (view ? view.rules.captured(upTo(view.record, viewPly)) : null), [view, viewPly]);
   const shown = useMemo(() => {
-    if (confirmed && viewPly !== null) return { ...confirmed, moves: confirmed.moves.slice(0, viewPly) };
-    if (!confirmed || !pendingMove) return confirmed;
-    return applyMove(confirmed, pendingMove.from, pendingMove.to, pendingMove.promotion) ?? confirmed;
-  }, [confirmed, pendingMove, viewPly]);
+    if (!view) return null;
+    if (viewPly !== null) return upTo(view.record, viewPly);
+    if (!unsaved) return view.record;
+    return view.rules.apply(view.record, unsaved) ?? view.record;
+  }, [view, unsaved, viewPly]);
+  const shownPosition = useMemo(() => (view && shown ? view.rules.position(shown) : null), [view, shown]);
+  const pendingMove = !unsaved
+    ? null
+    : unsaved.type === 'move'
+      ? unsaved
+      : (confirmedPosition?.castles.find((c) => c.side === unsaved.side)?.king ?? null);
 
   if (unsupported) {
     return (
@@ -214,7 +224,7 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
     );
   }
 
-  if (!game || !shown || !confirmed) {
+  if (!game || !view || !shown || !confirmed || !shownPosition || !confirmedPosition) {
     return (
       <div className="page">
         <section className="card">
@@ -228,10 +238,11 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
   const them = other(me);
   const opponent = opponentName(game);
   // While waiting, only the creator is seated, and may open on their own colour's turn (#33).
-  const myTurn = game.status !== 'finished' && game.chess.turn === me && !active;
-  const status = gameStatus(replay(shown));
+  const myTurn = game.status !== 'finished' && game.turn === me && !active;
+  const status = shownPosition.status;
   // Plates show the game's real state, even while an earlier position is being reviewed.
-  const plateStatus = viewPly === null ? status : gameStatus(replay(confirmed));
+  const plateStatus = confirmedPosition.status;
+  const typeName = GAME_TYPES[view.type].label;
   const token = game.status === 'waiting' ? invitationFor(game.id) : null;
 
   function badge(seat: Seat): PlateBadge {
@@ -249,23 +260,21 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
   }
 
   let statusLine = describeGame(game);
-  if (game.status === 'active' && status.kind === 'playing' && status.check && game.chess.turn === me) {
+  if (game.status === 'active' && status.kind === 'playing' && status.check && game.turn === me) {
     statusLine = 'Check! Your move';
   }
   if (pendingMove) statusLine = 'Saving your move…';
 
   return (
     <>
-      <section className="table" aria-label={`Chess: you vs ${opponent ?? 'your friend'}`}>
+      <section className="table" aria-label={`${typeName}: you vs ${opponent ?? 'your friend'}`}>
         <PlayerPlate name={opponent ?? 'Waiting for friend'} color={colorOf(them)} badge={badge(them)} captured={captured?.[colorOf(them)]} />
         <PlayBoard
-          record={shown}
+          position={shownPosition}
           movable={myTurn ? colorOf(me) : null}
           orientation={colorOf(me)}
           pendingMove={pendingMove}
-          onMove={(from: string, to: string, promotion?: PromotionPiece) =>
-            act({ type: 'move', from, to, ...(promotion ? { promotion } : {}) })
-          }
+          onAction={act}
           onNotice={setNotice}
           explainBlocked={explainBlocked}
         />
@@ -273,6 +282,7 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
       </section>
 
       <section className="game-panel" aria-label="This game">
+        <p className={`game-type game-type-${view.type}`}>{view.type === 'chess960' ? 'Fischer Random (Chess960)' : typeName}</p>
         {offline && (
           <p className="banner banner-warning" role="alert">
             Can’t reach the game server. Showing the last saved position.
@@ -308,9 +318,9 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
 
         {game.status === 'waiting' &&
           (token ? (
-            <InvitationShare token={token} />
+            <InvitationShare token={token} gameLabel={typeName} />
           ) : game.players.white?.id === identity.playerId ? (
-            <RenewInvitation identity={identity} gameId={game.id} onIdentityRejected={onIdentityRejected} />
+            <RenewInvitation identity={identity} gameId={game.id} gameLabel={typeName} onIdentityRejected={onIdentityRejected} />
           ) : null)}
 
         {game.status === 'finished' ? (
@@ -322,7 +332,7 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
               onShow={(ply) => setViewPly(ply === confirmed.moves.length ? null : ply)}
             />
             <MoveList
-              chess={replay(confirmed)}
+              moves={confirmedPosition.moves}
               currentPly={viewPly ?? confirmed.moves.length}
               onSelectPly={(ply) => setViewPly(ply === confirmed.moves.length ? null : ply)}
             />
@@ -350,12 +360,16 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
                   }
                 }}
               >
-                {rematchBusy ? 'Setting up…' : `Play again (you take ${me === 'white' ? 'Black' : 'White'})`}
+                {rematchBusy
+                  ? 'Setting up…'
+                  : view.type === 'chess960'
+                    ? `Play again, new start (you take ${me === 'white' ? 'Black' : 'White'})`
+                    : `Play again (you take ${me === 'white' ? 'Black' : 'White'})`}
               </button>
             )}
           </>
         ) : (
-          <MoveList chess={replay(confirmed)} />
+          <MoveList moves={confirmedPosition.moves} />
         )}
 
         {game.status === 'active' &&
@@ -387,6 +401,8 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
             </button>
           ))}
 
+        {view.type === 'chess960' && <AboutChess960 />}
+
         <p className="page-footnote">
           <a href="#/">← Your games</a>
         </p>
@@ -399,10 +415,12 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
 function RenewInvitation({
   identity,
   gameId,
+  gameLabel,
   onIdentityRejected,
 }: {
   identity: Identity;
   gameId: string;
+  gameLabel: string;
   onIdentityRejected: () => void;
 }) {
   const [token, setToken] = useState<string | null>(null);
@@ -428,7 +446,7 @@ function RenewInvitation({
     }
   }
 
-  if (token) return <InvitationShare token={token} />;
+  if (token) return <InvitationShare token={token} gameLabel={gameLabel} />;
 
   return (
     <div className="invite">

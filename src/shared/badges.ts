@@ -1,5 +1,5 @@
 import type { Color } from '@shared/chess/board.ts';
-import type { GameStatus } from '@shared/chess/game.ts';
+import type { GameStatus } from '../games/chessFamily';
 import type { PlateBadge } from '../components/PlayerPlate';
 
 /** The badge on a player's plate for a position. */

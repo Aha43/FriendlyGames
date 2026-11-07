@@ -1,25 +1,23 @@
-import type { Chess } from 'chess.js';
+import type { MovePly } from '../games/chessFamily';
 
 interface MoveListProps {
-  chess: Chess;
+  moves: MovePly[];
   /** When given, each move is a button that shows the position after it. */
   onSelectPly?: (ply: number) => void;
   /** The ply currently shown (1 = after White's first move). */
   currentPly?: number;
 }
 
-export default function MoveList({ chess, onSelectPly, currentPly }: MoveListProps) {
-  const history = chess.history({ verbose: true });
-  const rows: { number: number; plies: { ply: number; san: string; color: 'w' | 'b' }[] }[] = [];
-  history.forEach((move, index) => {
-    const number = Number(move.before.split(' ')[5]);
+export default function MoveList({ moves, onSelectPly, currentPly }: MoveListProps) {
+  const rows: { number: number; plies: MovePly[] }[] = [];
+  for (const move of moves) {
     let row = rows[rows.length - 1];
-    if (!row || row.number !== number) {
-      row = { number, plies: [] };
+    if (!row || row.number !== move.number) {
+      row = { number: move.number, plies: [] };
       rows.push(row);
     }
-    row.plies.push({ ply: index + 1, san: move.san, color: move.color });
-  });
+    row.plies.push(move);
+  }
 
   return (
     <>

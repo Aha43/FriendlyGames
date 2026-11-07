@@ -35,6 +35,8 @@ export interface SharedGame {
   moveCount: number;
   /** Standard chess only. */
   chess?: { initialFen: string; moves: string[]; turn: Seat };
+  /** Fischer Random (Chess960) only: Shredder-FEN start, UCI moves, a castle as king onto rook. */
+  chess960?: { initialFen: string; moves: string[]; turn: Seat };
   /** The game started from this one with "Play again", if any. */
   rematchGameId: string | null;
 }
@@ -57,6 +59,8 @@ export interface HistoryEntry {
 
 export type GameAction =
   | { type: 'move'; from: string; to: string; promotion?: 'q' | 'r' | 'b' | 'n' }
+  /** Fischer Random only: castling is never sent as a king move. */
+  | { type: 'castle'; side: 'kingside' | 'queenside' }
   | { type: 'resign' };
 
 /** The server answered with an error. */
@@ -200,11 +204,15 @@ export const gameApi = {
     request<{ game: SharedGame; duplicate: boolean }>('POST', `/games/${encodeURIComponent(id)}/rematch`, credential),
   getGame: (credential: string, id: string) =>
     request<{ game: SharedGame }>('GET', `/games/${encodeURIComponent(id)}`, credential),
-  /** Retrying with the same requestId finds the same game; `invitation` is null once the friend has joined. */
-  createGame: (credential: string, friendEmail: string, requestId: string) =>
+  /**
+   * Retrying with the same requestId (and the same friend and type) finds the same game;
+   * `invitation` is null once the friend has joined.
+   */
+  createGame: (credential: string, friendEmail: string, requestId: string, type: string = 'chess') =>
     request<{ game: SharedGame; invitation: { token: string } | null; duplicate: boolean }>('POST', '/games', credential, {
       friendEmail,
       requestId,
+      type,
     }),
   /** A new invitation link for the creator of a game nobody has joined; earlier links stop working. */
   renewInvitation: (credential: string, id: string) =>

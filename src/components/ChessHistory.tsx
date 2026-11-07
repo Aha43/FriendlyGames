@@ -1,4 +1,5 @@
 // Real finished games, per friend, with the win/draw tally. (The sample panel lives only in local play.)
+import { typeLabel } from '../games/registry';
 import type { HistoryEntry } from '../shared/gameApi';
 
 const ENDINGS: Record<HistoryEntry['games'][number]['termination'], string> = {
@@ -24,10 +25,13 @@ export default function ChessHistory({ history }: { history: HistoryEntry[] }) {
       {history.length === 0 && <p className="muted">Finished games will be kept here.</p>}
       {history.map((entry) => {
         const name = entry.opponent.displayName;
+        // Tallies are kept per type (#54): standard chess keeps its original headings.
+        const type = typeLabel(entry.gameType);
+        const standard = entry.gameType === 'chess';
         return (
-          <section key={entry.opponent.id} className="history-friend" aria-label={`Chess with ${name}`}>
-            <h3 className="panel-title">With {name}</h3>
-            <dl className="tally" aria-label={`Tally with ${name}`}>
+          <section key={`${entry.gameType}:${entry.opponent.id}`} className="history-friend" aria-label={`${type} with ${name}`}>
+            <h3 className="panel-title">{standard ? `With ${name}` : `${type} with ${name}`}</h3>
+            <dl className="tally" aria-label={standard ? `Tally with ${name}` : `${type} tally with ${name}`}>
               <div className="tally-item">
                 <dt>You</dt>
                 <dd>{entry.wins}</dd>
@@ -41,7 +45,7 @@ export default function ChessHistory({ history }: { history: HistoryEntry[] }) {
                 <dd>{entry.losses}</dd>
               </div>
             </dl>
-            <ol className="games" aria-label={`Finished games with ${name}`}>
+            <ol className="games" aria-label={standard ? `Finished games with ${name}` : `Finished ${type} games with ${name}`}>
               {entry.games.map((game) => (
                 <li key={game.id}>
                   <a className="game game-link-plain" href={`#/game/${game.id}`}>

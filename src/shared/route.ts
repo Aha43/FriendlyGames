@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 export type Route =
   | { page: 'home' }
-  | { page: 'local' }
+  | { page: 'local'; type: 'chess' | 'chess960' }
   | { page: 'game'; gameId: string }
   | { page: 'join'; token: string };
 
@@ -12,7 +12,8 @@ export function parseRoute(hash: string): Route {
   if (game) return { page: 'game', gameId: game[1] };
   const join = path.match(/^\/join\/([A-Za-z0-9_-]{43})$/);
   if (join) return { page: 'join', token: join[1] };
-  if (path === '/local') return { page: 'local' };
+  if (path === '/local') return { page: 'local', type: 'chess' };
+  if (path === '/local/chess960') return { page: 'local', type: 'chess960' };
   return { page: 'home' };
 }
 

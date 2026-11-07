@@ -6,6 +6,22 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
+### Added
+
+- Fischer Random (Chess960) next to chess. Choose the game when inviting a friend; the server
+  draws the starting arrangement, the same for both of you. Every game is labelled Chess or
+  Fischer Random in your games, at the table, in the invitation and in the history, where
+  tallies are kept per game. To castle in Fischer Random, select your king and use a castle
+  button, which names where king and rook will end up; a king move never castles by accident.
+  Review, captured pieces and "Play again" (a new start, colours swapped) work as in chess (#55).
+- Local Fischer Random, with its own saved game: switching between local chess and local
+  Fischer Random keeps both (#55).
+
+### Changed
+
+- FriendlyGames is now free software under GPL-3.0-or-later, so the site can include chessops for
+  Fischer Random. The page footer links to the source and to every licence (#55).
+
 ### Development
 
 - Proof of the Chess960 rules engine and saved format: chessops for Chess960 (not yet

@@ -10,10 +10,15 @@ return to ongoing games or start a new chess game with a friend. The playing pag
 evokes friends meeting at a table in a park, with a seasonal backdrop and a clear,
 comfortable board. Finished games become shared history.
 
-Two friends can play chess from their own devices at a table in an autumn park:
-name-and-email onboarding, manually shared invitation links, server-checked moves, and a
+Two friends can play chess or Fischer Random (Chess960) from their own devices at a table in
+an autumn park: name-and-email onboarding, manually shared invitation links, server-checked moves, and a
 shared history of finished games with a win/draw tally, replay and "play again".
-Local play on one device remains available separately.
+Local play on one device remains available separately, with its own saved game for each type.
+
+In **Fischer Random** the pieces behind the pawns start in one of 960 arrangements, drawn by the
+server when the game is created and the same for both sides; every piece moves as usual. To
+castle, select your king and use a castle button: king and rook end on g/f (kingside) or c/d
+(queenside), as in ordinary chess. A king move never castles by accident.
 
 - [Product brief](docs/product-brief.md)
 - [First sprint](docs/sprint-01.md)
@@ -25,6 +30,7 @@ Local play on one device remains available separately.
 - [Sprint 4 — Captured pieces at a glance](docs/sprint-04.md)
 - [Sprint 5 — Chess and Fischer Random](docs/sprint-05.md) (next release)
 - [Game-type architecture plan](docs/game-types.md)
+- [Source publication](docs/source-publication.md)
 - [Changelog](CHANGELOG.md)
 - [Agent guidance](AGENTS.md)
 
@@ -98,7 +104,17 @@ releasing, verification and rollback: [docs/deployment.md](docs/deployment.md).
 External code and artwork, their sources and licenses are recorded in
 [docs/third-party-assets.md](docs/third-party-assets.md).
 
-## Repository status
+## Licence
 
-Private prototype. No open-source license has been granted. Public visibility and
-licensing are future owner decisions.
+FriendlyGames is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version. It is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE) for the full text.
+
+Copyright © 2026 Arne Halvorsen. The licence was chosen so the web build can include
+[chessops](https://github.com/niklasf/chessops) (GPL-3.0-or-later) for Fischer Random
+([decision 0001](docs/decisions/0001-chess960-engine.md)). Third-party code and artwork keep their
+own licences ([docs/third-party-assets.md](docs/third-party-assets.md)); the published site links
+to each licence and to this source. How the source is published and kept in step with the site:
+[docs/source-publication.md](docs/source-publication.md).

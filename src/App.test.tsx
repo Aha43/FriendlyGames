@@ -258,7 +258,8 @@ describe('lobby', () => {
     await user.type(screen.getByLabelText('Friend’s email'), 'harald@example.test');
     await user.click(screen.getByRole('button', { name: 'Create game' }));
 
-    expect(create).toHaveBeenCalledWith(CREDENTIAL, 'harald@example.test', expect.stringMatching(/^[0-9a-f-]{36}$/));
+    // Standard chess stays the default type (#55).
+    expect(create).toHaveBeenCalledWith(CREDENTIAL, 'harald@example.test', expect.stringMatching(/^[0-9a-f-]{36}$/), 'chess');
     const link = `http://localhost:3000/#/join/${TOKEN}`;
     expect(await screen.findByLabelText('Invitation link')).toHaveValue(link);
     await user.click(screen.getByRole('button', { name: 'Copy link' }));
@@ -299,6 +300,88 @@ describe('lobby', () => {
     await user.type(screen.getByLabelText('Friend’s email'), 'other@example.test');
     await user.click(screen.getByRole('button', { name: 'Create game' }));
     expect(create.mock.calls[1][2]).not.toBe(create.mock.calls[0][2]);
+  });
+
+  describe('choosing a game type (#55)', () => {
+    const FISCHER_FEN = '1r3kr1/pppppppp/8/8/8/8/PPPPPPPP/1R3KR1 w GBgb - 0 1';
+    const fischerGame = (overrides: Partial<SharedGame> = {}) =>
+      game({ type: 'chess960', chess: undefined, chess960: { initialFen: FISCHER_FEN, moves: [], turn: 'white' }, ...overrides });
+
+    it('creates a Fischer Random game when chosen, explaining it first', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+      const create = vi
+        .spyOn(gameApi, 'createGame')
+        .mockResolvedValue({ game: fischerGame({ status: 'waiting', revision: 0 }), invitation: { token: TOKEN }, duplicate: false });
+      render(<App />);
+
+      expect(screen.getByRole('radio', { name: 'Chess' })).toBeChecked();
+      expect(screen.queryByText(/one of 960 arrangements/)).not.toBeInTheDocument();
+      await user.click(screen.getByRole('radio', { name: 'Fischer Random (Chess960)' }));
+      expect(screen.getByText(/one of 960 arrangements/)).toBeInTheDocument();
+      expect(screen.getByText(/To castle, select your king and use a castle button/)).toBeInTheDocument();
+
+      await user.type(screen.getByLabelText('Friend’s email'), 'harald@example.test');
+      await user.click(screen.getByRole('button', { name: 'Create game' }));
+      expect(create).toHaveBeenCalledWith(CREDENTIAL, 'harald@example.test', expect.stringMatching(/^[0-9a-f-]{36}$/), 'chess960');
+      expect(await screen.findByText('Your Fischer Random game is ready. You play White.')).toBeInTheDocument();
+      expect(screen.getByText(/Send this Fischer Random invitation to your friend/)).toBeInTheDocument();
+    });
+
+    it('retries an unconfirmed creation with the same request ID and type', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+      const create = vi
+        .spyOn(gameApi, 'createGame')
+        .mockRejectedValueOnce(new NetworkError('lost'))
+        .mockResolvedValueOnce({ game: fischerGame({ status: 'waiting', revision: 0 }), invitation: { token: TOKEN }, duplicate: true });
+      render(<App />);
+      await user.click(screen.getByRole('radio', { name: 'Fischer Random (Chess960)' }));
+      await user.type(screen.getByLabelText('Friend’s email'), 'harald@example.test');
+      await user.click(screen.getByRole('button', { name: 'Create game' }));
+      await screen.findByText(/Couldn’t confirm/);
+      await user.click(screen.getByRole('button', { name: 'Try again' }));
+      expect(create.mock.calls[1]).toEqual(create.mock.calls[0]);
+      expect(create.mock.calls[1][3]).toBe('chess960');
+    });
+
+    it('uses a new request ID when the type is changed after an unconfirmed attempt', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+      const create = vi.spyOn(gameApi, 'createGame').mockRejectedValue(new NetworkError('lost'));
+      render(<App />);
+      await user.type(screen.getByLabelText('Friend’s email'), 'harald@example.test');
+      await user.click(screen.getByRole('button', { name: 'Create game' }));
+      await screen.findByText(/Couldn’t confirm/);
+      await user.click(screen.getByRole('radio', { name: 'Fischer Random (Chess960)' }));
+      expect(screen.getByRole('button', { name: 'Create game' })).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Create game' }));
+      expect(create.mock.calls[1][2]).not.toBe(create.mock.calls[0][2]);
+      expect(create.mock.calls.map((call) => call[3])).toEqual(['chess', 'chess960']);
+    });
+
+    it('labels each game in a mixed list and keeps tallies per type', async () => {
+      vi.spyOn(gameApi, 'listGames').mockResolvedValue({
+        games: [game(), fischerGame({ id: '22222222-2222-3333-4444-555555555555' })],
+      });
+      const finished = { finishedAt: '2026-11-01T12:00:00Z', termination: 'checkmate' as const, yourSeat: 'white' as const, moveCount: 20 };
+      vi.mocked(gameApi.history).mockResolvedValue({
+        history: [
+          { gameType: 'chess', opponent: { id: 'p-harald', displayName: 'Harald' }, wins: 1, draws: 0, losses: 0, games: [{ id: 'g1', outcome: 'win', ...finished }] },
+          { gameType: 'chess960', opponent: { id: 'p-harald', displayName: 'Harald' }, wins: 0, draws: 0, losses: 1, games: [{ id: 'g2', outcome: 'loss', ...finished }] },
+        ],
+      });
+      render(<App />);
+      const links = within(await screen.findByRole('list', { name: 'Games in progress' })).getAllByRole('link');
+      expect(links[0]).toHaveTextContent('Chess · You play White');
+      expect(links[1]).toHaveTextContent('Fischer Random · You play White');
+
+      expect(await screen.findByRole('heading', { name: 'With Harald' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Fischer Random with Harald' })).toBeInTheDocument();
+      const tally = screen.getByLabelText('Fischer Random tally with Harald');
+      expect(within(tally).getByText('Harald').nextSibling).toHaveTextContent('1');
+      expect(within(screen.getByLabelText('Tally with Harald')).getByText('You').nextSibling).toHaveTextContent('1');
+    });
   });
 
   it('joins from a pasted invitation link', async () => {

@@ -484,3 +484,114 @@ describe('a game this version cannot show (#53)', () => {
     expect(screen.queryByRole('grid')).not.toBeInTheDocument();
   });
 });
+
+describe('a Fischer Random game (#55)', () => {
+  // Kf1 between Rb1 and Rg1 with nothing in the way: both castles legal for White.
+  const READY = '1r3kr1/pppppppp/8/8/8/8/PPPPPPPP/1R3KR1 w GBgb - 0 1';
+  const fischer = (overrides: Partial<SharedGame> = {}, moves: string[] = [], initialFen = READY): SharedGame =>
+    game(
+      {
+        type: 'chess960',
+        chess: undefined,
+        chess960: { initialFen, moves, turn: moves.length % 2 === 0 ? 'white' : 'black' },
+        ...overrides,
+      },
+      moves,
+    );
+  const castleButton = (name: RegExp) => screen.getByRole('button', { name });
+
+  it('is labelled, explained and drawn from its saved start', async () => {
+    await renderPage(fischer());
+    expect(screen.getByRole('region', { name: 'Fischer Random: you vs Harald' })).toBeInTheDocument();
+    expect(screen.getByText('Fischer Random (Chess960)', { selector: '.game-type' })).toBeInTheDocument();
+    expect(screen.getByText('About Fischer Random (Chess960)')).toBeInTheDocument();
+    expect(square('f1')).toHaveAccessibleName('f1, white king');
+    expect(square('b8')).toHaveAccessibleName('b8, black rook');
+  });
+
+  it('sends castling as the explicit action and shows it unsaved until confirmed', async () => {
+    const user = userEvent.setup();
+    await renderPage(fischer());
+    const reply = deferred<{ game: SharedGame; duplicate: boolean }>();
+    const submit = vi.spyOn(gameApi, 'submitAction').mockReturnValue(reply.promise);
+
+    await user.click(square('f1'));
+    await user.click(castleButton(/Castle kingside: king to g1, rook to f1/));
+    expect(submit).toHaveBeenCalledWith(identity.credential, GAME_ID, expect.stringMatching(/^[0-9a-f-]{36}$/), 1, {
+      type: 'castle',
+      side: 'kingside',
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('Saving your move…');
+    expect(square('g1')).toHaveAccessibleName('g1, white king, not saved yet');
+    expect(square('f1')).toHaveAccessibleName('f1, white rook');
+
+    await act(async () => reply.resolve({ game: fischer({}, ['f1g1']), duplicate: false }));
+    expect(screen.getByRole('status')).toHaveTextContent('Harald’s move');
+    expect(square('g1')).toHaveAccessibleName('g1, white king');
+    expect(screen.getByRole('list', { name: 'Moves' })).toHaveTextContent('O-O');
+  });
+
+  it('retries a castle whose answer was lost with the same request', async () => {
+    const user = userEvent.setup();
+    await renderPage(fischer());
+    const submit = vi
+      .spyOn(gameApi, 'submitAction')
+      .mockRejectedValueOnce(new NetworkError('offline'))
+      .mockResolvedValueOnce({ game: fischer({}, ['f1b1']), duplicate: true });
+
+    await user.click(square('f1'));
+    await user.click(castleButton(/Castle queenside/));
+    expect(await screen.findByText(/Couldn’t confirm whether your move was saved/)).toBeInTheDocument();
+    // Still the confirmed position: the king has not moved.
+    expect(square('f1')).toHaveAccessibleName('f1, white king');
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    const [first, second] = submit.mock.calls;
+    expect(second).toEqual(first);
+    expect(second[4]).toEqual({ type: 'castle', side: 'queenside' });
+    expect(square('c1')).toHaveAccessibleName('c1, white king');
+    expect(square('d1')).toHaveAccessibleName('d1, white rook');
+  });
+
+  it('settles a lost castle as saved when polling shows the king onto its rook', async () => {
+    const user = userEvent.setup();
+    await renderPage(fischer());
+    vi.spyOn(gameApi, 'submitAction').mockRejectedValue(new NetworkError('offline'));
+    await user.click(square('f1'));
+    await user.click(castleButton(/Castle queenside/));
+    await screen.findByText(/Couldn’t confirm/);
+
+    vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: fischer({}, ['f1b1']) });
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    expect(await screen.findByText('Harald’s move')).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn’t confirm/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/The game changed before your move was saved/)).not.toBeInTheDocument();
+  });
+
+  it('reviews from its own start and offers a same-type rematch', async () => {
+    const user = userEvent.setup();
+    await renderPage(
+      fischer({ status: 'finished', result: 'white', termination: 'resignation', updatedAt: '2026-11-07T12:00:00Z' }, ['f1g1', 'a7a6']),
+    );
+    await user.click(screen.getByRole('button', { name: 'Start position' }));
+    expect(square('f1')).toHaveAccessibleName('f1, white king');
+    expect(square('g1')).toHaveAccessibleName('g1, white rook');
+    await user.click(screen.getByRole('button', { name: 'Move 1, White: O-O' }));
+    expect(square('g1')).toHaveAccessibleName('g1, white king');
+    expect(square('f1')).toHaveAccessibleName('f1, white rook');
+    expect(screen.getByRole('button', { name: 'Play again, new start (you take Black)' })).toBeInTheDocument();
+  });
+
+  it('does not offer castle controls to the player whose turn it is not', async () => {
+    const user = userEvent.setup();
+    await renderPage(fischer({ yourSeat: 'black' }));
+    await user.click(square('f8'));
+    expect(screen.queryByRole('group', { name: 'Castle' })).not.toBeInTheDocument();
+  });
+
+  it('is refused, not drawn as chess, without its record', async () => {
+    vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: { ...fischer(), chess960: undefined } });
+    render(<SharedGamePage identity={identity} gameId={GAME_ID} onIdentityRejected={vi.fn()} />);
+    expect(await screen.findByRole('heading', { name: 'Can’t show this game' })).toBeInTheDocument();
+  });
+});

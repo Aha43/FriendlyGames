@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import ChessHistory from '../components/ChessHistory';
 import InvitationShare from '../components/InvitationShare';
+import { CHESS960_CASTLING, CHESS960_SUMMARY, GAME_TYPES, typeLabel, type GameType } from '../games/registry';
 import { describeGame, opponentName } from '../shared/describe';
 import { ApiError, gameApi, NetworkError, type HistoryEntry, type SharedGame } from '../shared/gameApi';
 import { forgetInvitation, rememberInvitation, tokenFromInvitation, type Identity } from '../shared/identity';
@@ -91,7 +92,8 @@ function GameLinks({ games, label }: { games: SharedGame[]; label: string }) {
               <span className="game-link-title">{opponent ? `vs ${opponent}` : 'New game'}</span>
               <span className="game-link-status">{describeGame(game)}</span>
               <span className="game-link-meta">
-                You play {game.yourSeat === 'white' ? 'White' : 'Black'} · {game.moveCount} moves
+                <span className={`game-link-type game-link-type-${game.type}`}>{typeLabel(game.type)}</span> · You play{' '}
+                {game.yourSeat === 'white' ? 'White' : 'Black'} · {game.moveCount} moves
               </span>
             </a>
           </li>
@@ -111,29 +113,32 @@ function NewGame({
   onIdentityRejected: () => void;
 }) {
   const [email, setEmail] = useState('');
+  const [type, setType] = useState<GameType>('chess');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [created, setCreated] = useState<{ gameId: string; token: string | null } | null>(null);
-  // An attempt whose outcome is unknown. Retrying with its request ID finds the game if it was created.
-  const [uncertain, setUncertain] = useState<{ requestId: string; email: string } | null>(null);
+  const [created, setCreated] = useState<{ gameId: string; token: string | null; type: GameType } | null>(null);
+  // An attempt whose outcome is unknown. Retrying the same friend and type with its request ID finds
+  // the game if it was created; changing either is a new request.
+  const [uncertain, setUncertain] = useState<{ requestId: string; email: string; type: GameType } | null>(null);
+  const retrying = uncertain?.email === email.trim() && uncertain.type === type;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     const friendEmail = email.trim();
-    const requestId = uncertain?.email === friendEmail ? uncertain.requestId : newRequestId();
+    const requestId = retrying && uncertain ? uncertain.requestId : newRequestId();
     setBusy(true);
     setError(null);
     try {
-      const { game, invitation } = await gameApi.createGame(identity.credential, friendEmail, requestId);
+      const { game, invitation } = await gameApi.createGame(identity.credential, friendEmail, requestId, type);
       if (invitation) rememberInvitation(game.id, invitation.token);
-      setCreated({ gameId: game.id, token: invitation?.token ?? null });
+      setCreated({ gameId: game.id, token: invitation?.token ?? null, type });
       setUncertain(null);
       setEmail('');
       onCreated();
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return onIdentityRejected();
       if (e instanceof NetworkError || (e instanceof ApiError && e.status >= 500)) {
-        setUncertain({ requestId, email: friendEmail });
+        setUncertain({ requestId, email: friendEmail, type });
         setError(
           'Couldn’t confirm whether the game was created: the game server didn’t answer. Trying again is safe; it won’t create a second game.',
         );
@@ -148,13 +153,13 @@ function NewGame({
 
   return (
     <section className="card" aria-labelledby="new-game-title">
-      <h2 id="new-game-title">Start a chess game</h2>
+      <h2 id="new-game-title">Start a game</h2>
       {created ? (
         <>
           {created.token ? (
             <>
-              <p>Your game is ready. You play White.</p>
-              <InvitationShare token={created.token} />
+              <p>Your {GAME_TYPES[created.type].label} game is ready. You play White.</p>
+              <InvitationShare token={created.token} gameLabel={GAME_TYPES[created.type].label} />
             </>
           ) : (
             <p>Your friend has already joined this game.</p>
@@ -170,6 +175,27 @@ function NewGame({
         </>
       ) : (
         <form onSubmit={submit} className="form">
+          <fieldset className="type-picker">
+            <legend>Game</legend>
+            {(['chess', 'chess960'] as const).map((option) => (
+              <label key={option} className="type-option">
+                <input
+                  type="radio"
+                  name="game-type"
+                  value={option}
+                  checked={type === option}
+                  onChange={() => setType(option)}
+                />
+                {option === 'chess960' ? 'Fischer Random (Chess960)' : GAME_TYPES[option].label}
+              </label>
+            ))}
+          </fieldset>
+          {type === 'chess960' && (
+            <div className="type-explainer">
+              <p>{CHESS960_SUMMARY} The server draws your starting arrangement when the game is created.</p>
+              <p>{CHESS960_CASTLING}</p>
+            </div>
+          )}
           <label>
             Friend’s email
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={254} />
@@ -179,7 +205,7 @@ function NewGame({
             {error}
           </p>
           <button type="submit" className="button button-primary" disabled={busy}>
-            {busy ? 'Creating…' : uncertain?.email === email.trim() ? 'Try again' : 'Create game'}
+            {busy ? 'Creating…' : retrying ? 'Try again' : 'Create game'}
           </button>
         </form>
       )}
