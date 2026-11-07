@@ -29,9 +29,9 @@ Owner decisions are marked **(owner)**; nothing here is done by merging a PR. Re
       backend commit `f81cf02`, database ok, pooler yes.
 - [x] **(owner)** Existing game checked after that deploy: the ongoing game with Harald opened on
       the live site with its board and captured pieces intact.
-- [ ] After merge: the footer's build commit is on the public `main`, so the source of the
-      running site is the public commit it names. `0de954c` is on the public `main`; confirm the
-      live footer names it (or a later public commit) when recording the deployment.
+- [x] After merge: the footer's build commit is on the public `main`, so the source of the
+      running site is the public commit it names. The live footer read "Build cf028f4" on
+      2026-11-07 (public `main`, same app as `0de954c`), with the source link (#56).
 
 ## Keeping it true
 

@@ -65,3 +65,12 @@ Pin explanations #20, deployment orchestration #37 and colour choice #38 remain
 unscheduled backlog. No teams, more player counts, third game, authentication,
 ratings, chat, navigation, dynamic plugin system or rules-engine project. #49
 tags/publishes; it does not deploy or imply the owner authorized a real test release.
+
+## Integrated result (#56, prepared 2026-11-07)
+
+Delivered in order: #51 (PR #57), #52 (PR #58), #53 (PR #59), #54 (PR #61), #60 (PR #64,
+added during the sprint), #62 (PR #63, guidance), #55 (PR #65), #49 (PR #66). The backend was
+deployed before the UI (#54 at `f81cf02`, then #55 merged); the live site runs `cf028f4`. Version
+0.2.0 and its changelog section are prepared in the #56 release PR. Evidence and limits are in
+that PR and [deployment.md](deployment.md). Owner acceptance, `make release` and closing the
+milestone remain the owner's; the first-game acceptance #11 stays separate.

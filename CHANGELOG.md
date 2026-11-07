@@ -6,6 +6,11 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
+## v0.2.0 — Chess and Fischer Random (2026-11-07)
+
+Sprint 5. The release date is when this version was prepared; the `v0.2.0` tag marks the
+accepted commit and is the first one published with `make release`.
+
 ### Added
 
 - Fischer Random (Chess960) next to chess. Choose the game when inviting a friend; the server
@@ -13,33 +18,49 @@ versions live in `package.json`; actual deployments are recorded separately in
   Fischer Random in your games, at the table, in the invitation and in the history, where
   tallies are kept per game. To castle in Fischer Random, select your king and use a castle
   button, which names where king and rook will end up; a king move never castles by accident.
-  Review, captured pieces and "Play again" (a new start, colours swapped) work as in chess (#55).
+  Review, captured pieces and "Play again" (a new start, colours swapped) work as in chess
+  (#54, PR #61; #55, PR #65).
 - Local Fischer Random, with its own saved game: switching between local chess and local
-  Fischer Random keeps both (#55).
+  Fischer Random keeps both (#55, PR #65).
 
 ### Changed
 
-- FriendlyGames is now free software under GPL-3.0-or-later, so the site can include chessops for
-  Fischer Random. The page footer links to the source and to every licence (#55).
+- FriendlyGames is now free software under GPL-3.0-or-later, so the site can include chessops
+  (Niklas Fiekas, GPL-3.0-or-later) for Fischer Random; standard chess still uses chess.js. The
+  page footer links to the source and to every licence (#55, PR #65; decision 0001).
 
 ### Development
 
 - `make release` tags and publishes the merged release commit of `package.json`'s version as a
   GitHub release: a preflight that writes nothing, only the missing steps on a rerun, and a precise
-  report after a part-way failure. It does not deploy. Run by the owner only (#49).
-- Proof of the Chess960 rules engine and saved format: chessops for Chess960 (not yet
-  shipped), fixtures run in Node, the browser, Deno and the Supabase Edge runtime, and a
-  decision record with the licence and publication proposal (#52).
-- Game-type boundary: the server picks a rules adapter by each game's stored type and
-  version, and clients say which types they can show (`types`). Standard chess is still
-  the only type and plays exactly as before; a game a client cannot show is explained
-  instead of being drawn as chess (#53).
+  report after a part-way failure. It does not deploy. `make prod-status` now fails when the site
+  or backend is unhealthy. Run by the owner only (#49, PR #66).
+- Proof of the Chess960 rules engine and saved format: chessops for Chess960, fixtures run in
+  Node, the browser, Deno and the Supabase Edge runtime, and a decision record with the licence
+  and publication proposal (#52, PR #58).
+- Game-type boundary: the server picks a rules adapter by each game's stored type and version,
+  and clients say which types they can show (`types`). A game a client cannot show is explained
+  instead of being drawn as chess (#53, PR #59).
 - Fischer Random (Chess960) on the server: a fair random start saved once per game, explicit
-  castling, all chess outcomes, retries, history per type and "Play again". Not selectable in
-  the app yet (#55); clients that read only chess never see these games (#54).
+  castling, all chess outcomes, retries, history per type and "Play again"; clients that read
+  only chess never see these games. Additive migration `20261104120000_chess960_games.sql`
+  (#54, PR #61).
 - Backend tests run reliably in parallel: test players get random unique emails, migration
   rehearsals that change the schema run afterwards on their own, and setup failures report
-  only the operation, status and error code, never credentials or tokens (#60).
+  only the operation, status and error code, never credentials or tokens (#60, PR #64).
+- Sprint 5 plan, game-type architecture and the v0.2.0 milestone (#51, PR #57); Claude guidance
+  points at the active sprint (#62, PR #63); this release (#56).
+
+### Known limitations
+
+- Email entry is prototype access: email ownership isn't checked.
+- The lobby says "1 moves" for a single move.
+- The top bar reads "Chess" on every page, and the lobby's "Chess history" card holds both
+  types (sectioned per type).
+- Rollback: once Fischer Random games exist, the backend can only go back as far as the #53
+  type dispatcher (it leaves unknown types out); an older backend would replay them as chess.
+- The first real game with Harald is still being played, so the v0.1.0 acceptance (#11)
+  stays open.
 
 ## v0.1.2 — Captured pieces at a glance (2026-11-03)
 
