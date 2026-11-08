@@ -5,9 +5,9 @@ Follow [AGENTS.md](AGENTS.md) and [the development workflow](docs/development.md
 You are the implementation agent. Codex supplies planning and independent review.
 Begin with the active GitHub issue, its version milestone and sprint-plan entry. Read
 [the roadmap](docs/roadmap.md) and the active sprint and contracts named in
-[AGENTS.md](AGENTS.md) (currently [Sprint 5](docs/sprint-05.md) and
-[game types](docs/game-types.md)); AGENTS.md is the single place that names the active
-route. Follow the ordered issues, implement the acceptance criteria, verify and open a
+[AGENTS.md](AGENTS.md); AGENTS.md names the active route. Keep the
+[game-type contract](docs/game-types.md) when changing shared game flows. Follow the
+ordered issues, implement the acceptance criteria, verify and open a
 focused PR with one primary `Closes #N`. Explain necessary deviations before expanding
 scope. Codex reviews the exact head; later changes need another review.
 
