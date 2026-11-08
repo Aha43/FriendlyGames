@@ -74,8 +74,8 @@ The owner found the existing rematch button; that flow is retained unchanged. Pr
 same-type, colour-swapping rematch. A new game may instead select any previously
 seated opponent (including an ongoing game), choose a type, and directly seat
 both players. The creator plays White. Email/link invitations remain for someone
-new. The owner selected globally unique player names (case-insensitive after
-trimming surrounding spaces), enforced during signup without changing stable
+new. The owner selected globally unique player names (trim, normalize to Unicode
+NFC, then compare ignoring case), enforced during signup without changing stable
 player IDs or email-entry access. Existing-name collisions require an owner
 decision, never automatic renaming. No friend-request system, global search or
 verified authentication is added.

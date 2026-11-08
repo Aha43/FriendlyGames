@@ -8,7 +8,8 @@ This adds a new creation capability to existing Chess and Fischer Random play;
 it adds no game type. Use a minor release in line with the roadmap.
 
 Owner decision after Claude review: player display names will be globally
-unique, ignoring case and surrounding spaces. #76 makes this a separately
+unique under trim → Unicode NFC normalization → case-insensitive comparison.
+#76 makes this a separately
 reviewed signup/database change. IDs remain the identity and authorization key.
 
 ## What is already there
@@ -44,10 +45,17 @@ need not wait for this sprint's features, but fixes still need an issue and revi
   swapped. One source game has at most one rematch. Existing rematches open
   rather than being duplicated. This path already exists and is preserved, not
   redesigned by this sprint. Opening a page must never create a game.
-- **Player names** are globally unique ignoring case/outer spaces; retain their
-  chosen display capitalization and the current length limit. Database
-  enforcement and helpful signup errors belong to #76. Check for existing
-  collisions, including old test players, before applying its migration. Refuse
+- **Player names** use one canonical rule everywhere: trim surrounding spaces,
+  normalize to Unicode NFC, then compare ignoring case. Define consistent trim
+  and case semantics for the API, preflight and database constraint; do not
+  assume JavaScript and SQL approximations agree. PostgreSQL documents
+  [NFC normalization for UTF8](https://www.postgresql.org/docs/17/functions-string.html).
+  Preserve display capitalization/accents and the current length limit; do not
+  rewrite existing names as part of the migration. Database enforcement and
+  helpful signup errors belong to #76. Its first deliverable is a read-only
+  collision preflight, including older production test players. Report results
+  and any owner decision needed before moving on to #72; an unperformed check
+  is explicitly pending. Never run production-writing test journeys to check this. Refuse
   rather than silently rename/merge anyone. Existing email entry still opens
   the same player, including concurrent same-email signup races. A taken name
   must never open that name-holder's account.
@@ -94,6 +102,10 @@ direct known-opponent creation and regression coverage of existing rematches. In
 finished relationships, privacy/authorization, old email invitations, both types,
 committed/lost-response recovery, concurrent retries and the second player's
 lobby. Regressions must fail when authorization or deduplication is broken.
+Backend and browser fixtures must generate unique display names within the
+40-character limit, using the existing suffix helper where useful. Assertions
+about player labels/tables must use the generated names and retain their original
+behaviour checks. Fixed names remain fine in isolated unit mocks.
 Inspect keyboard operation and 320px layouts; preserve board/capture readability.
 Stand-ins are supplementary; exact-head real-stack CI is authoritative.
 
