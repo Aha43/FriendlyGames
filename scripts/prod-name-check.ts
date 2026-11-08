@@ -41,6 +41,18 @@ export function parseRows(output: string): Row[] {
   return rows as Row[];
 }
 
+/**
+ * A count from the query: a non-negative integer, as a JSON number or a string of digits (bigint).
+ * Anything else (missing, null, blank, text, negative, fractional, boolean) means the answer is
+ * not a complete check. Never coerce: Number(null) and Number('') are 0, which would read as
+ * "no collisions" (#76 review).
+ */
+export function count(value: unknown, what: string): number {
+  const n = typeof value === 'number' ? value : typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : NaN;
+  if (!Number.isSafeInteger(n) || n < 0) throw new CheckError(`the ${what} count was missing or not a whole number`);
+  return n;
+}
+
 export interface Report {
   players: number;
   groups: { key: string; players: { id: string; name: string; games: number; created: string }[] }[];
@@ -52,19 +64,20 @@ export function report(rows: Row[]): Report {
   if (summaries.length !== 1) throw new CheckError('the answer had no summary, so the check may not have run');
   const [summary] = summaries;
   if (summary.read_only !== 'on') throw new CheckError('the query did not run in a read-only transaction');
-  const players = Number(summary.players);
-  const expectedGroups = Number(summary.collision_groups);
-  if (!Number.isInteger(players) || !Number.isInteger(expectedGroups)) throw new CheckError('the summary was incomplete');
+  const players = count(summary.players, 'player');
+  const expectedGroups = count(summary.collision_groups, 'collision group');
 
   const groups = new Map<string, Report['groups'][number]>();
   for (const row of rows) {
     if (row?.kind !== 'collision') continue;
     if (!row.name_key || !row.player_id || row.display_name === null) throw new CheckError('a collision row was incomplete');
     const group = groups.get(row.name_key) ?? { key: row.name_key, players: [] };
-    group.players.push({ id: row.player_id, name: row.display_name, games: Number(row.games), created: String(row.created_at) });
+    if (typeof row.created_at !== 'string' || !row.created_at) throw new CheckError('a collision row had no creation date');
+    group.players.push({ id: row.player_id, name: row.display_name, games: count(row.games, 'game'), created: row.created_at });
     groups.set(row.name_key, group);
   }
-  if (groups.size !== expectedGroups || [...groups.values()].some((g) => g.players.length < 2)) {
+  const listed = [...groups.values()].reduce((n, g) => n + g.players.length, 0);
+  if (groups.size !== expectedGroups || listed > players || [...groups.values()].some((g) => g.players.length < 2)) {
     throw new CheckError('the collision rows did not match the summary');
   }
   return { players, groups: [...groups.values()] };

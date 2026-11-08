@@ -156,6 +156,62 @@ describe('make prod-name-check', () => {
     expect(out).toContain('Nothing is known to be clear');
   });
 
+  // #76 review: Number(null) and Number('') are 0, which once read as "no collisions".
+  const MALFORMED: [string, unknown][] = [
+    ['null', null],
+    ['an empty string', ''],
+    ['blank', '  '],
+    ['text', 'many'],
+    ['negative', -1],
+    ['fractional', 1.5],
+    ['a boolean', true],
+    ['an array', []],
+  ];
+
+  it.each(MALFORMED)('is incomplete when the collision-group count is %s, never clear', (_case, value) => {
+    const { status, out } = check({ STUB_QUERY_OUT: JSON.stringify([summary({ collision_groups: value })]) });
+    expect(status).toBe(2);
+    expect(out).toMatch(/collision group count was missing or not a whole number/);
+    expect(out).not.toContain('No collisions');
+  });
+
+  it.each(MALFORMED)('is incomplete when the player count is %s', (_case, value) => {
+    const { status, out } = check({ STUB_QUERY_OUT: JSON.stringify([summary({ players: value })]) });
+    expect(status).toBe(2);
+    expect(out).toMatch(/player count was missing or not a whole number/);
+  });
+
+  it('is incomplete when the counts are missing altogether', () => {
+    const bare = summary();
+    delete (bare as Record<string, unknown>).players;
+    delete (bare as Record<string, unknown>).collision_groups;
+    const { status, out } = check({ STUB_QUERY_OUT: JSON.stringify([bare]) });
+    expect(status).toBe(2);
+    expect(out).not.toContain('No collisions');
+  });
+
+  it('accepts counts sent as strings of digits (bigint)', () => {
+    const { status, out } = check({ STUB_QUERY_OUT: JSON.stringify([summary({ players: '4', collision_groups: '0' })]) });
+    expect(status, out).toBe(0);
+  });
+
+  it.each([
+    ['a missing game count', { games: null }],
+    ['a blank game count', { games: '' }],
+    ['no creation date', { created_at: null }],
+  ])('is incomplete when a collision row has %s', (_case, over) => {
+    const rows = JSON.parse(COLLIDING);
+    Object.assign(rows[1], over);
+    const { status } = check({ STUB_QUERY_OUT: JSON.stringify(rows) });
+    expect(status).toBe(2);
+  });
+
+  it('is incomplete when more players collide than exist', () => {
+    const rows = JSON.parse(COLLIDING);
+    rows[0].players = 1;
+    expect(check({ STUB_QUERY_OUT: JSON.stringify(rows) }).status).toBe(2);
+  });
+
   it('refuses without a linked project instead of checking some other database', () => {
     rmSync(join(repo, 'supabase/.temp/project-ref'));
     const { status, out } = check({ STUB_QUERY_OUT: CLEAR });
@@ -171,6 +227,13 @@ describe('make deploy-backend runs the name check first', () => {
     expect(status).not.toBe(0);
     expect(out).toContain('Deploy stopped by the player-name check: nothing was changed.');
     expect(calls().some((c) => c.startsWith('supabase db query --linked'))).toBe(true);
+    expect(calls().join('\n')).not.toMatch(MUTATIONS);
+  });
+
+  it('stops before any change when the answer’s counts are missing (#76 review)', () => {
+    const { status, out } = deploy({ STUB_QUERY_OUT: JSON.stringify([summary({ players: null, collision_groups: null })]) });
+    expect(status).not.toBe(0);
+    expect(out).toContain('Deploy stopped by the player-name check: nothing was changed.');
     expect(calls().join('\n')).not.toMatch(MUTATIONS);
   });
 
