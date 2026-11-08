@@ -53,7 +53,10 @@ need not wait for this sprint's features, but fixes still need an issue and revi
   Preserve display capitalization/accents and the current length limit; do not
   rewrite existing names as part of the migration. Database enforcement and
   helpful signup errors belong to #76. Its first deliverable is a read-only
-  collision preflight, including older production test players. Report results
+  collision preflight, `make prod-name-check`, including older production test
+  players. It works before the migration, runs in a read-only transaction, and
+  lists IDs/names/game counts/creation dates without emails or secrets. It fails
+  on collisions or an incomplete check. Report results
   and any owner decision needed before moving on to #72; an unperformed check
   is explicitly pending. Never run production-writing test journeys to check this. Refuse
   rather than silently rename/merge anyone. Existing email entry still opens
@@ -113,7 +116,12 @@ Frontend auto-publishes on merge. #76 adds backward-compatible name-conflict
 handling; #72 keeps its new creation UI unexposed and preserves old clients.
 Owner deploys and verifies the reviewed name constraint and #72 backend from
 clean main before #73 merges (these may share one owner-run deploy). Document
-additive migrations, duplicate-preflight results and existing-player access. Record actual site/backend commits;
+additive migrations, duplicate-preflight results and existing-player access.
+The deploy guard invokes the same name check before migrations/secrets/function
+writes; backup guards remain intact and the database constraint remains the
+second guard. Keep the live target out of default/setup/verify/CI; wrapper tests
+use stubs and real SQL/read-only tests use disposable local Supabase. A stub test
+alone does not prove SQL read-only enforcement. Record actual site/backend commits;
 no new infrastructure or publishing setting is selected here.
 
 Do not alter ongoing or finished production games. Production-writing tests need
