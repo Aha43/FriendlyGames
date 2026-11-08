@@ -121,7 +121,7 @@ describe('make prod-name-check', () => {
     const { status, out } = check({ STUB_QUERY_OUT: CLEAR });
     expect(status, out).toBe(0);
     expect(out).toContain('linked project testref (read-only)');
-    expect(out).toContain('No collisions: all 4 player names are distinct');
+    expect(out).toContain('No collisions: all 4 player records have distinct names');
     expect(calls()).toEqual(['supabase db query --linked --agent no -o json -f scripts/name-check.sql']);
   });
 
@@ -132,7 +132,8 @@ describe('make prod-name-check', () => {
   it('lists collisions by player ID, name, games and creation date, and exits 1', () => {
     const { status, out } = check({ STUB_QUERY_OUT: COLLIDING });
     expect(status).toBe(1);
-    expect(out).toContain('1 name(s) are used by more than one of the 4 players');
+    expect(out).toContain('1 name(s) are shared by more than one player record (4 records in all,');
+    expect(out).toContain('including any test accounts and unused sign-ups');
     expect(out).toMatch(/11111111-1111-4111-8111-111111111111 {2}"Harald" {2}2 game\(s\) {2}created 2026-10-18/);
     expect(out).toContain('" harald"');
     expect(out).toContain('Nothing is renamed automatically');

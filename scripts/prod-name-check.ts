@@ -110,10 +110,12 @@ export function main(): number {
   }
 
   if (result.groups.length === 0) {
-    say(`No collisions: all ${result.players} player names are distinct (trimmed, NFC, ignoring case).`);
+    say(`No collisions: all ${result.players} player records have distinct names (trimmed, NFC, ignoring case).`);
     return 0;
   }
-  say(`\n${result.groups.length} name(s) are used by more than one of the ${result.players} players:`);
+  // Records, not people: test accounts and abandoned sign-ups are player records too.
+  say(`\n${result.groups.length} name(s) are shared by more than one player record (${result.players} records in all,`);
+  say('including any test accounts and unused sign-ups):');
   for (const group of result.groups) {
     say(`\n  "${group.key}"`);
     for (const p of group.players) say(`    ${p.id}  ${JSON.stringify(p.name)}  ${p.games} game(s)  created ${p.created}`);
