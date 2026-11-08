@@ -7,9 +7,9 @@
 - The owner decides product tradeoffs and approves shipping.
 
 Read README.md, docs/product-brief.md, docs/roadmap.md, docs/development.md and
-the active issue/sprint before implementation. The active route is Sprint 5:
-docs/sprint-05.md and docs/game-types.md. Its engine/format proof is reviewed before
-downstream implementation. Historical sprint documents remain design records.
+the active issue/sprint before implementation. The proposed active route is Sprint 6:
+docs/sprint-06.md and docs/game-types.md, after its planning PR is merged. Sprint 5
+and its reviewed engine/format proof remain design records for the two game types.
 
 ## Working rules
 

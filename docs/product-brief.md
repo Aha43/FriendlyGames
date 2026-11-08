@@ -10,7 +10,8 @@ close the app, return later and resume. The completed game remains in their hist
 1. Enter your email to open your player and games, from any browser or phone; a new
    email also asks for a name. The browser remembers the player afterwards.
 2. See ongoing games and whose turn it is, or start a game.
-3. Choose Chess and a friend's email. Share a game link manually initially.
+3. Choose Chess or Fischer Random and invite a friend by email/link. The next
+   selected improvement adds a previous-opponent picker without another invitation.
 4. Play at an inviting park table, together or asynchronously, without a clock.
 5. Finish, revisit the game or play again.
 
@@ -52,11 +53,11 @@ and support resignation. Specify exact chess behavior in implementation issues.
 Leave room for participant lists but defer multiplayer games and teams. Start with
 one game type and direct code rather than a framework for hypothetical games.
 
-## Next selected release — two game types
+## Delivered baseline — two game types
 
 Owner decision, 2026-11-03: add **Fischer Random (Chess960)** alongside standard
-chess as the first step towards offering many games. This is planned v0.2.0 work,
-not a claim that the variant is already live. See [Sprint 5](sprint-05.md) and the
+chess as the first step towards offering many games. v0.2.0 was accepted and
+published on 2026-11-08. See [Sprint 5](sprint-05.md) and the
 [game-type plan](game-types.md).
 
 Share the park, board/pieces, identity, lobby, invitations, saves and per-type
@@ -65,16 +66,26 @@ The rules engine must support actual Chess960 castling; shuffled placement alone
 does not meet the owner's request. Preserve existing standard-chess games through
 compatible rollout. More game types and different player counts remain future work.
 
+## Next selected improvement — play again with friends
+
+Owner direction, 2026-11-08: one-click rematches must be easy to find; starting
+a game with a previous opponent should not require typing email or sharing a new
+invitation. Proposed [Sprint 6](sprint-06.md), v0.2.1, preserves the existing
+same-type, colour-swapping rematch. A new game may instead select any previously
+seated opponent (including an ongoing game), choose a type, and directly seat
+both players. The creator plays White. Email/link invitations remain for someone
+new. No friend-request system, global search or verified authentication is added.
+
 ## Technical and delivery direction
 
-React + TypeScript + Vite and Supabase are proposed, inspired by NamWeb. Reuse
-familiar practices without copying NamWeb's full dependency list. Hosting remains
-to be selected. JUranometria supplies issue-sized work and independent, commit-bound
+React + TypeScript + Vite, Supabase and Cloudflare Workers are in use, inspired
+by NamWeb. Reuse familiar practices without copying NamWeb's full dependency
+list. JUranometria supplies issue-sized work and independent, commit-bound
 review practices; its desktop packaging machinery is not needed here.
 
 ## Deferred
 
 Verified authentication, automatic email invitations, teams, games beyond the two selected types,
 ratings, matchmaking, chat, clocks and formal seasons. Licensing and public
-visibility remain owner decisions; private visibility alone does not settle
-hosting access or data security.
+visibility changes remain owner decisions; the current public source is
+GPL-3.0-or-later and contains no production backups or secrets by design.

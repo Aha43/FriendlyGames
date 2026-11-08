@@ -10,16 +10,17 @@ One issue still means one branch and one focused PR.
 
 | Version | Result | Route and evidence |
 | --- | --- | --- |
-| [v0.1.0 — First game with Harald](https://github.com/Aha43/FriendlyGames/milestone/3) | The deployed friends-only chess baseline. | Historical Sprints 1–2, unique email and email entry. The real game is underway; [#11](https://github.com/Aha43/FriendlyGames/issues/11) stays open until its finished-game, resume and shared-history acceptance is confirmed. |
+| [v0.1.0 — First game with Harald](https://github.com/Aha43/FriendlyGames/milestone/3) | The deployed friends-only chess baseline. | Historical Sprints 1–2, unique email and email entry. The owner reports a game with Harald has ended; [#11](https://github.com/Aha43/FriendlyGames/issues/11) stays open until finished-game, resume and shared-history acceptance is confirmed. |
 | [v0.1.1 — Correct starts and repeatable development](https://github.com/Aha43/FriendlyGames/milestone/4) | Correct starts and repeatable development. | Released; historical [Sprint 3](sprint-03.md), tag/release and actual deployments recorded separately. |
 | [v0.1.2 — Captured pieces at a glance](https://github.com/Aha43/FriendlyGames/milestone/6) | Captured pieces visible in existing/new games and replay. | Released; historical [Sprint 4](sprint-04.md), with the owner's real-game observation recorded. |
-| [v0.2.0 — Chess and Fischer Random](https://github.com/Aha43/FriendlyGames/milestone/5) | Two persisted game types, shared services and correct type-specific rules; first release via `make release`. | [Sprint 5](sprint-05.md) delivered; version prepared in #56, awaiting owner acceptance and `make release`. [Architecture](game-types.md). |
+| [v0.2.0 — Chess and Fischer Random](https://github.com/Aha43/FriendlyGames/milestone/5) | Two persisted game types, shared services and correct type-specific rules; first release via `make release`. | Released through owner-run `make release`; [Sprint 5](sprint-05.md), tag `v0.2.0` at `2613fec`, and actual deployments recorded separately. [Architecture](game-types.md). |
+| [v0.2.1 — Play again with friends](https://github.com/Aha43/FriendlyGames/milestone/7) | Clear one-click rematches and game creation with previous opponents by name. | Proposed [Sprint 6](sprint-06.md): visible rematches, authorized previous-opponent backend, direct-start UI and patch qualification. |
 
 `package.json` is the source version; read it rather than maintaining a second
 current-version value here. It is not proof of a tag/release or first-game acceptance. Actual
 site/backend commits are in [deployment.md](deployment.md). Patch work can ship
-while the long-running first game continues; do not close its acceptance issue
-just because a patch or CI run passed.
+while first-game acceptance remains pending; do not close that issue just because
+a patch or CI run passed.
 
 Older GitHub milestones named Sprint 1 and Sprint 2 are historical planning
 records. Do not assign new work to them. Version milestones and sprint plans are
@@ -62,9 +63,9 @@ deployment remains separate and guarded. Plan compatible schema/API changes and
 deployment order; record separate frontend/backend commits when they differ.
 A local version or green PR is not proof of deployed state.
 
-[Release command #49](https://github.com/Aha43/FriendlyGames/issues/49) is selected
-for Sprint 5: v0.2.0 will be the first release tagged/published by the explicit
-owner-run command. It does not deploy. [Deployment orchestration #37](https://github.com/Aha43/FriendlyGames/issues/37),
+[Release command #49](https://github.com/Aha43/FriendlyGames/issues/49) shipped
+with Sprint 5: v0.2.0 was the first release published by the explicit owner-run
+`make release`. It does not deploy. [Deployment orchestration #37](https://github.com/Aha43/FriendlyGames/issues/37),
 [pin explanations #20](https://github.com/Aha43/FriendlyGames/issues/20) and
 [colour choice #38](https://github.com/Aha43/FriendlyGames/issues/38) remain
 unscheduled backlog. Keep the existing deployment procedure and disclose its gap;
