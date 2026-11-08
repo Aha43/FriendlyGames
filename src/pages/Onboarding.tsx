@@ -17,6 +17,8 @@ export default function Onboarding({ invited, onDone }: OnboardingProps) {
   const [needsName, setNeedsName] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The server refused the typed name because another player has it (#76).
+  const [nameTaken, setNameTaken] = useState(false);
   const nameInput = useRef<HTMLInputElement>(null);
 
   async function submit(event: FormEvent) {
@@ -35,6 +37,16 @@ export default function Onboarding({ invited, onDone }: OnboardingProps) {
       if (e instanceof ApiError && e.code === 'player_not_found') {
         setNeedsName(true);
         requestAnimationFrame(() => nameInput.current?.focus());
+        return;
+      }
+      if (e instanceof ApiError && e.code === 'name_taken') {
+        // Names are unique (ignoring case and spaces); nothing was created. Keep both inputs.
+        setNameTaken(true);
+        setError('That name is already in use. Please choose another.');
+        requestAnimationFrame(() => {
+          nameInput.current?.focus();
+          nameInput.current?.select();
+        });
         return;
       }
       setError(
@@ -89,7 +101,12 @@ export default function Onboarding({ invited, onDone }: OnboardingProps) {
               <input
                 ref={nameInput}
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (nameTaken) setNameTaken(false);
+                }}
+                aria-invalid={nameTaken || undefined}
+                aria-describedby={nameTaken ? 'onboarding-error' : undefined}
                 required
                 maxLength={40}
                 autoComplete="given-name"
@@ -101,7 +118,7 @@ export default function Onboarding({ invited, onDone }: OnboardingProps) {
           Prototype: enter your email to open your games. Email ownership isn’t checked yet, so anyone who knows your
           email can play as you.
         </p>
-        <p className="form-error" role="alert">
+        <p className="form-error" role="alert" id="onboarding-error">
           {error}
         </p>
         <button type="submit" className="button button-primary" disabled={busy} aria-describedby="prototype-access">

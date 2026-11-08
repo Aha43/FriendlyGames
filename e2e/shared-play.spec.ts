@@ -1,6 +1,6 @@
 // Two players in independent browser contexts, against the real local backend (`supabase start`).
 import type { Page } from '@playwright/test';
-import { expect, LOAD_BUDGET, openLobby, openTable, test } from './fixtures';
+import { expect, LOAD_BUDGET, openLobby, openTable, test, uniqueName } from './fixtures';
 
 const square = (page: Page, name: string) => page.locator(`[data-square="${name}"]`);
 
@@ -50,6 +50,7 @@ async function rejectNextOnce(page: Page, url: string, method = 'POST') {
 }
 
 test('two players create, join, play, refresh, recover from a failed send and resign', async ({ openContext }, testInfo) => {
+  const ARNE = uniqueName('Arne'), HARALD = uniqueName('Harald');
   // A long journey: about 30 server round trips, measured at 21 s median and 25.7 s max, too
   // close to Playwright's 30 s default. test.slow() allows 90 s.
   test.slow();
@@ -66,7 +67,7 @@ test('two players create, join, play, refresh, recover from a failed send and re
 
   // Arne arrives, introduces himself and invites Harald.
   await arne.goto('/');
-  await onboard(arne, 'Arne', `arne-${run}@example.test`);
+  await onboard(arne, ARNE, `arne-${run}@example.test`);
   await arne.getByLabel('Friend’s email').fill(`harald-${run}@example.test`);
 
   // The game is created, but the answer (with the only copy of the link) is lost.
@@ -86,16 +87,16 @@ test('two players create, join, play, refresh, recover from a failed send and re
   // Harald opens the link on his own device, introduces himself and lands at the table as Black.
   await harald.goto(link);
   await expect(harald.getByRole('heading', { name: 'You’re invited to a game' })).toBeVisible();
-  await onboard(harald, 'Harald', `harald-${run}@example.test`);
+  await onboard(harald, HARALD, `harald-${run}@example.test`);
   await openTable(harald); // after onboarding: redeem the invitation, then load the game
-  await expect(harald.getByRole('status')).toHaveText('Arne’s move');
+  await expect(harald.getByRole('status')).toHaveText(`${ARNE}’s move`);
   expect(harald.url()).not.toContain('/join/'); // the token is not left in the address bar
   await expect(harald.getByRole('gridcell').first()).toHaveAccessibleName('h1, white rook');
 
   // Arne sees Harald arrive, and they exchange moves.
   await expect(arne.getByRole('status')).toHaveText('Your move', SYNC);
   await move(arne, 'e2', 'e4');
-  await expect(arne.getByRole('status')).toHaveText('Harald’s move');
+  await expect(arne.getByRole('status')).toHaveText(`${HARALD}’s move`);
   await expect(square(harald, 'e4')).toHaveAccessibleName('e4, white pawn', SYNC);
   await expect(harald.getByRole('status')).toHaveText('Your move');
   await move(harald, 'e7', 'e5');
@@ -122,30 +123,31 @@ test('two players create, join, play, refresh, recover from a failed send and re
   await arne.unroute('**/game-api/games/*/actions?*');
   await arne.getByRole('button', { name: 'Retry' }).click();
   await arne.unroute('**/game-api/games/*');
-  await expect(arne.getByRole('status')).toHaveText('Harald’s move');
+  await expect(arne.getByRole('status')).toHaveText(`${HARALD}’s move`);
   await expect(square(arne, 'f3')).toHaveAccessibleName('f3, white knight');
   await expect(square(harald, 'f3')).toHaveAccessibleName('f3, white knight', SYNC);
   await expect(harald.getByRole('list', { name: 'Moves' }).getByText('Nf3')).toHaveCount(1);
 
   // Both lobbies list the game.
   await openLobby(arne);
-  await expect(arne.getByRole('list', { name: 'Games in progress' })).toContainText('vs Harald');
-  await expect(arne.getByRole('list', { name: 'Games in progress' })).toContainText('Harald’s move');
+  await expect(arne.getByRole('list', { name: 'Games in progress' })).toContainText(`vs ${HARALD}`);
+  await expect(arne.getByRole('list', { name: 'Games in progress' })).toContainText(`${HARALD}’s move`);
   await arne.goBack();
 
   // Harald resigns after confirming; Arne sees the result.
   await harald.getByRole('button', { name: 'Resign…' }).click();
   await harald.getByRole('button', { name: 'Resign', exact: true }).click();
-  await expect(harald.getByRole('status')).toHaveText('You resigned. Arne wins');
-  await expect(arne.getByRole('status')).toHaveText('Harald resigned. You win', SYNC);
+  await expect(harald.getByRole('status')).toHaveText(`You resigned. ${ARNE} wins`);
+  await expect(arne.getByRole('status')).toHaveText(`${HARALD} resigned. You win`, SYNC);
 });
 
 test('a move from an outdated tab is refused and the tab catches up', async ({ openContext, api }, testInfo) => {
+  const ARNE = uniqueName('Arne'), HARALD = uniqueName('Harald');
   const run = `${Date.now()}-${testInfo.project.name}`;
   const createPlayer = (displayName: string) =>
     api('POST', '/players', { data: { displayName, email: `${displayName}-${run}@example.test` }, expect: 201 });
-  const arne = await createPlayer('Arne');
-  const harald = await createPlayer('Harald');
+  const arne = await createPlayer(ARNE);
+  const harald = await createPlayer(HARALD);
   const created = await api('POST', '/games', {
     credential: arne.deviceCredential,
     data: { friendEmail: `harald-${run}@example.test` },
@@ -160,7 +162,7 @@ test('a move from an outdated tab is refused and the tab catches up', async ({ o
   // Arne has the game open in two tabs of the same browser.
   const context = await openContext('arne', {
     playerId: arne.player.id,
-    displayName: 'Arne',
+    displayName: ARNE,
     credential: arne.deviceCredential,
   });
   const [first, second] = [await context.newPage(), await context.newPage()];
@@ -174,19 +176,20 @@ test('a move from an outdated tab is refused and the tab catches up', async ({ o
     route.request().method() === 'GET' ? route.abort() : route.continue(),
   );
   await move(first, 'e2', 'e4');
-  await expect(first.getByRole('status')).toHaveText('Harald’s move');
+  await expect(first.getByRole('status')).toHaveText(`${HARALD}’s move`);
 
   await move(second, 'd2', 'd4');
   await expect(second.getByText('The game changed before your move was saved. Here’s the latest position.')).toBeVisible();
   await expect(square(second, 'e4')).toHaveAccessibleName('e4, white pawn');
   await expect(square(second, 'd4')).toHaveAccessibleName('d4, empty');
-  await expect(second.getByRole('status')).toHaveText('Harald’s move');
+  await expect(second.getByRole('status')).toHaveText(`${HARALD}’s move`);
 });
 
 test('the creator can make a new invitation link from a device without one', async ({ openContext, api }, testInfo) => {
+  const ARNE = uniqueName('Arne'), HARALD = uniqueName('Harald');
   const run = `${Date.now()}-${testInfo.project.name}`;
   const arne = await api('POST', '/players', {
-    data: { displayName: 'Arne', email: `arne-${run}@example.test` },
+    data: { displayName: ARNE, email: `arne-${run}@example.test` },
     expect: 201,
   });
   // A game exists, but its link never reached this browser.
@@ -198,7 +201,7 @@ test('the creator can make a new invitation link from a device without one', asy
 
   const arneContext = await openContext('arne', {
     playerId: arne.player.id,
-    displayName: 'Arne',
+    displayName: ARNE,
     credential: arne.deviceCredential,
   });
   const page = await arneContext.newPage();
@@ -210,13 +213,14 @@ test('the creator can make a new invitation link from a device without one', asy
   const haraldContext = await openContext('harald');
   const harald = await haraldContext.newPage();
   await harald.goto(link);
-  await onboard(harald, 'Harald', `harald-${run}@example.test`);
+  await onboard(harald, HARALD, `harald-${run}@example.test`);
   await openTable(harald); // after onboarding: redeem the invitation, then load the game
-  await expect(harald.getByRole('status')).toHaveText('Arne’s move');
+  await expect(harald.getByRole('status')).toHaveText(`${ARNE}’s move`);
   await expect(page.getByRole('status')).toHaveText('Your move', SYNC);
 });
 
 test('finished games become shared history: checkmate, resignation, review and play again', async ({ openContext }, testInfo) => {
+  const ARNE = uniqueName('Arne'), HARALD = uniqueName('Harald');
   // A long journey: measured at 25 s median and 27.5 s max against the 30 s default. 90 s.
   test.slow();
   const arneContext = await openContext('arne');
@@ -226,13 +230,13 @@ test('finished games become shared history: checkmate, resignation, review and p
   const run = `${Date.now()}-${testInfo.project.name}`;
 
   await arne.goto('/');
-  await onboard(arne, 'Arne', `arne-${run}@example.test`);
+  await onboard(arne, ARNE, `arne-${run}@example.test`);
   await arne.getByLabel('Friend’s email').fill(`harald-${run}@example.test`);
   await arne.getByRole('button', { name: 'Create game' }).click();
   const link = await arne.getByLabel('Invitation link', { exact: true }).inputValue();
   await arne.getByRole('link', { name: 'Go to the table' }).click();
   await harald.goto(link);
-  await onboard(harald, 'Harald', `harald-${run}@example.test`);
+  await onboard(harald, HARALD, `harald-${run}@example.test`);
   await expect(arne.getByRole('status')).toHaveText('Your move', SYNC);
 
   // Game 1: Harald mates Arne.
@@ -244,14 +248,14 @@ test('finished games become shared history: checkmate, resignation, review and p
   await expect(harald.getByRole('status')).toHaveText('Your move', SYNC);
   await move(harald, 'd8', 'h4');
   await expect(harald.getByRole('status')).toHaveText('Checkmate. You win');
-  await expect(arne.getByRole('status')).toHaveText('Checkmate. Harald wins', SYNC);
+  await expect(arne.getByRole('status')).toHaveText(`Checkmate. ${HARALD} wins`, SYNC);
   const firstGame = arne.url();
 
   // Arne asks to play again; Harald is offered the same new game, now as White.
   await arne.getByRole('button', { name: 'Play again (you take Black)' }).click();
   await expect(arne).toHaveURL(/#\/game\//);
   await openTable(arne); // starting the rematch and loading it are two server calls
-  await expect(arne.getByRole('status')).toHaveText('Harald’s move');
+  await expect(arne.getByRole('status')).toHaveText(`${HARALD}’s move`);
   await expect(harald.getByRole('link', { name: 'Go to the rematch' })).toBeVisible(SYNC);
   await harald.getByRole('link', { name: 'Go to the rematch' }).click();
   expect(harald.url()).toBe(arne.url());
@@ -260,13 +264,13 @@ test('finished games become shared history: checkmate, resignation, review and p
   // Game 2: Harald opens and then resigns.
   await move(harald, 'e2', 'e4');
   await openTable(harald); // after onboarding: redeem the invitation, then load the game
-  await expect(harald.getByRole('status')).toHaveText('Arne’s move');
+  await expect(harald.getByRole('status')).toHaveText(`${ARNE}’s move`);
   await harald.getByRole('button', { name: 'Resign…' }).click();
   await harald.getByRole('button', { name: 'Resign', exact: true }).click();
-  await expect(arne.getByRole('status')).toHaveText('Harald resigned. You win', SYNC);
+  await expect(arne.getByRole('status')).toHaveText(`${HARALD} resigned. You win`, SYNC);
 
   // After a refresh, both histories show both games and an exact tally.
-  for (const [page, opponent] of [[arne, 'Harald'], [harald, 'Arne']] as const) {
+  for (const [page, opponent] of [[arne, HARALD], [harald, ARNE]] as const) {
     await openLobby(page);
     const tally = page.getByLabel(`Tally with ${opponent}`);
     await expect(tally).toContainText('You1');
@@ -275,14 +279,14 @@ test('finished games become shared history: checkmate, resignation, review and p
     const games = page.getByRole('list', { name: `Finished games with ${opponent}` }).getByRole('link');
     await expect(games).toHaveCount(2);
   }
-  const arneGames = arne.getByRole('list', { name: 'Finished games with Harald' }).getByRole('link');
+  const arneGames = arne.getByRole('list', { name: `Finished games with ${HARALD}` }).getByRole('link');
   await expect(arneGames.nth(0)).toContainText('You won by resignation · 1 moves');
-  await expect(arneGames.nth(1)).toContainText('Harald won by checkmate · 4 moves');
+  await expect(arneGames.nth(1)).toContainText(`${HARALD} won by checkmate · 4 moves`);
 
   // Reopen the first game: read-only, unchanged, and every position can be inspected.
   await arneGames.nth(1).click();
   expect(arne.url()).toBe(firstGame);
-  await expect(arne.getByRole('status')).toHaveText('Checkmate. Harald wins');
+  await expect(arne.getByRole('status')).toHaveText(`Checkmate. ${HARALD} wins`);
   await expect(arne.getByRole('list', { name: 'Moves' })).toHaveText(/1\.f3e52\.g4Qh4#/);
   await expect(arne.getByRole('link', { name: 'Go to the rematch' })).toBeVisible();
   await arne.getByRole('button', { name: 'Previous move' }).click();
@@ -296,6 +300,7 @@ test('finished games become shared history: checkmate, resignation, review and p
 });
 
 test('momentary server failures: safe requests are repeated, including email entry', async ({ openContext, api }, testInfo) => {
+  const ARNE = uniqueName('Arne'), HARALD = uniqueName('Harald');
   const run = `${Date.now()}-${testInfo.project.name}`;
   const context = await openContext('arne');
   const arne = await context.newPage();
@@ -308,7 +313,7 @@ test('momentary server failures: safe requests are repeated, including email ent
   });
   await rejectNextOnce(arne, '**/game-api/players');
   await arne.goto('/');
-  await onboard(arne, 'Arne', `arne-${run}@example.test`);
+  await onboard(arne, ARNE, `arne-${run}@example.test`);
   await expect(arne.getByRole('heading', { name: 'Your games' })).toBeVisible();
   await expect(arne.getByText(/Couldn’t reach the game server/)).toHaveCount(0);
   expect(entries).toBe(3); // email (503, repeated → new email), then email and name
@@ -323,7 +328,7 @@ test('momentary server failures: safe requests are repeated, including email ent
 
   // Play again on a finished game: the same once, and the player still lands in the rematch.
   const identity = JSON.parse((await arne.evaluate(() => localStorage.getItem('friendlygames.identity')))!);
-  const harald = await api('POST', '/players', { data: { displayName: 'Harald', email: `harald-${run}@example.test` }, expect: 201 });
+  const harald = await api('POST', '/players', { data: { displayName: HARALD, email: `harald-${run}@example.test` }, expect: 201 });
   const game = (await api('POST', '/invitations/redeem', {
     credential: harald.deviceCredential,
     data: { token: link.split('/join/')[1] },
@@ -344,14 +349,15 @@ test('momentary server failures: safe requests are repeated, including email ent
     revision = result.game.revision;
   }
   await openTable(arne, `/#/game/${game.id}`);
-  await expect(arne.getByRole('status')).toHaveText('Checkmate. Harald wins');
+  await expect(arne.getByRole('status')).toHaveText(`Checkmate. ${HARALD} wins`);
   await rejectNextOnce(arne, '**/game-api/games/*/rematch');
   await arne.getByRole('button', { name: 'Play again (you take Black)' }).click();
   await openTable(arne);
-  await expect(arne.getByRole('status')).toHaveText('Harald’s move');
+  await expect(arne.getByRole('status')).toHaveText(`${HARALD}’s move`);
 });
 
 test('the same email opens the same player in a second browser; both keep playing', async ({ openContext, api }, testInfo) => {
+  const ARNE = uniqueName('Arne'), HARALD = uniqueName('Harald');
   test.slow();
   const run = `${Date.now()}-${testInfo.project.name}`;
   const email = `arne-${run}@example.test`;
@@ -360,11 +366,11 @@ test('the same email opens the same player in a second browser; both keep playin
 
   // Arne starts on his laptop and plays a move against Harald (set up through the API).
   await laptop.goto('/');
-  await onboard(laptop, 'Arne', email);
+  await onboard(laptop, ARNE, email);
   await laptop.getByLabel('Friend’s email').fill(`harald-${run}@example.test`);
   await laptop.getByRole('button', { name: 'Create game' }).click();
   const link = await laptop.getByLabel('Invitation link', { exact: true }).inputValue();
-  const harald = await api('POST', '/players', { data: { displayName: 'Harald', email: `harald-${run}@example.test` }, expect: 201 });
+  const harald = await api('POST', '/players', { data: { displayName: HARALD, email: `harald-${run}@example.test` }, expect: 201 });
   const { game } = await api('POST', '/invitations/redeem', {
     credential: harald.deviceCredential,
     data: { token: link.split('/join/')[1] },
@@ -372,7 +378,7 @@ test('the same email opens the same player in a second browser; both keep playin
   });
   await openTable(laptop, `/#/game/${game.id}`);
   await move(laptop, 'e2', 'e4');
-  await expect(laptop.getByRole('status')).toHaveText('Harald’s move');
+  await expect(laptop.getByRole('status')).toHaveText(`${HARALD}’s move`);
   await api('POST', `/games/${game.id}/actions`, {
     credential: harald.deviceCredential,
     data: { requestId: crypto.randomUUID(), expectedRevision: 2, action: { type: 'move', from: 'e7', to: 'e5' } },
@@ -388,7 +394,7 @@ test('the same email opens the same player in a second browser; both keep playin
     [laptop, phone].map((page) => page.evaluate(() => JSON.parse(localStorage.getItem('friendlygames.identity')!))),
   );
   expect(ids[1].playerId).toBe(ids[0].playerId);
-  expect(ids[1].displayName).toBe('Arne');
+  expect(ids[1].displayName).toBe(ARNE);
   expect(ids[1].credential).not.toBe(ids[0].credential);
 
   // The phone sees the same game and moves, and plays the next one.
@@ -397,21 +403,22 @@ test('the same email opens the same player in a second browser; both keep playin
   await expect(phone.getByRole('list', { name: 'Moves' })).toContainText('e5');
   await expect(phone.getByRole('status')).toHaveText('Your move');
   await move(phone, 'g1', 'f3');
-  await expect(phone.getByRole('status')).toHaveText('Harald’s move');
+  await expect(phone.getByRole('status')).toHaveText(`${HARALD}’s move`);
 
   // The laptop is still signed in and sees the phone's move.
   await laptop.reload();
   await openTable(laptop);
   await expect(square(laptop, 'f3')).toHaveAccessibleName('f3, white knight');
-  await expect(laptop.getByRole('status')).toHaveText('Harald’s move');
+  await expect(laptop.getByRole('status')).toHaveText(`${HARALD}’s move`);
 });
 
 test('clearing a browser and entering the email again reopens the same player', async ({ openContext }, testInfo) => {
+  const ARNE = uniqueName('Arne');
   const run = `${Date.now()}-${testInfo.project.name}`;
   const email = `again-${run}@example.test`;
   const page = await (await openContext('again')).newPage();
   await page.goto('/');
-  await onboard(page, 'Arne', email);
+  await onboard(page, ARNE, email);
   await expect(page.getByRole('heading', { name: 'Your games' })).toBeVisible();
   const before = await page.evaluate(() => JSON.parse(localStorage.getItem('friendlygames.identity')!));
 
@@ -420,13 +427,14 @@ test('clearing a browser and entering the email again reopens the same player', 
   await enterEmail(page, email);
   await expect(page.getByRole('heading', { name: 'Your games' })).toBeVisible();
   const after = await page.evaluate(() => JSON.parse(localStorage.getItem('friendlygames.identity')!));
-  expect(after).toMatchObject({ playerId: before.playerId, displayName: 'Arne' });
+  expect(after).toMatchObject({ playerId: before.playerId, displayName: ARNE });
 });
 
 test('an invited player who already has a player joins as that player from another browser', async ({ openContext, api }, testInfo) => {
+  const HOST = uniqueName('Host'), GUEST = uniqueName('Guest');
   const run = `${Date.now()}-${testInfo.project.name}`;
-  const host = await api('POST', '/players', { data: { displayName: 'Host', email: `host-${run}@example.test` }, expect: 201 });
-  const guest = await api('POST', '/players', { data: { displayName: 'Guest', email: `guest-${run}@example.test` }, expect: 201 });
+  const host = await api('POST', '/players', { data: { displayName: HOST, email: `host-${run}@example.test` }, expect: 201 });
+  const guest = await api('POST', '/players', { data: { displayName: GUEST, email: `guest-${run}@example.test` }, expect: 201 });
   const created = await api('POST', '/games', {
     credential: host.deviceCredential,
     data: { friendEmail: `guest-${run}@example.test` },
@@ -438,18 +446,19 @@ test('an invited player who already has a player joins as that player from anoth
   await expect(page.getByRole('heading', { name: 'You’re invited to a game' })).toBeVisible();
   await enterEmail(page, `guest-${run}@example.test`);
   await openTable(page);
-  await expect(page.getByRole('status')).toHaveText('Host’s move');
+  await expect(page.getByRole('status')).toHaveText(`${HOST}’s move`);
 
   // Seated as the existing Guest player; no second player, and the host is still White.
   const game = await api('GET', `/games/${created.game.id}`, { credential: host.deviceCredential });
   expect(game.game.status).toBe('active');
   expect(game.game.players).toEqual({
-    white: { id: host.player.id, displayName: 'Host' },
-    black: { id: guest.player.id, displayName: 'Guest' },
+    white: { id: host.player.id, displayName: HOST },
+    black: { id: guest.player.id, displayName: GUEST },
   });
 });
 
 test('the creator opens while waiting; the friend joins later; captures show for both (#33, #44)', async ({ openContext }, testInfo) => {
+  const ARNE = uniqueName('Arne'), HARALD = uniqueName('Harald');
   test.slow();
   const run = `${Date.now()}-${testInfo.project.name}`;
   const arne = await (await openContext('arne')).newPage();
@@ -457,7 +466,7 @@ test('the creator opens while waiting; the friend joins later; captures show for
 
   // Arne creates the game and goes to the table before Harald has joined.
   await arne.goto('/');
-  await onboard(arne, 'Arne', `arne-${run}@example.test`);
+  await onboard(arne, ARNE, `arne-${run}@example.test`);
   await arne.getByLabel('Friend’s email').fill(`harald-${run}@example.test`);
   await arne.getByRole('button', { name: 'Create game' }).click();
   const link = await arne.getByLabel('Invitation link', { exact: true }).inputValue();
@@ -481,7 +490,7 @@ test('the creator opens while waiting; the friend joins later; captures show for
 
   // Harald joins with the same link, finds the opening and that it is his move.
   await harald.goto(link);
-  await onboard(harald, 'Harald', `harald-${run}@example.test`);
+  await onboard(harald, HARALD, `harald-${run}@example.test`);
   await openTable(harald);
   await expect(harald.getByRole('status')).toHaveText('Your move');
   await expect(square(harald, 'e4')).toHaveAccessibleName('e4, white pawn');
@@ -489,7 +498,7 @@ test('the creator opens while waiting; the friend joins later; captures show for
 
   // He replies; Arne sees it and it is White's move again.
   await move(harald, 'd7', 'd5');
-  await expect(harald.getByRole('status')).toHaveText('Arne’s move');
+  await expect(harald.getByRole('status')).toHaveText(`${ARNE}’s move`);
   await expect(square(arne, 'd5')).toHaveAccessibleName('d5, black pawn', SYNC);
   await expect(arne.getByRole('status')).toHaveText('Your move');
 
@@ -497,30 +506,30 @@ test('the creator opens while waiting; the friend joins later; captures show for
   // (same request ID) adds the pawn exactly once.
   const captures = (page: Page, name: string) =>
     page.locator('.player-plate', { hasText: name }).locator('.player-captures');
-  await expect(captures(arne, 'Arne (you)')).toHaveText(/Captured by White:\s*None yet/);
+  await expect(captures(arne, `${ARNE} (you)`)).toHaveText(/Captured by White:\s*None yet/);
   await loseResponses(arne, '**/game-api/games/*/actions?*');
   await arne.route('**/game-api/games/*', (route) =>
     route.request().method() === 'GET' ? route.abort('connectionreset') : route.fallback(),
   );
   await move(arne, 'e4', 'd5');
   await expect(arne.getByText(/Couldn’t confirm whether your move was saved/)).toBeVisible();
-  await expect(captures(arne, 'Arne (you)')).toHaveText(/None yet/);
+  await expect(captures(arne, `${ARNE} (you)`)).toHaveText(/None yet/);
   await arne.unroute('**/game-api/games/*/actions?*');
   await arne.getByRole('button', { name: 'Retry' }).click();
   await arne.unroute('**/game-api/games/*');
-  await expect(arne.getByRole('status')).toHaveText('Harald’s move');
-  await expect(captures(arne, 'Arne (you)')).toHaveText(/Captured by White:\s*1 black pawn/);
+  await expect(arne.getByRole('status')).toHaveText(`${HARALD}’s move`);
+  await expect(captures(arne, `${ARNE} (you)`)).toHaveText(/Captured by White:\s*1 black pawn/);
 
   // Harald recaptures with the queen; both sessions show both rows.
-  await expect(captures(harald, 'Arne')).toHaveText(/Captured by White:\s*1 black pawn/, SYNC);
+  await expect(captures(harald, ARNE)).toHaveText(/Captured by White:\s*1 black pawn/, SYNC);
   await move(harald, 'd8', 'd5');
-  await expect(captures(harald, 'Harald (you)')).toHaveText(/Captured by Black:\s*1 white pawn/);
-  await expect(captures(arne, 'Harald')).toHaveText(/Captured by Black:\s*1 white pawn/, SYNC);
+  await expect(captures(harald, `${HARALD} (you)`)).toHaveText(/Captured by Black:\s*1 white pawn/);
+  await expect(captures(arne, HARALD)).toHaveText(/Captured by Black:\s*1 white pawn/, SYNC);
 
   // After a refresh they come back from the saved moves, once each.
   await Promise.all([arne.reload(), harald.reload()]);
   await Promise.all([openTable(arne), openTable(harald)]);
-  for (const [page, white, black] of [[arne, 'Arne (you)', 'Harald'], [harald, 'Arne', 'Harald (you)']] as const) {
+  for (const [page, white, black] of [[arne, `${ARNE} (you)`, HARALD], [harald, ARNE, `${HARALD} (you)`]] as const) {
     await expect(captures(page, white)).toHaveText(/Captured by White:\s*1 black pawn$/);
     await expect(captures(page, black)).toHaveText(/Captured by Black:\s*1 white pawn$/);
     await expect(captures(page, white).locator('img')).toHaveCount(1);
@@ -529,10 +538,29 @@ test('the creator opens while waiting; the friend joins later; captures show for
   // Finished-game review shows only the captures up to the reviewed move.
   await harald.getByRole('button', { name: 'Resign…' }).click();
   await harald.getByRole('button', { name: 'Resign', exact: true }).click();
-  await expect(arne.getByRole('status')).toHaveText('Harald resigned. You win', SYNC);
+  await expect(arne.getByRole('status')).toHaveText(`${HARALD} resigned. You win`, SYNC);
   await arne.getByRole('button', { name: 'Previous move' }).click();
-  await expect(captures(arne, 'Arne (you)')).toHaveText(/1 black pawn/);
-  await expect(captures(arne, 'Harald')).toHaveText(/None yet/);
+  await expect(captures(arne, `${ARNE} (you)`)).toHaveText(/1 black pawn/);
+  await expect(captures(arne, HARALD)).toHaveText(/None yet/);
   await arne.getByRole('button', { name: 'Final position' }).click();
-  await expect(captures(arne, 'Harald')).toHaveText(/1 white pawn/);
+  await expect(captures(arne, HARALD)).toHaveText(/1 white pawn/);
+});
+
+test('a new player whose name is taken is told so and picks another (#76)', async ({ openContext, api }, testInfo) => {
+  const TAKEN = uniqueName('Harald'), ARNE = uniqueName('Arne');
+  const run = `${Date.now()}-${testInfo.project.name}`;
+  await api('POST', '/players', { data: { displayName: TAKEN, email: `taken-${run}@example.test` }, expect: 201 });
+  const page = await (await openContext('arne')).newPage();
+  await page.goto('/');
+  // The same name in other case, with spaces: still taken.
+  await onboard(page, `  ${TAKEN.toUpperCase()} `, `arne-${run}@example.test`);
+  await expect(page.getByRole('alert')).toHaveText('That name is already in use. Please choose another.');
+  await expect(page.getByLabel('Your name')).toBeFocused();
+  await expect(page.getByLabel('Your email')).toHaveValue(`arne-${run}@example.test`);
+
+  await page.getByLabel('Your name').fill(ARNE);
+  await page.getByRole('button', { name: 'Create my player' }).click();
+  await expect(page.getByRole('heading', { name: 'Your games' })).toBeVisible();
+  const identity = JSON.parse((await page.evaluate(() => localStorage.getItem('friendlygames.identity')))!);
+  expect(identity.displayName).toBe(ARNE);
 });

@@ -60,6 +60,7 @@ Production commands, run deliberately by the owner (docs/deployment.md):
 | Command | What it does |
 | --- | --- |
 | `make prod-status` | Read-only: the live site, and the backend's deployed commit, database and pooler status; fails if the site or backend is unhealthy |
+| `make prod-name-check` | Read-only: player names that collide on the linked project (trim, NFC, ignore case), by ID, name, games and date, no emails; exits non-zero on collisions or an incomplete check |
 | `make backup` | Back up the production database into `backups/` (private, git-ignored); only complete dumps are kept |
 | `make deploy-backend` | Back up, apply migrations and deploy the function, from a clean, up-to-date `main` (`scripts/deploy-backend.sh`) |
 | `make prod-e2e` | Browser journeys against the live site; they create throwaway `@example.test` players |

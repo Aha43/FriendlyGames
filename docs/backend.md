@@ -120,6 +120,30 @@ silently. Reconcile existing duplicates first:
    participant rows are never deleted or merged.
 4. Run the preflight again (expect no rows), then deploy the migration.
 
+## Unique player names
+
+Since #76 no two players share a name. Player IDs stay the identity; names are only what
+friends recognise and, from #72/#73, pick each other by. Names are not credentials.
+
+- **The rule**, in one place, the database: trim surrounding spaces, Unicode NFC (a
+  precomposed "Å" and "A" + combining ring are the same), then lowercase with ICU's Unicode
+  case rules (`collate "und-x-icu"`; the database's own `C.UTF-8` collation would leave "Å"
+  as it is). Index `players_display_name_unique` in
+  `20261108120000_unique_player_names.sql`. Stored names keep the spelling chosen
+  (capitalization, accents, inner spaces); inner spaces count ("Åse Ø" ≠ "Åse  Ø").
+- **Sign-up**: a new email proposing a taken name gets `409 name_taken`, and no player, contact
+  or credential is created. It never says who has the name. An existing email still opens its
+  own player whatever name is typed. Two new emails racing for one name: one wins, the other
+  gets `409`. One new email racing with itself (a retry): every request opens the same player.
+- **Old cached pages** keep working; for a taken name they show their generic "Something went
+  wrong" message instead of the specific one, and nothing is created.
+- **Collisions before the migration**: `make prod-name-check` (read-only) lists players whose
+  names collide by player ID, stored name, number of games and creation date, never emails.
+  The migration refuses to apply while any collide (it rolls back and changes nothing), and
+  `make deploy-backend` runs the check before it backs up or changes anything. Nothing is ever
+  renamed, merged or deleted automatically: the owner decides each case (for example, renaming
+  an old `@example.test` test player in the dashboard), then runs the check again.
+
 ## Games and invitations
 
 - Creating a game seats the creator as White and returns an **invitation token** once.
@@ -242,7 +266,7 @@ endpoints accept the `types` query parameter described under Game types.
 | Method and path | Body | Success |
 |---|---|---|
 | `GET /health` | | `200 { ok: true, commit, pooled }` (no credential; checks the database; `pooled` says whether the connection pooler is used) |
-| `POST /players` | `{ email, displayName? }` | `200 { player: { id, displayName, email }, deviceCredential, created: false }` for an existing player; `201 { …, created: true }` for a new email with `displayName`; `404 player_not_found` for a new email without it |
+| `POST /players` | `{ email, displayName? }` | `200 { player: { id, displayName, email }, deviceCredential, created: false }` for an existing player; `201 { …, created: true }` for a new email with `displayName`; `404 player_not_found` for a new email without it; `409 name_taken` when another player has that name (#76; nothing is created) |
 | `GET /me` | | `200 { player: { id, displayName, email } }` |
 | `POST /games` | `{ friendEmail, requestId?, type? }` | `201 { game, invitation: { token }, duplicate: false }`; a retry with the same `requestId` gets `200 { game, invitation, duplicate: true }` |
 | `POST /games/:id/invitation` | | `200 { game, invitation: { token } }` (creator only, game still waiting) |

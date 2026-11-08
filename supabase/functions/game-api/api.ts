@@ -200,12 +200,19 @@ async function enterPlayer(sql: Sql, body: Record<string, unknown>) {
   const deviceCredential = newSecret();
   const credentialHash = await hashHex(deviceCredential);
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // A name collision is only reported once this email is known not to have a player of its
+  // own: a simultaneous sign-up with the same email and name may be what took the name (#76).
+  let nameTaken = false;
+  for (let attempt = 0; attempt < 3; attempt++) {
     const existing = await addCredentialFor(sql, email, credentialHash);
     // An existing player keeps their own name, whatever this browser typed.
     if (existing) return { status: 200, body: { player: existing, deviceCredential, created: false } };
     if (displayName === null) {
       throw new ApiError(404, 'player_not_found', 'No player uses this email yet. Choose a name to create one.');
+    }
+    if (nameTaken) {
+      // Never says who has it: names are public, but emails and accounts are not.
+      throw new ApiError(409, 'name_taken', 'That name is already in use. Choose another.');
     }
     try {
       const player = await sql.begin(async (tx) => {
@@ -223,9 +230,13 @@ async function enterPlayer(sql: Sql, body: Record<string, unknown>) {
       // The credential is returned once and never stored in readable form.
       return { status: 201, body: { player, deviceCredential, created: true } };
     } catch (error) {
-      // Someone entered the same new email at the same moment and won: the whole transaction
-      // (player, credential, contact) rolled back, so join the winner's player instead.
-      if ((error as { constraint_name?: string }).constraint_name !== 'player_contacts_email_unique') throw error;
+      // The whole transaction (player, credential, contact) rolled back. Either someone entered
+      // the same new email at the same moment and won (join their player on the next round), or
+      // the name is taken (players_display_name_unique, #76): the next round first checks
+      // whether that was this same email, then refuses the name.
+      const constraint = (error as { constraint_name?: string }).constraint_name;
+      if (constraint === 'players_display_name_unique') nameTaken = true;
+      else if (constraint !== 'player_contacts_email_unique') throw error;
     }
   }
   throw new ApiError(503, 'try_again', 'Please try again.');

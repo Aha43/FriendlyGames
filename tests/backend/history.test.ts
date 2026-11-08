@@ -55,7 +55,7 @@ describe('history', () => {
     const withHarald = mine.body.history.find((h: any) => h.opponent.id === harald.id);
     expect(withHarald).toMatchObject({
       gameType: 'chess',
-      opponent: { id: harald.id, displayName: 'Harald' },
+      opponent: { id: harald.id, displayName: harald.name },
       wins: 2,
       draws: 1,
       losses: 1,
@@ -104,8 +104,8 @@ describe('play again', () => {
     expect(game.id).not.toBe(finished.haraldMates);
     expect(game).toMatchObject({ status: 'active', revision: 0, yourSeat: 'white' });
     expect(game.players).toEqual({
-      white: { id: harald.id, displayName: 'Harald' },
-      black: { id: arne.id, displayName: 'Arne' },
+      white: { id: harald.id, displayName: harald.name },
+      black: { id: arne.id, displayName: arne.name },
     });
     expect(game.chess.moves).toEqual([]);
 

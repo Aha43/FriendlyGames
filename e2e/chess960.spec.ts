@@ -3,7 +3,7 @@
 // after which White may castle, and the castle itself is made through the real controls.
 import type { Page } from '@playwright/test';
 import { planCastle } from './chess960Setup';
-import { expect, LOAD_BUDGET, openLobby, openTable, test } from './fixtures';
+import { expect, LOAD_BUDGET, openLobby, openTable, test, uniqueName } from './fixtures';
 
 const SYNC = { timeout: LOAD_BUDGET };
 const square = (page: Page, name: string) => page.locator(`[data-square="${name}"]`);
@@ -19,6 +19,7 @@ test('Fischer Random: create, join, castle through the controls, recover a lost 
   openContext,
   api,
 }, testInfo) => {
+  const ARNE = uniqueName('Arne'), HARALD = uniqueName('Harald');
   test.slow();
   const run = `${Date.now()}-${testInfo.project.name}`;
   const arne = await (await openContext('arne')).newPage();
@@ -26,7 +27,7 @@ test('Fischer Random: create, join, castle through the controls, recover a lost 
 
   // Arne chooses Fischer Random in the usual creation flow; a chess game with Harald exists too.
   await arne.goto('/');
-  await onboard(arne, 'Arne', `arne-${run}@example.test`);
+  await onboard(arne, ARNE, `arne-${run}@example.test`);
   await arne.getByRole('radio', { name: 'Fischer Random (Chess960)' }).check();
   await expect(arne.getByText(/one of 960 arrangements/)).toBeVisible();
   await arne.getByLabel('Friend’s email').fill(`harald-${run}@example.test`);
@@ -42,9 +43,9 @@ test('Fischer Random: create, join, castle through the controls, recover a lost 
 
   // Harald joins from the link on his own device, as Black.
   await harald.goto(link);
-  await onboard(harald, 'Harald', `harald-${run}@example.test`);
+  await onboard(harald, HARALD, `harald-${run}@example.test`);
   await openTable(harald);
-  await expect(harald.getByRole('region', { name: 'Fischer Random: you vs Arne' })).toBeVisible();
+  await expect(harald.getByRole('region', { name: `Fischer Random: you vs ${ARNE}` })).toBeVisible();
   const gameId = harald.url().split('/game/')[1];
   const haraldIdentity = JSON.parse((await harald.evaluate(() => localStorage.getItem('friendlygames.identity')))!);
 
@@ -95,7 +96,7 @@ test('Fischer Random: create, join, castle through the controls, recover a lost 
   await arne.unroute('**/game-api/games/*');
 
   // Saved once: king and rook on their castled squares on both devices, Black's board too.
-  await expect(arne.getByRole('status')).toHaveText('Harald’s move');
+  await expect(arne.getByRole('status')).toHaveText(`${HARALD}’s move`);
   for (const page of [arne, harald]) {
     await expect(square(page, castle.king.to)).toHaveAccessibleName(`${castle.king.to}, white king`, SYNC);
     await expect(square(page, castle.rook.to)).toHaveAccessibleName(`${castle.rook.to}, white rook`, SYNC);
@@ -113,7 +114,7 @@ test('Fischer Random: create, join, castle through the controls, recover a lost 
   // Harald resigns; Arne reviews the game from its own start.
   await harald.getByRole('button', { name: 'Resign…' }).click();
   await harald.getByRole('button', { name: 'Resign', exact: true }).click();
-  await expect(arne.getByRole('status')).toHaveText('Harald resigned. You win', SYNC);
+  await expect(arne.getByRole('status')).toHaveText(`${HARALD} resigned. You win`, SYNC);
   await arne.getByRole('button', { name: 'Start position' }).click();
   await expect(square(arne, castle.king.from)).toHaveAccessibleName(`${castle.king.from}, white king`);
   await expect(square(arne, castle.rook.from)).toHaveAccessibleName(`${castle.rook.from}, white rook`);
@@ -121,14 +122,14 @@ test('Fischer Random: create, join, castle through the controls, recover a lost 
   // Same-type rematch: a fresh Fischer Random game, colours swapped, empty capture trays.
   await arne.getByRole('button', { name: 'Play again, new start (you take Black)' }).click();
   await openTable(arne);
-  await expect(arne.getByRole('region', { name: 'Fischer Random: you vs Harald' })).toBeVisible();
-  await expect(arne.getByRole('status')).toHaveText('Harald’s move');
+  await expect(arne.getByRole('region', { name: `Fischer Random: you vs ${HARALD}` })).toBeVisible();
+  await expect(arne.getByRole('status')).toHaveText(`${HARALD}’s move`);
   await expect(arne.getByText('None yet')).toHaveCount(2);
 
   // History keeps Fischer Random apart from chess.
   await openLobby(arne);
-  await expect(arne.getByRole('heading', { name: 'Fischer Random with Harald' })).toBeVisible();
-  await expect(arne.getByLabel('Fischer Random tally with Harald')).toContainText('1');
+  await expect(arne.getByRole('heading', { name: `Fischer Random with ${HARALD}` })).toBeVisible();
+  await expect(arne.getByLabel(`Fischer Random tally with ${HARALD}`)).toContainText('1');
 });
 
 test('local Fischer Random keeps its own saved game next to local chess', async ({ page }) => {

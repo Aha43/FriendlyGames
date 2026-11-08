@@ -27,7 +27,7 @@ describe('device identity', () => {
   it('creates a player and returns the credential once, storing only its hash', async () => {
     const me = await call('GET', '/me', { credential: arne.credential });
     expect(me.status).toBe(200);
-    expect(me.body.player).toEqual({ id: arne.id, displayName: 'Arne', email: arne.email });
+    expect(me.body.player).toEqual({ id: arne.id, displayName: arne.name, email: arne.email });
 
     const [row] = await sql`select encode(credential_hash, 'hex') as hash from players where id = ${arne.id}`;
     expect(row.hash).toMatch(/^[0-9a-f]{64}$/);
@@ -53,7 +53,7 @@ describe('two players', () => {
     const created = await call('POST', '/games', { credential: arne.credential, body: { friendEmail: harald.email } });
     expect(created.status).toBe(201);
     expect(created.body.game).toMatchObject({ status: 'waiting', revision: 0, yourSeat: 'white' });
-    expect(created.body.game.players).toEqual({ white: { id: arne.id, displayName: 'Arne' }, black: null });
+    expect(created.body.game.players).toEqual({ white: { id: arne.id, displayName: arne.name }, black: null });
     expect(created.body.invitation.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     const gameId = created.body.game.id;
 
@@ -85,8 +85,8 @@ describe('two players', () => {
     });
     expect(fromHarald.body.game.chess).toEqual(fromArne.body.game.chess);
     expect(fromHarald.body.game.players).toEqual({
-      white: { id: arne.id, displayName: 'Arne' },
-      black: { id: harald.id, displayName: 'Harald' },
+      white: { id: arne.id, displayName: arne.name },
+      black: { id: harald.id, displayName: harald.name },
     });
 
     const lists = await Promise.all([arne, harald].map((p) => call('GET', '/games', { credential: p.credential })));

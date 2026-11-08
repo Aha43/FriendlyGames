@@ -53,8 +53,15 @@ export function setupFailure(operation: string, { status, body }: ApiResponse): 
   return new Error(`${operation} failed: HTTP ${status}${shown}`);
 }
 
-export async function newPlayer(name: string): Promise<TestPlayer> {
-  const email = `${name.toLowerCase()}-${uniqueSuffix()}@example.test`;
+/**
+ * A new player named `<base>-<suffix>` (names are unique, #76; at most 40 characters). Its `name`
+ * is the generated name: assert on that, never on the base.
+ */
+export async function newPlayer(base: string): Promise<TestPlayer> {
+  const suffix = uniqueSuffix();
+  const name = `${base}-${suffix}`;
+  if (name.length > 40) throw new Error(`test player base "${base}" is too long for a unique name`);
+  const email = `${base.toLowerCase()}-${suffix}@example.test`;
   const response = await call('POST', '/players', { body: { displayName: name, email } });
   if (response.status !== 201) throw setupFailure('createPlayer', response);
   const { body } = response;

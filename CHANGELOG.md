@@ -6,6 +6,18 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
+### Changed
+
+- Player names are unique, ignoring case, surrounding spaces and how accented letters are
+  encoded. Choosing a name someone already has says so and lets you pick another; nothing is
+  created until the name is free. Existing players and names are unchanged (#76).
+
+### Development
+
+- `make prod-name-check`: a read-only check of the live database for player names that would
+  collide, run by the owner and by `make deploy-backend` before it changes anything. Test
+  players now get unique names (#76).
+
 ## v0.2.0 — Chess and Fischer Random (2026-11-07)
 
 Sprint 5. The release date is when this version was prepared; the `v0.2.0` tag marks the
