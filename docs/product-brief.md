@@ -70,11 +70,15 @@ compatible rollout. More game types and different player counts remain future wo
 
 Owner direction, clarified 2026-11-08: starting a separate new game with a
 previous opponent should not require typing email or sharing a new invitation.
-The owner found the existing rematch button; that flow is retained unchanged. Proposed [Sprint 6](sprint-06.md), v0.2.1, preserves the existing
+The owner found the existing rematch button; that flow is retained unchanged. Proposed [Sprint 6](sprint-06.md), v0.3.0, preserves the existing
 same-type, colour-swapping rematch. A new game may instead select any previously
 seated opponent (including an ongoing game), choose a type, and directly seat
 both players. The creator plays White. Email/link invitations remain for someone
-new. No friend-request system, global search or verified authentication is added.
+new. The owner selected globally unique player names (case-insensitive after
+trimming surrounding spaces), enforced during signup without changing stable
+player IDs or email-entry access. Existing-name collisions require an owner
+decision, never automatic renaming. No friend-request system, global search or
+verified authentication is added.
 
 ## Technical and delivery direction
 

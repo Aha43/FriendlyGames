@@ -1,7 +1,7 @@
 # Development workflow
 
 The [roadmap](roadmap.md) names version destinations. The active route is
-proposed [Sprint 6](sprint-06.md), v0.2.1 — Play again with friends. Merge its
+proposed [Sprint 6](sprint-06.md), v0.3.0 — Play again with friends. Merge its
 planning PR before implementation. Sprint 5 and its reviewed engine/format
 decision remain the baseline; this sprint improves existing game flows.
 See [game-type boundaries](game-types.md). Keep the process small enough to use
@@ -93,7 +93,7 @@ been verified. Any future review loop must be bounded and tied to the current he
 
 `package.json` is the source version. A release issue prepares a patch/minor bump,
 matching lockfile, changelog, integrated checks and deployment order. The owner
-authorises tags, publishing and milestone acceptance. #74 prepares v0.2.1;
+authorises tags, publishing and milestone acceptance. #74 prepares v0.3.0;
 #56 qualified the released v0.2.0, the first owner-run `make release` (#49).
 Version acceptance does not by itself close the original real-game acceptance
 #11; check its finished-game, resume and history criteria separately.
@@ -107,8 +107,9 @@ backend and local development; do not provision staging or paid services by infe
 Future #37 will prepare an explicit backup → backend → site release path and
 review the corresponding publishing settings. It remains outside Sprint 6;
 no current Cloudflare setting is changed by this plan. For previous-opponent
-creation, owner-deploy the reviewed #72 backend before merging the #73 UI that
-exposes the new path.
+creation, owner-deploy the reviewed #76 name constraint and #72 backend before
+merging the #73 UI that exposes the new path. A duplicate-name preflight must
+stop for owner-reviewed reconciliation; never change existing players by inference.
 
 Use [deployment.md](deployment.md) for actual commands, secrets, rollback and the
 deployed-version log. Local version/HEAD, green CI or a preview does not prove
