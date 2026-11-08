@@ -68,9 +68,9 @@ compatible rollout. More game types and different player counts remain future wo
 
 ## Next selected improvement — play again with friends
 
-Owner direction, 2026-11-08: one-click rematches must be easy to find; starting
-a game with a previous opponent should not require typing email or sharing a new
-invitation. Proposed [Sprint 6](sprint-06.md), v0.2.1, preserves the existing
+Owner direction, clarified 2026-11-08: starting a separate new game with a
+previous opponent should not require typing email or sharing a new invitation.
+The owner found the existing rematch button; that flow is retained unchanged. Proposed [Sprint 6](sprint-06.md), v0.2.1, preserves the existing
 same-type, colour-swapping rematch. A new game may instead select any previously
 seated opponent (including an ongoing game), choose a type, and directly seat
 both players. The creator plays White. Email/link invitations remain for someone

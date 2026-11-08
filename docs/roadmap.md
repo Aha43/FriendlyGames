@@ -10,11 +10,11 @@ One issue still means one branch and one focused PR.
 
 | Version | Result | Route and evidence |
 | --- | --- | --- |
-| [v0.1.0 — First game with Harald](https://github.com/Aha43/FriendlyGames/milestone/3) | The deployed friends-only chess baseline. | Historical Sprints 1–2, unique email and email entry. The owner reports a game with Harald has ended; [#11](https://github.com/Aha43/FriendlyGames/issues/11) stays open until finished-game, resume and shared-history acceptance is confirmed. |
+| [v0.1.0 — First game with Harald](https://github.com/Aha43/FriendlyGames/milestone/3) | The deployed friends-only chess baseline. | Historical Sprints 1–2, unique email and email entry. The real game with Harald remains underway; [#11](https://github.com/Aha43/FriendlyGames/issues/11) stays open until finished-game, resume and shared-history acceptance is confirmed. |
 | [v0.1.1 — Correct starts and repeatable development](https://github.com/Aha43/FriendlyGames/milestone/4) | Correct starts and repeatable development. | Released; historical [Sprint 3](sprint-03.md), tag/release and actual deployments recorded separately. |
 | [v0.1.2 — Captured pieces at a glance](https://github.com/Aha43/FriendlyGames/milestone/6) | Captured pieces visible in existing/new games and replay. | Released; historical [Sprint 4](sprint-04.md), with the owner's real-game observation recorded. |
 | [v0.2.0 — Chess and Fischer Random](https://github.com/Aha43/FriendlyGames/milestone/5) | Two persisted game types, shared services and correct type-specific rules; first release via `make release`. | Released through owner-run `make release`; [Sprint 5](sprint-05.md), tag `v0.2.0` at `2613fec`, and actual deployments recorded separately. [Architecture](game-types.md). |
-| [v0.2.1 — Play again with friends](https://github.com/Aha43/FriendlyGames/milestone/7) | Clear one-click rematches and game creation with previous opponents by name. | Proposed [Sprint 6](sprint-06.md): visible rematches, authorized previous-opponent backend, direct-start UI and patch qualification. |
+| [v0.2.1 — Play again with friends](https://github.com/Aha43/FriendlyGames/milestone/7) | Game creation with previous opponents by name, without another email invitation. | Proposed [Sprint 6](sprint-06.md): authorized previous-opponent backend, direct-start UI and patch qualification; existing rematches preserved. |
 
 `package.json` is the source version; read it rather than maintaining a second
 current-version value here. It is not proof of a tag/release or first-game acceptance. Actual
