@@ -15,6 +15,12 @@ an autumn park: name-and-email onboarding, manually shared invitation links, ser
 shared history of finished games with a win/draw tally, replay and "play again".
 Local play on one device remains available separately, with its own saved game for each type.
 
+**Playing again** needs no new invitation: under *Start a game*, *Play with* lists everyone you
+have sat at a game with, by name, with how many games you share and when the last one was active.
+Nobody is chosen until you pick someone; choose the game, pick a name and press *Start game*. You
+play White, they play Black, and the game appears in both lobbies straight away. *Invite someone
+new* keeps the email-and-link invitation for anyone you haven't played yet.
+
 In **Fischer Random** the pieces behind the pawns start in one of 960 arrangements, drawn by the
 server when the game is created and the same for both sides; every piece moves as usual. To
 castle, select your king and use a castle button: king and rook end on g/f (kingside) or c/d

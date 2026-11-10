@@ -1167,6 +1167,79 @@ h2 {
 
 .card .type-explainer p { margin: 0 0 0.35rem; }
 
+/* Previous opponents in "Start a game" (#73): a compact list of names, nobody chosen at first. */
+.opponent-picker {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.opponent-picker legend {
+  padding: 0;
+  margin-bottom: 0.25rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.form .opponent-option {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.45rem 0.6rem;
+  border: 1.5px solid var(--paper-edge);
+  border-radius: 10px;
+  font-weight: 400;
+  color: var(--ink);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.form .opponent-option:has(input:checked) {
+  border-color: var(--wood-dark);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.form .opponent-option input {
+  width: auto;
+  margin: 0.2rem 0 0;
+  flex: none;
+  accent-color: var(--wood-dark);
+}
+
+.opponent-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.opponent-name {
+  font-size: 0.98rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.opponent-meta {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.form .opponent-option-new { border-style: dashed; }
+
+.matchup {
+  margin: 0;
+  font-size: 0.92rem;
+  overflow-wrap: anywhere; /* a long unbroken name must not push past a 320px card */
+}
+
+.opponents-failed .text-button { padding: 0; }
+
+.opponent-picker .show-all { align-self: flex-start; }
+
 /* Local play: chess or Fischer Random, each with its own saved game. */
 .type-switch {
   display: flex;

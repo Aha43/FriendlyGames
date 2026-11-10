@@ -57,6 +57,16 @@ export interface HistoryEntry {
   }[];
 }
 
+/** Someone the player has sat at a game with (#72): listed by the server, never typed or searched. */
+export interface PreviousOpponent {
+  id: string;
+  displayName: string;
+  /** Games the two share, of any type (including types this client cannot show). */
+  sharedGames: number;
+  /** The latest time any shared game was created, joined or had an action. */
+  lastSharedGameUpdatedAt: string;
+}
+
 export type GameAction =
   | { type: 'move'; from: string; to: string; promotion?: 'q' | 'r' | 'b' | 'n' }
   /** Fischer Random only: castling is never sent as a king move. */
@@ -211,6 +221,18 @@ export const gameApi = {
   createGame: (credential: string, friendEmail: string, requestId: string, type: string = 'chess') =>
     request<{ game: SharedGame; invitation: { token: string } | null; duplicate: boolean }>('POST', '/games', credential, {
       friendEmail,
+      requestId,
+      type,
+    }),
+  /** Everyone the player has sat at a game with, most recent shared activity first (#72). */
+  listOpponents: (credential: string) => request<{ opponents: PreviousOpponent[] }>('GET', '/opponents', credential),
+  /**
+   * A game with a previous opponent, by player ID (#72): active at once, creator White, opponent
+   * Black, no invitation. Retrying with the same requestId (same opponent and type) finds the same game.
+   */
+  createGameWith: (credential: string, friendPlayerId: string, requestId: string, type: string = 'chess') =>
+    request<{ game: SharedGame; invitation: null; duplicate: boolean }>('POST', '/games', credential, {
+      friendPlayerId,
       requestId,
       type,
     }),
