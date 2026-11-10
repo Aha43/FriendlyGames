@@ -17,6 +17,9 @@ versions live in `package.json`; actual deployments are recorded separately in
 - `make prod-name-check`: a read-only check of the live database for player names that would
   collide, run by the owner and by `make deploy-backend` before it changes anything. Test
   players now get unique names (#76).
+- Server support for starting a game directly with someone you have played before: a list of
+  your previous opponents, and creating an active game with one of them without an invitation.
+  Not yet shown in the app; that comes with #73 (#72).
 
 ## v0.2.0 — Chess and Fischer Random (2026-11-07)
 

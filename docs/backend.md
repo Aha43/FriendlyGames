@@ -144,6 +144,35 @@ friends recognise and, from #72/#73, pick each other by. Names are not credentia
   renamed, merged or deleted automatically: the owner decides each case (for example, renaming
   an old `@example.test` test player in the dashboard), then runs the check again.
 
+## Games with previous opponents (#72)
+
+A **previous opponent** is anyone who has had a seat in a game with you: ongoing or finished,
+chess or Fischer Random, including games of a type or stored version your client cannot show.
+It comes from actual seats, never from emails, names or unused invitations: someone you invited
+who never joined is not one. There is no contact list, friend request or search.
+
+- **Listing** (`GET /opponents`): each previous opponent once (by player ID), with their name,
+  `sharedGames` (how many distinct games you have shared) and `lastSharedGameUpdatedAt` (the
+  latest time any of those games was created, joined or had an action: a move, castle or
+  resignation; it does not mean a move was played). Both count only your games with them. It is
+  a list of people, so `types` does not filter it, and it never returns or decodes games. No
+  emails, credentials or tokens, and nobody else's relationships.
+- **Starting a game** (`POST /games` with `friendPlayerId`, instead of `friendEmail`): the server
+  itself checks that you and that player share a seated game. Then it creates an active game
+  with both seated: no invitation, link or acceptance step. Either player can start any number of
+  games with the other, without approval (deliberate for this friends-only prototype). The other
+  player finds it in their game list on the next refresh. Fischer Random draws its start once.
+- **Retries**: a `requestId` stands for one exact intent: game type, target mode (email or
+  player) and recipient. Reusing it for anything else is `409 request_id_reused`, before anything
+  changes. This needs no migration: an email game always keeps its invitation row (with the
+  invited email), and a direct game never has one; its Black seat is the chosen player.
+- **Compatibility**: the email invitation path, rematches (colours swapped), old clients and
+  `types` filtering are unchanged. Old clients simply never send `friendPlayerId`; a direct game
+  of a type they read appears in their list like any other active game.
+- **Deployment**: function only, no migration. Deploy the backend (owner, `make deploy-backend`)
+  before merging the UI that uses it (#73). Rollback to the previous function is safe: games
+  created directly are ordinary two-seat games every version reads.
+
 ## Games and invitations
 
 - Creating a game seats the creator as White and returns an **invitation token** once.
@@ -269,6 +298,8 @@ endpoints accept the `types` query parameter described under Game types.
 | `POST /players` | `{ email, displayName? }` | `200 { player: { id, displayName, email }, deviceCredential, created: false }` for an existing player; `201 { …, created: true }` for a new email with `displayName`; `404 player_not_found` for a new email without it; `409 name_taken` when another player has that name (#76; nothing is created) |
 | `GET /me` | | `200 { player: { id, displayName, email } }` |
 | `POST /games` | `{ friendEmail, requestId?, type? }` | `201 { game, invitation: { token }, duplicate: false }`; a retry with the same `requestId` gets `200 { game, invitation, duplicate: true }` |
+| `POST /games` (previous opponent, #72) | `{ friendPlayerId, requestId?, type? }` | `201 { game, invitation: null, duplicate: false }`: an **active** game, creator White, opponent Black, White to move; a retry with the same `requestId` gets `200 { …, duplicate: true }`; `404 opponent_not_found` for yourself, an unknown ID or anyone you have no seated game with (one answer for all); `400` if both or neither target is given |
+| `GET /opponents` (#72) | | `200 { opponents: [{ id, displayName, sharedGames, lastSharedGameUpdatedAt }] }`, newest shared activity first |
 | `POST /games/:id/invitation` | | `200 { game, invitation: { token } }` (creator only, game still waiting) |
 | `POST /invitations/redeem` | `{ token }` | `200 { game }` |
 | `GET /games` | | `200 { games: [game…] }` (newest activity first, at most 200) |
