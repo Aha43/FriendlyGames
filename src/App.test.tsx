@@ -42,6 +42,8 @@ beforeEach(() => {
   localStorage.clear();
   window.location.hash = '';
   consoleCalls.length = 0;
+  // Nobody played yet unless a test says otherwise (#73).
+  vi.spyOn(gameApi, 'listOpponents').mockResolvedValue({ opponents: [] });
   for (const method of ['log', 'info', 'warn', 'error', 'debug'] as const) {
     vi.spyOn(console, method).mockImplementation((...args) => void consoleCalls.push(args));
   }
@@ -410,6 +412,211 @@ describe('lobby', () => {
       const tally = screen.getByLabelText('Fischer Random tally with Harald');
       expect(within(tally).getByText('Harald').nextSibling).toHaveTextContent('1');
       expect(within(screen.getByLabelText('Tally with Harald')).getByText('You').nextSibling).toHaveTextContent('1');
+    });
+  });
+
+  describe('starting a game with someone already played (#73)', () => {
+    const HARALD = { id: '00000000-0000-4000-8000-00000000000a', displayName: 'Harald', sharedGames: 3, lastSharedGameUpdatedAt: '2026-11-09T18:00:00Z' };
+    const OYSTEIN = { id: '00000000-0000-4000-8000-00000000000b', displayName: 'Øystein', sharedGames: 1, lastSharedGameUpdatedAt: '2026-10-02T10:00:00Z' };
+    const UUID = expect.stringMatching(/^[0-9a-f-]{36}$/);
+    const direct = (overrides: Partial<SharedGame> = {}) => ({ game: game({ revision: 0, ...overrides }), invitation: null, duplicate: false });
+
+    beforeEach(() => {
+      vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+      vi.mocked(gameApi.listOpponents).mockResolvedValue({ opponents: [HARALD, OYSTEIN] });
+    });
+
+    it('lists previous opponents with truthful context and nobody chosen', async () => {
+      render(<App />);
+      const picker = await screen.findByRole('group', { name: 'Play with' });
+      const harald = within(picker).getByRole('radio', { name: 'Harald' });
+      expect(harald).toHaveAccessibleDescription('3 games together · Last shared game 9 Nov 2026');
+      expect(within(picker).getByRole('radio', { name: 'Øystein' })).toHaveAccessibleDescription(
+        '1 game together · Last shared game 2 Oct 2026',
+      );
+      for (const radio of within(picker).getAllByRole('radio')) expect(radio).not.toBeChecked();
+      expect(within(picker).getByRole('radio', { name: 'Invite someone new' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Start game' })).toBeDisabled();
+      expect(screen.queryByLabelText('Friend’s email')).not.toBeInTheDocument();
+      expect(screen.getByRole('radio', { name: 'Chess' })).toBeChecked(); // default type unchanged
+    });
+
+    it('starts a game with a chosen opponent by player ID and opens the table, without email or invitation', async () => {
+      const user = userEvent.setup();
+      const createWith = vi.spyOn(gameApi, 'createGameWith').mockResolvedValue(direct());
+      const create = vi.spyOn(gameApi, 'createGame');
+      render(<App />);
+      await user.click(await screen.findByRole('radio', { name: 'Harald' }));
+      expect(screen.getByText('You play White. Harald plays Black and sees the game in their lobby.')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Friend’s email')).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Start game' }));
+
+      expect(createWith).toHaveBeenCalledWith(CREDENTIAL, HARALD.id, UUID, 'chess');
+      expect(create).not.toHaveBeenCalled();
+      await waitFor(() => expect(window.location.hash).toBe(`#/game/${GAME_ID}`));
+      expect(screen.queryByLabelText('Invitation link')).not.toBeInTheDocument();
+    });
+
+    it('starts Fischer Random with a chosen opponent', async () => {
+      const user = userEvent.setup();
+      const createWith = vi.spyOn(gameApi, 'createGameWith').mockResolvedValue(direct({ type: 'chess960' }));
+      render(<App />);
+      await user.click(await screen.findByRole('radio', { name: 'Øystein' }));
+      await user.click(screen.getByRole('radio', { name: 'Fischer Random (Chess960)' }));
+      expect(screen.getByRole('radio', { name: 'Øystein' })).toBeChecked();
+      await user.click(screen.getByRole('button', { name: 'Start game' }));
+      expect(createWith).toHaveBeenCalledWith(CREDENTIAL, OYSTEIN.id, UUID, 'chess960');
+    });
+
+    it('keeps Invite someone new as the email-and-link flow', async () => {
+      const user = userEvent.setup();
+      const createWith = vi.spyOn(gameApi, 'createGameWith');
+      const create = vi
+        .spyOn(gameApi, 'createGame')
+        .mockResolvedValue({ game: game({ status: 'waiting', revision: 0 }), invitation: { token: TOKEN }, duplicate: false });
+      render(<App />);
+      await user.click(await screen.findByRole('radio', { name: 'Harald' }));
+      await user.click(screen.getByRole('radio', { name: 'Invite someone new' }));
+      expect(screen.queryByText(/plays Black/)).not.toBeInTheDocument();
+      await user.type(screen.getByLabelText('Friend’s email'), 'new@example.test');
+      await user.click(screen.getByRole('button', { name: 'Create game' }));
+      expect(create).toHaveBeenCalledWith(CREDENTIAL, 'new@example.test', UUID, 'chess');
+      expect(createWith).not.toHaveBeenCalled();
+      expect(await screen.findByLabelText('Invitation link')).toHaveValue(`http://localhost:3000/#/join/${TOKEN}`);
+    });
+
+    it('shows only the invitation form when nobody has been played yet', async () => {
+      vi.mocked(gameApi.listOpponents).mockResolvedValue({ opponents: [] });
+      render(<App />);
+      await waitFor(() => expect(gameApi.listOpponents).toHaveBeenCalled());
+      await waitFor(() => expect(screen.queryByText(/Looking for people/)).not.toBeInTheDocument());
+      expect(screen.queryByRole('group', { name: 'Play with' })).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Friend’s email')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Create game' })).toBeEnabled();
+    });
+
+    it('says the list is loading, and a failure is not “nobody played”, keeping the invitation path', async () => {
+      const user = userEvent.setup();
+      let fail!: (e: unknown) => void;
+      vi.mocked(gameApi.listOpponents)
+        .mockReturnValueOnce(new Promise((_, reject) => (fail = reject)))
+        .mockResolvedValueOnce({ opponents: [HARALD] });
+      render(<App />);
+      expect(await screen.findByText('Looking for people you’ve played with…')).toBeInTheDocument();
+      expect(screen.getByLabelText('Friend’s email')).toBeInTheDocument();
+
+      fail(new NetworkError('offline'));
+      expect(await screen.findByText(/Couldn’t load the people you’ve played with\. You can still invite someone by email\./)).toBeInTheDocument();
+      expect(screen.queryByText(/Looking for people/)).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Friend’s email')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Load the list again' }));
+      expect(await screen.findByRole('radio', { name: 'Harald' })).not.toBeChecked();
+      expect(screen.queryByText(/Couldn’t load the people/)).not.toBeInTheDocument();
+    });
+
+    it('keeps an email typed while the list was loading on the invitation path', async () => {
+      const user = userEvent.setup();
+      let resolve!: (v: { opponents: (typeof HARALD)[] }) => void;
+      vi.mocked(gameApi.listOpponents).mockReturnValueOnce(new Promise((r) => (resolve = r)));
+      render(<App />);
+      await user.type(await screen.findByLabelText('Friend’s email'), 'new@example.test');
+      resolve({ opponents: [HARALD] });
+      expect(await screen.findByRole('radio', { name: 'Invite someone new' })).toBeChecked();
+      expect(screen.getByLabelText('Friend’s email')).toHaveValue('new@example.test');
+      expect(screen.getByRole('radio', { name: 'Harald' })).not.toBeChecked();
+    });
+
+    it('retries an unconfirmed start with the same request ID; a different opponent or type is a new request', async () => {
+      const user = userEvent.setup();
+      const createWith = vi
+        .spyOn(gameApi, 'createGameWith')
+        .mockRejectedValueOnce(new NetworkError('lost'))
+        .mockRejectedValueOnce(new NetworkError('lost'))
+        .mockRejectedValueOnce(new ApiError(503, 'unavailable', 'Down'))
+        .mockRejectedValueOnce(new NetworkError('lost'))
+        .mockResolvedValueOnce({ ...direct(), duplicate: true });
+      render(<App />);
+      await user.click(await screen.findByRole('radio', { name: 'Harald' }));
+      await user.click(screen.getByRole('button', { name: 'Start game' }));
+      expect(await screen.findByText(/Couldn’t confirm whether the game was created/)).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Try again' }));
+      await waitFor(() => expect(createWith).toHaveBeenCalledTimes(2));
+      expect(createWith.mock.calls[1]).toEqual(createWith.mock.calls[0]);
+
+      // Another opponent: a new request.
+      await user.click(screen.getByRole('radio', { name: 'Øystein' }));
+      await user.click(await screen.findByRole('button', { name: 'Start game' }));
+      await waitFor(() => expect(createWith).toHaveBeenCalledTimes(3));
+      expect(createWith.mock.calls[2][2]).not.toBe(createWith.mock.calls[0][2]);
+
+      // Another type: a new request again.
+      await user.click(screen.getByRole('radio', { name: 'Fischer Random (Chess960)' }));
+      await user.click(await screen.findByRole('button', { name: 'Start game' }));
+      await waitFor(() => expect(createWith).toHaveBeenCalledTimes(4));
+      expect(createWith.mock.calls[3][2]).not.toBe(createWith.mock.calls[2][2]);
+      expect(createWith.mock.calls[3].slice(1, 2).concat(createWith.mock.calls[3][3])).toEqual([OYSTEIN.id, 'chess960']);
+
+      // The same intent again finds the game the lost reply was about.
+      await user.click(screen.getByRole('button', { name: 'Try again' }));
+      await waitFor(() => expect(window.location.hash).toBe(`#/game/${GAME_ID}`));
+      expect(createWith.mock.calls[4]).toEqual(createWith.mock.calls[3]);
+    });
+
+    it('sends one request however often Start game is pressed', async () => {
+      const user = userEvent.setup();
+      let finish!: (v: ReturnType<typeof direct>) => void;
+      const createWith = vi.spyOn(gameApi, 'createGameWith').mockReturnValue(new Promise((r) => (finish = r)));
+      render(<App />);
+      await user.click(await screen.findByRole('radio', { name: 'Harald' }));
+      const start = screen.getByRole('button', { name: 'Start game' });
+      await user.dblClick(start);
+      expect(screen.getByRole('button', { name: 'Creating…' })).toBeDisabled();
+      await user.keyboard('{Enter}');
+      expect(createWith).toHaveBeenCalledTimes(1);
+      finish(direct());
+      await waitFor(() => expect(window.location.hash).toBe(`#/game/${GAME_ID}`));
+    });
+
+    it('works from the keyboard', async () => {
+      const user = userEvent.setup();
+      const createWith = vi.spyOn(gameApi, 'createGameWith').mockResolvedValue(direct());
+      render(<App />);
+      const harald = await screen.findByRole('radio', { name: 'Harald' });
+      harald.focus();
+      expect(harald).not.toBeChecked(); // focus alone chooses nobody
+      await user.keyboard(' ');
+      expect(harald).toBeChecked();
+      await user.keyboard('{ArrowDown}');
+      expect(screen.getByRole('radio', { name: 'Øystein' })).toBeChecked();
+      await user.keyboard('{Enter}');
+      expect(createWith).toHaveBeenCalledWith(CREDENTIAL, OYSTEIN.id, UUID, 'chess');
+    });
+
+    it('explains refusals plainly and does not reuse the request', async () => {
+      const user = userEvent.setup();
+      const createWith = vi
+        .spyOn(gameApi, 'createGameWith')
+        .mockRejectedValueOnce(new ApiError(404, 'opponent_not_found', 'x'))
+        .mockRejectedValueOnce(new ApiError(400, 'unsupported_game_type', 'x'));
+      render(<App />);
+      await user.click(await screen.findByRole('radio', { name: 'Harald' }));
+      await user.click(screen.getByRole('button', { name: 'Start game' }));
+      expect(await screen.findByText('You have no earlier game with that player. Invite them by email instead.')).toHaveAttribute('role', 'alert');
+      await user.click(screen.getByRole('button', { name: 'Start game' }));
+      expect(await screen.findByText('This game type isn’t available here. Reload the page to update.')).toHaveAttribute('role', 'alert');
+      expect(createWith.mock.calls[1][2]).not.toBe(createWith.mock.calls[0][2]);
+    });
+
+    it('keeps a long list compact until asked for everyone', async () => {
+      const user = userEvent.setup();
+      const many = Array.from({ length: 9 }, (_, i) => ({ ...HARALD, id: `00000000-0000-4000-8000-0000000001${i}0`, displayName: `Friend ${i + 1}` }));
+      vi.mocked(gameApi.listOpponents).mockResolvedValue({ opponents: many });
+      render(<App />);
+      const picker = await screen.findByRole('group', { name: 'Play with' });
+      expect(within(picker).getAllByRole('radio')).toHaveLength(7); // six names and Invite someone new
+      await user.click(screen.getByRole('button', { name: 'Show all 9' }));
+      expect(within(picker).getAllByRole('radio')).toHaveLength(10);
     });
   });
 

@@ -3,7 +3,7 @@ import ChessHistory from '../components/ChessHistory';
 import InvitationShare from '../components/InvitationShare';
 import { CHESS960_CASTLING, CHESS960_SUMMARY, GAME_TYPES, typeLabel, type GameType } from '../games/registry';
 import { describeGame, opponentName } from '../shared/describe';
-import { ApiError, gameApi, NetworkError, type HistoryEntry, type SharedGame } from '../shared/gameApi';
+import { ApiError, gameApi, NetworkError, type HistoryEntry, type PreviousOpponent, type SharedGame } from '../shared/gameApi';
 import { forgetInvitation, rememberInvitation, tokenFromInvitation, type Identity } from '../shared/identity';
 import { navigate } from '../shared/route';
 import { newRequestId } from '../shared/requestId';
@@ -103,6 +103,13 @@ function GameLinks({ games, label }: { games: SharedGame[]; label: string }) {
   );
 }
 
+/** Who a new game is with: someone already played (by player ID, never by name) or an email to invite. */
+type Target = { kind: 'player'; playerId: string } | { kind: 'email' };
+
+/** Previous opponents shown before "Show all": the most recent ones, keeping the list compact. */
+const SHORT_LIST = 6;
+const sharedDate = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
 function NewGame({
   identity,
   onCreated,
@@ -114,42 +121,96 @@ function NewGame({
 }) {
   const [email, setEmail] = useState('');
   const [type, setType] = useState<GameType>('chess');
+  // Nobody is chosen until the player picks someone (#73).
+  const [choice, setChoice] = useState<Target | null>(null);
+  const [opponents, setOpponents] = useState<PreviousOpponent[] | null>(null);
+  const [opponentsFailed, setOpponentsFailed] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ gameId: string; token: string | null; type: GameType } | null>(null);
-  // An attempt whose outcome is unknown. Retrying the same friend and type with its request ID finds
-  // the game if it was created; changing either is a new request.
-  const [uncertain, setUncertain] = useState<{ requestId: string; email: string; type: GameType } | null>(null);
-  const retrying = uncertain?.email === email.trim() && uncertain.type === type;
+  // An attempt whose outcome is unknown. Retrying the same target (same friend email or same
+  // opponent) and type with its request ID finds the game if it was created; changing any is a new request.
+  const [uncertain, setUncertain] = useState<{ requestId: string; target: string; type: GameType } | null>(null);
+  const open = useRef(false);
+
+  const loadOpponents = useCallback(async () => {
+    try {
+      const { opponents } = await gameApi.listOpponents(identity.credential);
+      if (!open.current) return;
+      setOpponents(opponents);
+      setOpponentsFailed(false);
+    } catch (e) {
+      if (!open.current) return;
+      if (e instanceof ApiError && e.status === 401) return onIdentityRejected();
+      // Keep any list already shown; never present a failure as "nobody played yet".
+      setOpponentsFailed(true);
+    }
+  }, [identity.credential, onIdentityRejected]);
+
+  useEffect(() => {
+    open.current = true;
+    const first = setTimeout(loadOpponents, 0);
+    const onVisible = () => document.visibilityState === 'visible' && loadOpponents();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      open.current = false;
+      clearTimeout(first);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [loadOpponents]);
+
+  const known = opponents !== null && opponents.length > 0;
+  // Without anyone to pick (still loading, failed or nobody yet) the invitation form is the way.
+  // An email typed before the list arrived keeps the invitation path chosen.
+  const mode: Target['kind'] | null = !known ? 'email' : (choice?.kind ?? (email ? 'email' : null));
+  const opponent =
+    mode === 'player' && choice?.kind === 'player' ? opponents?.find((o) => o.id === choice.playerId) : undefined;
+  const target = mode === 'player' ? (opponent ? `player:${opponent.id}` : null) : mode === 'email' ? `email:${email.trim()}` : null;
+  const retrying = uncertain !== null && uncertain.target === target && uncertain.type === type;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (submitting.current || target === null) return;
     const friendEmail = email.trim();
     const requestId = retrying && uncertain ? uncertain.requestId : newRequestId();
+    submitting.current = true;
     setBusy(true);
     setError(null);
     try {
+      if (opponent) {
+        const { game } = await gameApi.createGameWith(identity.credential, opponent.id, requestId, type);
+        setUncertain(null);
+        onCreated();
+        navigate(`#/game/${game.id}`);
+        return;
+      }
       const { game, invitation } = await gameApi.createGame(identity.credential, friendEmail, requestId, type);
       if (invitation) rememberInvitation(game.id, invitation.token);
       setCreated({ gameId: game.id, token: invitation?.token ?? null, type });
       setUncertain(null);
       setEmail('');
+      setChoice(null);
       onCreated();
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return onIdentityRejected();
       if (e instanceof NetworkError || (e instanceof ApiError && e.status >= 500)) {
-        setUncertain({ requestId, email: friendEmail, type });
+        setUncertain({ requestId, target, type });
         setError(
           'Couldn’t confirm whether the game was created: the game server didn’t answer. Trying again is safe; it won’t create a second game.',
         );
       } else {
         setUncertain(null);
-        setError('Please enter your friend’s email address.');
+        setError(creationError(e, opponent ? 'player' : 'email'));
       }
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
+
+  const label = busy ? 'Creating…' : retrying ? 'Try again' : mode === 'email' ? 'Create game' : 'Start game';
 
   return (
     <section className="card" aria-labelledby="new-game-title">
@@ -196,21 +257,103 @@ function NewGame({
               <p>{CHESS960_CASTLING}</p>
             </div>
           )}
-          <label>
-            Friend’s email
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={254} />
-          </label>
-          <p className="fine-print-inline">You’ll get a link to send them yourself. No email is sent.</p>
+
+          {opponents === null && !opponentsFailed && <p className="muted">Looking for people you’ve played with…</p>}
+          {opponentsFailed && (
+            <p className="banner banner-warning opponents-failed">
+              Couldn’t load the people you’ve played with.{known ? '' : ' You can still invite someone by email.'}{' '}
+              <button type="button" className="text-button" onClick={loadOpponents}>
+                Load the list again
+              </button>
+            </p>
+          )}
+          {known && (
+            <fieldset className="opponent-picker">
+              <legend>Play with</legend>
+              {(showAll ? opponents : opponents.slice(0, SHORT_LIST)).map((o) => (
+                <label key={o.id} className="opponent-option">
+                  <input
+                    type="radio"
+                    name="opponent"
+                    value={o.id}
+                    checked={mode === 'player' && choice?.kind === 'player' && choice.playerId === o.id}
+                    onChange={() => setChoice({ kind: 'player', playerId: o.id })}
+                    aria-labelledby={`opponent-${o.id}-name`}
+                    aria-describedby={`opponent-${o.id}-meta`}
+                  />
+                  <span className="opponent-text">
+                    <span id={`opponent-${o.id}-name`} className="opponent-name">
+                      {o.displayName}
+                    </span>
+                    <span id={`opponent-${o.id}-meta`} className="opponent-meta">
+                      {o.sharedGames} {o.sharedGames === 1 ? 'game' : 'games'} together · Last shared game{' '}
+                      {sharedDate.format(new Date(o.lastSharedGameUpdatedAt))}
+                    </span>
+                  </span>
+                </label>
+              ))}
+              {!showAll && opponents.length > SHORT_LIST && (
+                <button type="button" className="text-button show-all" onClick={() => setShowAll(true)}>
+                  Show all {opponents.length}
+                </button>
+              )}
+              <label className="opponent-option opponent-option-new">
+                <input
+                  type="radio"
+                  name="opponent"
+                  value="new"
+                  checked={mode === 'email'}
+                  onChange={() => setChoice({ kind: 'email' })}
+                />
+                <span className="opponent-name">Invite someone new</span>
+              </label>
+            </fieldset>
+          )}
+
+          {mode === 'player' && opponent && (
+            <p className="matchup">
+              You play White. {opponent.displayName} plays Black and sees the game in their lobby.
+            </p>
+          )}
+          {mode === 'email' && (
+            <>
+              <label>
+                Friend’s email
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={254} />
+              </label>
+              <p className="fine-print-inline">You’ll get a link to send them yourself. No email is sent.</p>
+            </>
+          )}
+          {mode === null && (
+            <p id="new-game-hint" className="fine-print-inline">
+              Choose someone you’ve played with, or invite someone new.
+            </p>
+          )}
           <p className="form-error" role="alert">
             {error}
           </p>
-          <button type="submit" className="button button-primary" disabled={busy}>
-            {busy ? 'Creating…' : retrying ? 'Try again' : 'Create game'}
+          <button
+            type="submit"
+            className="button button-primary"
+            disabled={busy || target === null}
+            aria-describedby={mode === null ? 'new-game-hint' : undefined}
+          >
+            {label}
           </button>
         </form>
       )}
     </section>
   );
+}
+
+function creationError(e: unknown, mode: 'player' | 'email'): string {
+  if (e instanceof ApiError) {
+    if (e.code === 'unsupported_game_type') return 'This game type isn’t available here. Reload the page to update.';
+    if (e.code === 'unsupported_game') return e.message;
+    if (e.code === 'opponent_not_found') return 'You have no earlier game with that player. Invite them by email instead.';
+    if (e.code === 'request_id_reused') return 'Couldn’t start that game. Please try again.';
+  }
+  return mode === 'email' ? 'Please enter your friend’s email address.' : 'Couldn’t start that game. Please try again.';
 }
 
 function JoinByLink() {

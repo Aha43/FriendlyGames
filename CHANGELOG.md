@@ -6,6 +6,14 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
+### Added
+
+- Start a game with someone you've played before by picking their name: no email, link or
+  invitation. *Start a game* lists your previous opponents with how many games you share and
+  when the last one was active; nobody is chosen until you pick someone. Choose Chess or Fischer
+  Random and press *Start game*: you play White, they play Black, and it opens in both lobbies.
+  *Invite someone new* keeps today's email-and-link invitation (#73).
+
 ### Changed
 
 - Player names are unique, ignoring case, surrounding spaces and how accented letters are
@@ -19,7 +27,7 @@ versions live in `package.json`; actual deployments are recorded separately in
   players now get unique names (#76).
 - Server support for starting a game directly with someone you have played before: a list of
   your previous opponents, and creating an active game with one of them without an invitation.
-  Not yet shown in the app; that comes with #73 (#72).
+  Shown in the app by #73 (#72).
 
 ## v0.2.0 — Chess and Fischer Random (2026-11-07)
 
