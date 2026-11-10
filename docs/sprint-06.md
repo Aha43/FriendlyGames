@@ -135,3 +135,29 @@ separately; backlog presence is not implementation permission.
 This planning PR neither bumps versions nor authorizes merges, deployments,
 release publication or milestone closing. Feature changes go under Unreleased;
 #74 owns the version bump and the reviewed make release handover.
+
+## Integrated result (#74, prepared 2026-11-10)
+
+Delivered in order: #70 (PR #75), #76 (PR #77), #72 (PR #78), #73 (PR #79). The backend went
+first each time: the name constraint at `75a0692`, then the previous-opponent backend at
+`1c0850a`, both deployed by the owner before #73 merged. The live site runs `32ba3f0`, and the
+backend reports `1c0850a`. Version 0.3.0 and its changelog section are prepared in the #74
+release PR, with the evidence and limits there and in [deployment.md](deployment.md).
+
+- **Rematch, unchanged:** same type, colours swapped, one rematch per game, no invitation. This
+  sprint changed no rematch code. Backend tests (`history`, `chess960`, `game-types`) and both
+  browser journeys that play again still pass.
+- **Unique names (#76):** the canonical rule, the name-taken recovery, existing email entry,
+  and same-email races keeping one identity are covered by `unique-names.test.ts` and the
+  browser journey. The migration and the read-only preflight are rehearsed against the real
+  schema.
+- **Production data:** the duplicate preflight and reconciliation were owner-run and kept
+  private. #74 inspected no production data and wrote none.
+- **Play again by name (#72, #73):** covered for ongoing and finished relationships, both game
+  types, direct seating with White to move, both lobbies, no email or redeem step,
+  lost-reply retries, privacy, and old clients. Backend tests and the
+  `previous-opponents.spec.ts` journeys on desktop and phone cover these; first email
+  invitations and local saves keep their journeys.
+
+Owner acceptance, `make release` and closing the milestone remain the owner's. #11 stays open:
+the real game with Harald is still being played.
