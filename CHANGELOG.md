@@ -6,28 +6,56 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
+## v0.3.0 — Play again with friends (2026-11-10)
+
+Sprint 6. The release date is when this version was prepared; the `v0.3.0` tag marks the
+accepted commit, published with `make release`.
+
 ### Added
 
 - Start a game with someone you've played before by picking their name: no email, link or
   invitation. *Start a game* lists your previous opponents with how many games you share and
   when the last one was active; nobody is chosen until you pick someone. Choose Chess or Fischer
   Random and press *Start game*: you play White, they play Black, and it opens in both lobbies.
-  *Invite someone new* keeps today's email-and-link invitation (#73).
+  *Invite someone new* keeps today's email-and-link invitation (#73, PR #79).
 
 ### Changed
 
 - Player names are unique, ignoring case, surrounding spaces and how accented letters are
   encoded. Choosing a name someone already has says so and lets you pick another; nothing is
-  created until the name is free. Existing players and names are unchanged (#76).
+  created until the name is free. Existing players and names are unchanged, and an existing
+  player's email still opens their own player whatever name is typed (#76, PR #77).
 
 ### Development
 
 - `make prod-name-check`: a read-only check of the live database for player names that would
-  collide, run by the owner and by `make deploy-backend` before it changes anything. Test
-  players now get unique names (#76).
-- Server support for starting a game directly with someone you have played before: a list of
-  your previous opponents, and creating an active game with one of them without an invitation.
-  Shown in the app by #73 (#72).
+  collide, run by the owner and by `make deploy-backend` before it changes anything. Additive
+  migration `20261108120000_unique_player_names.sql`, which refuses to run while names collide.
+  Test players now get unique names (#76, PR #77).
+- Server support for starting a game directly with someone you have played before:
+  `GET /opponents` (people you have sat at a game with, by player ID and name) and
+  `POST /games` with `friendPlayerId` (an active game with both seated, no invitation, safe to
+  retry). No migration; old clients are unaffected (#72, PR #78).
+- Sprint 6 plan and the v0.3.0 milestone (#70, PR #75); recording the v0.2.0 release (#56,
+  PR #69); this release (#74).
+
+### Known limitations
+
+- Email entry is prototype access: email ownership isn't checked.
+- Either of two players who have shared a game can start another with the other at any time,
+  with no request to accept and no notification; it simply appears in both lobbies (a deliberate
+  prototype choice).
+- The list of previous opponents loads when the lobby opens and when you come back to the tab;
+  it doesn't refresh while you keep the lobby open.
+- The lobby says "1 moves" for a single move.
+- The top bar reads "Chess" on every page, and the lobby's "Chess history" card holds both
+  types (sectioned per type).
+- Rollback: the site can return to the v0.2.0 build (it never asks for previous opponents). The
+  backend should stay at `1c0850a` or later while this site is live: an older backend makes the
+  picker say it couldn't load the list, though invitations keep working. The unique-name index
+  is forward-only; the Fischer Random rollback limit (the #53 dispatcher) still applies.
+- The first real game with Harald is still being played, so the v0.1.0 acceptance (#11)
+  stays open.
 
 ## v0.2.0 — Chess and Fischer Random (2026-11-07)
 
