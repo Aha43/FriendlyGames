@@ -85,7 +85,7 @@ function stubNode() {
   chmodSync(join(bin, 'node'), 0o755);
 }
 
-const PRODUCTION = /supabase (db dump|db push|db reset|secrets|functions deploy|link)|curl .*supabase\.co|workers\.dev/;
+const PRODUCTION = /supabase (db dump|db push|db reset|db query|secrets|functions deploy|link)|curl .*supabase\.co|workers\.dev/;
 
 describe('make', () => {
   it('shows help by default and runs nothing', () => {
@@ -191,6 +191,15 @@ describe('make backup', () => {
 });
 
 describe('production commands', () => {
+  it('prod-name-check queries only the linked project, and an empty answer is never "clear"', () => {
+    const { status, out, calls } = run(['prod-name-check']);
+    expect(status).not.toBe(0);
+    expect(out).toContain('Checking player names on the linked project testref (read-only).');
+    expect(out).toMatch(/Name check incomplete: the answer was not JSON/);
+    expect(calls).toEqual(['supabase db query --linked --agent no -o json -f scripts/name-check.sql']);
+    expect(calls.join('\n')).not.toMatch(/--local|--db-url|db push|db reset/);
+  });
+
   it('prod-status reads the live health only, and shows the local commit separately', () => {
     const { status, out, calls } = run(['prod-status']);
     expect(status).toBe(0);

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -95,6 +95,35 @@ describe('onboarding', () => {
 
     expect(await screen.findByText(/This email is new here, so you’ll get a new player/)).toBeVisible();
     await user.type(screen.getByLabelText('Your name'), 'Arne');
+    await user.click(screen.getByRole('button', { name: 'Create my player' }));
+    expect(enter).toHaveBeenLastCalledWith('arne@example.test', 'Arne');
+    expect(await screen.findByRole('heading', { name: 'Your games' })).toBeInTheDocument();
+  });
+
+  it('keeps both inputs and focuses the name when it is already taken, then retries with another (#76)', async () => {
+    const user = userEvent.setup();
+    const enter = vi
+      .spyOn(gameApi, 'enterPlayer')
+      .mockRejectedValueOnce(new ApiError(404, 'player_not_found', 'new'))
+      .mockRejectedValueOnce(new ApiError(409, 'name_taken', 'taken'))
+      .mockResolvedValueOnce({ ...ENTERED, created: true });
+    vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+    render(<App />);
+    await user.type(screen.getByLabelText('Your email'), 'arne@example.test');
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await user.type(await screen.findByLabelText('Your name'), 'Harald');
+    await user.click(screen.getByRole('button', { name: 'Create my player' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('That name is already in use. Please choose another.');
+    const nameField = screen.getByLabelText('Your name');
+    await waitFor(() => expect(nameField).toHaveFocus());
+    expect(nameField).toHaveAttribute('aria-invalid', 'true');
+    expect(nameField).toHaveAccessibleDescription('That name is already in use. Please choose another.');
+    expect(screen.getByLabelText('Your email')).toHaveValue('arne@example.test');
+
+    await user.clear(nameField);
+    await user.type(nameField, 'Arne');
+    expect(nameField).not.toHaveAttribute('aria-invalid');
     await user.click(screen.getByRole('button', { name: 'Create my player' }));
     expect(enter).toHaveBeenLastCalledWith('arne@example.test', 'Arne');
     expect(await screen.findByRole('heading', { name: 'Your games' })).toBeInTheDocument();

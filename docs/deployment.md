@@ -84,8 +84,23 @@ changes are deliberate:
 
 1. Keep migrations and API changes **backward compatible** with the site already live (add,
    don't rename or remove in the same step), because the site and backend deploy separately.
-2. After merging a PR that touches `supabase/`, run `make deploy-backend` from `main`.
+2. After merging a PR that touches `supabase/`, run `make deploy-backend` from `main`. It
+   first runs the read-only player-name check (`make prod-name-check`, #76) and stops before any
+   backup, migration, secret or function change if names collide or the check cannot complete.
 3. Run the smoke check and the deployed journeys (below).
+
+### Unique player names (#76): preflight and order
+
+Before deploying the #76 backend, run `make prod-name-check` on the owner's Mac. It runs
+`scripts/name-check.sql` on the linked project through `supabase db query --linked` (Supabase
+CLI 2.x with `db query`; it uses the existing `supabase login`, no database password), inside a
+read-only transaction with a 15 s limit, and prints only player IDs, stored names, game counts and
+creation dates. Exit 0 means a read-only check found no collisions; 1 means collisions (listed);
+2 means the check could not complete, which is never "clear". If names collide, decide what to
+do with each (docs/backend.md, "Unique player names") and run it again; nothing is changed
+automatically. Then `make deploy-backend` (which runs the same check again) applies the
+migration. The site needs no particular order: old and new pages both work with either backend.
+Rollback: the index can be dropped without data loss; no names were rewritten.
 
 ### Email entry (#29): order and rollback
 

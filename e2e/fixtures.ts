@@ -12,6 +12,12 @@ import { test as base, expect as baseExpect, type APIRequestContext, type Browse
 
 export const API_URL = process.env.FG_API_URL ?? 'http://localhost:56321/functions/v1/game-api';
 
+/**
+ * A player name no other test, worker or run uses (names are unique, #76): `<base>-<12 hex>`,
+ * well within the 40-character limit. Assert on the returned name, never on the base.
+ */
+export const uniqueName = (base: string): string => `${base}-${crypto.randomUUID().replaceAll('-', '').slice(0, 12)}`;
+
 /** "/games/<uuid>/actions" → "/games/:id/actions"; tokens and credentials become ":secret". */
 export function operation(url: string): string {
   const path = new URL(url).pathname.replace(/^.*\/game-api/, '') || '/';

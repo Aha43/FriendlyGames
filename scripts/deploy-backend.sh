@@ -21,6 +21,10 @@ supabase secrets list --project-ref "$ref" | grep -q 'GAME_DB_POOLER_URL' || {
 commit=$(git rev-parse HEAD)
 echo "Deploying $commit to project $ref"
 
+# Player names must be unique before the #76 migration can apply (scripts/prod-name-check.ts).
+# Read-only; collisions or an incomplete check stop here, before anything in production changes.
+node scripts/prod-name-check.ts || { echo "Deploy stopped by the player-name check: nothing was changed." >&2; exit 1; }
+
 # Back up first; stops the deploy if the backup isn't complete (scripts/backup-production.sh).
 scripts/backup-production.sh
 

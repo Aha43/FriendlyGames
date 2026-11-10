@@ -35,9 +35,10 @@ describe('entering an email', () => {
     expect(nameless.body.error.code).toBe('player_not_found');
     expect(await rowsForEmail(email)).toEqual({ players: 0, credentials: 0 });
 
-    const created = await enter(email, 'Newcomer');
+    const name = `Newcomer-${unique()}`;
+    const created = await enter(email, name);
     expect(created.status).toBe(201);
-    expect(created.body).toMatchObject({ player: { displayName: 'Newcomer', email }, created: true });
+    expect(created.body).toMatchObject({ player: { displayName: name, email }, created: true });
     expect(created.body.deviceCredential).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(await rowsForEmail(email)).toEqual({ players: 1, credentials: 1 });
   });
@@ -56,7 +57,7 @@ describe('entering an email', () => {
       expect(phone.credential).not.toBe(harald.credential);
 
       const me = await call('GET', '/me', { credential: phone.credential });
-      expect(me.body.player).toEqual({ id: harald.id, displayName: 'Harald', email: harald.email });
+      expect(me.body.player).toEqual({ id: harald.id, displayName: harald.name, email: harald.email });
       const fromPhone = await call('GET', `/games/${game.id}`, { credential: phone.credential });
       const fromLaptop = await call('GET', `/games/${game.id}`, { credential: harald.credential });
       expect(fromPhone.body.game).toEqual(fromLaptop.body.game);
@@ -135,8 +136,9 @@ describe('entering an email', () => {
   it('is safe to repeat after a lost response, for a new and an existing player', async () => {
     const email = `retry-${unique()}@example.test`;
     // The first reply is "lost"; the browser repeats the same request.
-    const first = await enter(email, 'Retrier');
-    const repeat = await enter(email, 'Retrier');
+    const name = `Retrier-${unique()}`;
+    const first = await enter(email, name);
+    const repeat = await enter(email, name);
     expect([first.status, repeat.status]).toEqual([201, 200]);
     expect(repeat.body.player.id).toBe(first.body.player.id);
 
@@ -181,7 +183,7 @@ describe('invitations from another browser', () => {
     const phone = await secondBrowser(harald);
     const joined = await call('POST', '/invitations/redeem', { credential: phone.credential, body: { token } });
     expect(joined.status).toBe(200);
-    expect(joined.body.game.players.black).toEqual({ id: harald.id, displayName: 'Harald' });
+    expect(joined.body.game.players.black).toEqual({ id: harald.id, displayName: harald.name });
 
     // The same link from his laptop finds the same seat; a stranger can't take it.
     const laptop = await call('POST', '/invitations/redeem', { credential: harald.credential, body: { token } });

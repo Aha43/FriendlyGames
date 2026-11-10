@@ -5,7 +5,7 @@
 .DEFAULT_GOAL := help
 MAKEFLAGS += --no-print-directory
 .PHONY: help setup doctor up down dev phone check test-backend e2e verify build preview version \
-        backup prod-status deploy-backend prod-e2e release
+        backup prod-status prod-name-check deploy-backend prod-e2e release
 
 # Public addresses (no secrets). The API address comes from the linked project unless set.
 SITE_ORIGIN ?= https://friendlygames.arne-halvorsen.workers.dev
@@ -35,6 +35,7 @@ help:
 	@echo "  prod-status     Read-only: what the live site and backend run"
 	@echo "  backup          Back up the production database into backups/ (private, git-ignored)"
 	@echo "  deploy-backend  Back up, migrate and deploy the backend from main; the site deploys on merge"
+	@echo "  prod-name-check Read-only: player names that collide on the linked project (trim, NFC, ignore case)"
 	@echo "  prod-e2e        Browser journeys against the live site; creates throwaway @example.test players"
 	@echo "  release         Tag and publish the merged release commit of package.json's version (no deploy)"
 
@@ -122,6 +123,11 @@ prod-status:
 	else echo "         health check failed: the backend is down, paused or unreachable" >&2; failed=1; fi; \
 	echo "Local    $$(git rev-parse --short HEAD) on $$(git rev-parse --abbrev-ref HEAD) (your checkout, for comparison)"; \
 	exit $$failed
+
+# Read-only production preflight (#76): colliding player names on the linked project, through
+# the Supabase CLI's linked query. Exits non-zero on collisions or an incomplete check.
+prod-name-check:
+	node scripts/prod-name-check.ts
 
 deploy-backend:
 	SITE_ORIGIN=$(SITE_ORIGIN) scripts/deploy-backend.sh

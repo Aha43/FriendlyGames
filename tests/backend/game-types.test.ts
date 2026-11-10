@@ -71,7 +71,7 @@ describe('the types a client asks for', () => {
     await resign(harald, game.id, game.revision);
     const history = await call('GET', '/history', { credential: arne.credential });
     expect(history.body.history).toEqual([
-      expect.objectContaining({ gameType: 'chess', opponent: { id: harald.id, displayName: 'Harald' }, wins: 1 }),
+      expect.objectContaining({ gameType: 'chess', opponent: { id: harald.id, displayName: harald.name }, wins: 1 }),
     ]);
     expect(history.body.history[0].games[0]).toMatchObject({ id: game.id, moveCount: 0, outcome: 'win' });
   });

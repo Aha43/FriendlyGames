@@ -141,6 +141,7 @@ describe('migration rehearsals', () => {
     expect(testFiles(join(ROOT, 'tests/backend/migrations')).sort()).toEqual([
       'tests/backend/migrations/player-credentials.test.ts',
       'tests/backend/migrations/unique-email.test.ts',
+      'tests/backend/migrations/unique-names.test.ts',
     ]);
   });
 });
