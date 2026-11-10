@@ -116,6 +116,7 @@ async function route(request: Request, sql: Sql, config: ApiConfig): Promise<Res
     if (route === 'GET /me') return json(200, { player: await loadMe(sql, player.id) });
     if (route === 'GET /games') return json(200, { games: await loadViews(sql, player.id, types) });
     if (route === 'GET /history') return json(200, { history: await loadHistory(sql, player.id, types) });
+    if (route === 'GET /opponents') return json(200, { opponents: await loadOpponents(sql, player.id) });
     if (route === 'POST /games') {
       const { status, body } = await createGame(sql, player, await readBody(request), types);
       return json(status, body);
@@ -353,8 +354,56 @@ async function loadView(sql: Db, playerId: string, gameId: string, types: string
   return toView(row, readable(row as unknown as Record<string, unknown>, types));
 }
 
+/**
+ * The caller's previous opponents (#72): everyone seated with them in at least one game, of any
+ * type or stored version (a person is listed even when every shared game is one this client cannot
+ * show; those games are never returned or decoded here). Someone only named in an unredeemed
+ * invitation has no seat and is not listed. Aggregates cover only the caller's shared games:
+ * `sharedGames` counts distinct games; `lastSharedGameUpdatedAt` is the latest time any of them
+ * was created, joined or had an action (a move, castle or resignation) — not proof a move was played.
+ * No emails, credentials or tokens; nobody else's relationships.
+ */
+async function loadOpponents(sql: Db, playerId: string) {
+  const rows = await sql<{ id: string; display_name: string; shared_games: number; last_updated: Date }[]>`
+    select o.player_id as id, pl.display_name,
+           count(distinct me.game_id)::int as shared_games,
+           max(g.updated_at) as last_updated
+      from game_participants me
+      join game_participants o on o.game_id = me.game_id and o.player_id <> me.player_id
+      join players pl on pl.id = o.player_id
+      join games g on g.id = me.game_id
+     where me.player_id = ${playerId}
+     group by o.player_id, pl.display_name
+     order by max(g.updated_at) desc, pl.display_name, o.player_id
+     limit 500`;
+  return rows.map((r) => ({
+    id: r.id,
+    displayName: r.display_name,
+    sharedGames: r.shared_games,
+    lastSharedGameUpdatedAt: r.last_updated.toISOString(),
+  }));
+}
+
+/** Who a new game is for: an email to invite (the original path) or a previous opponent (#72). */
+type CreateTarget = { mode: 'email'; email: string } | { mode: 'player'; playerId: string };
+
+function createTarget(body: Record<string, unknown>): CreateTarget {
+  if (body.friendPlayerId !== undefined && body.friendEmail !== undefined) {
+    throw new ApiError(400, 'bad_request', 'Give either "friendEmail" or "friendPlayerId", not both.');
+  }
+  if (body.friendPlayerId === undefined) return { mode: 'email', email: requireEmail(body, 'friendEmail') };
+  const id = body.friendPlayerId;
+  if (typeof id !== 'string' || !UUID.test(id)) throw new ApiError(400, 'bad_request', '"friendPlayerId" must be a player ID.');
+  return { mode: 'player', playerId: id.toLowerCase() };
+}
+
+// The same answer for yourself, an unknown ID and someone you have never played: it never reveals
+// whether an account exists.
+const NOT_AN_OPPONENT = () =>
+  new ApiError(404, 'opponent_not_found', 'You have no earlier game with that player. Invite them by email instead.');
+
 async function createGame(sql: Sql, player: Player, body: Record<string, unknown>, types: string[]) {
-  const friendEmail = requireEmail(body, 'friendEmail');
+  const target = createTarget(body);
   const requestId = body.requestId ?? null;
   if (requestId !== null && (typeof requestId !== 'string' || !UUID.test(requestId))) {
     throw new ApiError(400, 'bad_request', '"requestId" must be a UUID.');
@@ -364,36 +413,67 @@ async function createGame(sql: Sql, player: Player, body: Record<string, unknown
   const adapter = typeof type === 'string' && types.includes(type) ? creatableAdapter(type) : null;
   if (!adapter) throw new ApiError(400, 'unsupported_game_type', 'This game type is not available.');
 
+  const direct = target.mode === 'player';
   const created = await sql.begin(async (tx) => {
-    // A request ID makes creation retryable: a second request with it finds the first game.
+    if (direct) {
+      // Only someone the caller has actually sat at a game with (any type or version), never a
+      // client-supplied name or list. Seats are never removed, so this cannot become untrue later.
+      const [shared] =
+        target.playerId === player.id
+          ? []
+          : await tx`
+              select 1 from game_participants me
+                join game_participants o on o.game_id = me.game_id and o.player_id = ${target.playerId}
+               where me.player_id = ${player.id}
+               limit 1`;
+      if (!shared) throw NOT_AN_OPPONENT();
+    }
+
+    // A request ID makes creation retryable: a second request with it finds the first game. A
+    // direct game starts active with both seated (no invitation, link or acceptance step).
     const [game] = await tx`
       insert into games (game_type, schema_version, status, payload, created_by, create_request_id)
-      values (${adapter.type}, ${adapter.schemaVersion}, 'waiting', ${tx.json(adapter.create() as never)}, ${player.id}, ${requestId})
+      values (${adapter.type}, ${adapter.schemaVersion}, ${direct ? 'active' : 'waiting'},
+              ${tx.json(adapter.create() as never)}, ${player.id}, ${requestId})
       on conflict (created_by, create_request_id) do nothing
       returning id`;
     if (!game) {
-      // The request's identity is its type and friend: the same ID for another of either is a
-      // different game (a client bug), refused rather than answered with the wrong game.
+      // The request's identity is its type, target mode and recipient, all read back from the rows
+      // the first request wrote (no migration): an email game always keeps its invitation and the
+      // invited email; a direct game never has an invitation, and its Black seat is the chosen
+      // player. The same ID for anything else is a different game (a client bug): refused before
+      // anything is modified, rather than answered with the wrong game.
       const [earlier] = await tx`
-        select g.id, g.game_type, g.schema_version, lower(i.invited_email) as invited_email
+        select g.id, g.game_type, g.schema_version, lower(i.invited_email) as invited_email,
+               (i.game_id is not null) as has_invitation,
+               (select b.player_id from game_participants b where b.game_id = g.id and b.seat = 'black') as black_id
           from games g
           left join game_invitations i on i.game_id = g.id
          where g.created_by = ${player.id} and g.create_request_id = ${requestId}`;
-      if (earlier.game_type !== adapter.type || earlier.invited_email !== friendEmail) {
+      const sameTarget = direct
+        ? !earlier.has_invitation && earlier.black_id === target.playerId
+        : earlier.has_invitation && earlier.invited_email === target.email;
+      if (earlier.game_type !== adapter.type || !sameTarget) {
         throw new ApiError(409, 'request_id_reused', 'This request ID was already used to create a different game.');
       }
       // Same type, but possibly a stored version this server or client cannot read: refuse before
       // touching its invitation, as POST /games/:id/invitation does.
       readable(earlier, types);
       // The first response (and its token) may have been lost: issue a fresh link if still unused.
-      return { gameId: earlier.id as string, token: await reissueInvitation(tx, earlier.id), duplicate: true };
+      // A direct game has no invitation to renew.
+      return { gameId: earlier.id as string, token: direct ? null : await reissueInvitation(tx, earlier.id), duplicate: true };
     }
 
-    const token = newSecret();
     await tx`insert into game_participants (game_id, player_id, seat) values (${game.id}, ${player.id}, 'white')`;
+    if (direct) {
+      // Creator White, chosen opponent Black, White to move: as every new game.
+      await tx`insert into game_participants (game_id, player_id, seat) values (${game.id}, ${target.playerId}, 'black')`;
+      return { gameId: game.id as string, token: null, duplicate: false };
+    }
+    const token = newSecret();
     await tx`
       insert into game_invitations (game_id, token_hash, seat, invited_email)
-      values (${game.id}, decode(${await hashHex(token)}, 'hex'), 'black', ${friendEmail})`;
+      values (${game.id}, decode(${await hashHex(token)}, 'hex'), 'black', ${target.email})`;
     return { gameId: game.id as string, token, duplicate: false };
   });
 
