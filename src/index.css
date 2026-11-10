@@ -1233,6 +1233,7 @@ h2 {
 .matchup {
   margin: 0;
   font-size: 0.92rem;
+  overflow-wrap: anywhere; /* a long unbroken name must not push past a 320px card */
 }
 
 .opponents-failed .text-button { padding: 0; }

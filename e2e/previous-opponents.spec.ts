@@ -130,3 +130,36 @@ test('Invite someone new stays available next to known names', async ({ openCont
   await expect(page.getByText('Your Chess game is ready. You play White.')).toBeVisible();
   await expect(page.getByLabel('Invitation link', { exact: true })).toHaveValue(/#\/join\/[A-Za-z0-9_-]{43}$/);
 });
+
+test('a long unbroken name wraps inside the picker and the matchup line on a 320px phone', async ({ openContext, api }, testInfo) => {
+  const ARNE = uniqueName('Arne');
+  // 40 characters, the longest name allowed, with no space or hyphen to break at.
+  const LONG = `Wilbursjefesen${crypto.randomUUID().replaceAll('-', '')}`.slice(0, 40);
+  const run = `${Date.now()}-${testInfo.project.name}`;
+  const page = await (await openContext('arne')).newPage();
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto('/');
+  await onboard(page, ARNE, `arne-${run}@example.test`);
+  await expect(page.getByRole('heading', { name: 'Your games' })).toBeVisible();
+  const identity = JSON.parse((await page.evaluate(() => localStorage.getItem('friendlygames.identity')))!);
+  const { invitation } = await api('POST', '/games?types=chess', {
+    credential: identity.credential,
+    data: { friendEmail: `long-${run}@example.test`, type: 'chess' },
+    expect: 201,
+  });
+  const friend = await api('POST', '/players', { data: { email: `long-${run}@example.test`, displayName: LONG }, expect: 201 });
+  await api('POST', '/invitations/redeem?types=chess', { credential: friend.deviceCredential, data: { token: invitation.token }, expect: 200 });
+
+  await openLobby(page);
+  await page.getByRole('radio', { name: LONG, exact: true }).check();
+  const matchup = page.getByText(`You play White. ${LONG} plays Black`);
+  await expect(matchup).toBeVisible();
+  const card = page.locator('section', { has: page.getByRole('heading', { name: 'Start a game' }) });
+  const cardBox = (await card.boundingBox())!;
+  for (const element of [matchup, page.locator('.opponent-option', { hasText: LONG })]) {
+    expect(await element.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    const box = (await element.boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+});
