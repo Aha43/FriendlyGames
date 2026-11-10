@@ -141,7 +141,8 @@ release publication or milestone closing. Feature changes go under Unreleased;
 Delivered in order: #70 (PR #75), #76 (PR #77), #72 (PR #78), #73 (PR #79). The backend went
 first each time: the name constraint at `75a0692`, then the previous-opponent backend at
 `1c0850a`, both deployed by the owner before #73 merged. The live site runs `32ba3f0`, and the
-backend reports `1c0850a`. Version 0.3.0 and its changelog section are prepared in the #74
+backend reports `1c0850a`. After the rollout the owner opened the ongoing game with Harald
+on the live site: board and move history intact. Version 0.3.0 and its changelog section are prepared in the #74
 release PR, with the evidence and limits there and in [deployment.md](deployment.md).
 
 - **Rematch, unchanged:** same type, colours swapped, one rematch per game, no invitation. This
