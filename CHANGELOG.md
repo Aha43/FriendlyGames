@@ -6,6 +6,13 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
+### Development
+
+- Yatzy rules and saved-format proof for Sprint 7: shared scoring, Forced/Free, banked throws,
+  turn order for two to four players, ranking with the token tiebreak, and a proposed schema
+  change rehearsed over existing chess records ([decision 0002](docs/decisions/0002-yatzy-format.md)).
+  Nothing is enabled yet (#84).
+
 ## v0.3.0 — Play again with friends (2026-11-10)
 
 Sprint 6. The release date is when this version was prepared; the `v0.3.0` tag marks the
