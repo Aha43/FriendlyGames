@@ -7,9 +7,10 @@
 - The owner decides product tradeoffs and approves shipping.
 
 Read README.md, docs/product-brief.md, docs/roadmap.md, docs/development.md and
-the active issue/sprint before implementation. The proposed active route is Sprint 6:
-docs/sprint-06.md and docs/game-types.md, after its planning PR is merged. Sprint 5
-and its reviewed engine/format proof remain design records for the two game types.
+the active issue/sprint before implementation. The proposed next route is
+Sprint 7 in docs/sprint-07.md after its planning PR is merged and scope is
+confirmed. docs/game-types.md records the deployed chess-family boundary.
+Review the Yatzy rules and save-format proof before downstream implementation.
 
 ## Working rules
 
@@ -23,9 +24,10 @@ and its reviewed engine/format proof remain design records for the two game type
   Do not repair live game data as an incidental part of a code fix.
 - Implement the smallest complete result that meets the issue's acceptance criteria.
 - Preserve the friendly park atmosphere while keeping the board readable and usable.
-- The selected types are standard chess and Fischer Random (Chess960). Build the
-  small shared boundary needed by these two, not a generic plugin engine. Teams,
-  ratings, chat and verified authentication require separate owner-selected work.
+- Preserve standard chess and Fischer Random (Chess960). The proposed Sprint 7
+  addition is Yatzy. Extend the shared boundary only as needed for its reviewed
+  rules and player counts. Teams, ratings, chat and verified authentication
+  require separate owner-selected work.
 - Keep game rules separate from presentation and persistence.
 - Validate production moves on the server and use revision-based atomic updates.
 - Preserve complete chess move history; a current board position alone is insufficient.

@@ -1,11 +1,10 @@
 # Development workflow
 
-The [roadmap](roadmap.md) names version destinations. The active route is
-proposed [Sprint 6](sprint-06.md), v0.3.0 — Play again with friends. Merge its
-planning PR before implementation. Sprint 5 and its reviewed engine/format
-decision remain the baseline; this sprint improves existing game flows.
-See [game-type boundaries](game-types.md). Keep the process small enough to use
-between moves of a real game.
+The [roadmap](roadmap.md) names version destinations. The proposed next route is
+[Sprint 7](sprint-07.md), v0.4.0 — Yatzy with friends. Review and merge its
+planning PR before implementation. Sprint 5 records the
+[deployed chess-family boundary](game-types.md), and Sprint 6 records the
+previous-opponent picker. Sprint 7 starts with a rules and save-format proof.
 
 ## Planning and implementation
 

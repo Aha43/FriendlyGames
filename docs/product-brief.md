@@ -66,11 +66,11 @@ The rules engine must support actual Chess960 castling; shuffled placement alone
 does not meet the owner's request. Preserve existing standard-chess games through
 compatible rollout. More game types and different player counts remain future work.
 
-## Next selected improvement — play again with friends
+## Delivered — play again with friends
 
 Owner direction, clarified 2026-11-08: starting a separate new game with a
 previous opponent should not require typing email or sharing a new invitation.
-The owner found the existing rematch button; that flow is retained unchanged. Proposed [Sprint 6](sprint-06.md), v0.3.0, preserves the existing
+The owner found the existing rematch button; that flow is retained unchanged. [Sprint 6](sprint-06.md), released as v0.3.0, preserves the existing
 same-type, colour-swapping rematch. A new game may instead select any previously
 seated opponent (including an ongoing game), choose a type, and directly seat
 both players. The creator plays White. Email/link invitations remain for someone
@@ -79,6 +79,13 @@ NFC, then compare ignoring case), enforced during signup without changing stable
 player IDs or email-entry access. Existing-name collisions require an owner
 decision, never automatic renaming. No friend-request system, global search or
 verified authentication is added.
+
+## Proposed next game — Yatzy
+
+The owner plays Yatzy with friends and wants automatic scoring. The
+[Sprint 7 proposal](sprint-07.md) adds a five-dice scorecard, Forced and Free
+modes, banked throws, and shared tables for two to four players. Prove the rules
+and how a group game is saved before extending the deployed chess boundary.
 
 ## Technical and delivery direction
 
@@ -89,7 +96,7 @@ review practices; its desktop packaging machinery is not needed here.
 
 ## Deferred
 
-Verified authentication, automatic email invitations, teams, games beyond the two selected types,
+Verified authentication, automatic email invitations, teams, further game types beyond the current proposal,
 ratings, matchmaking, chat, clocks and formal seasons. Licensing and public
 visibility changes remain owner decisions; the current public source is
 GPL-3.0-or-later and contains no production backups or secrets by design.
