@@ -325,17 +325,21 @@ interface GameRow {
 }
 
 const seatsValid = (row: GameRow, adapter: GameTypeAdapter) =>
-  adapter.seatsValid(row.payload, row.participants.map((p) => ({ seat: p.seat, playerId: p.id })), row.created_by);
+  adapter.seatsValid(row.payload, row.participants.map((p) => ({ seat: p.seat, playerId: p.id })), row.created_by, row.status);
 
 /** Every seat of a game, for the seat check where the game is not loaded as a view. */
 const ROSTER = (sql: Db) => sql`
   (select json_agg(json_build_object('seat', p.seat, 'playerId', p.player_id))
      from game_participants p where p.game_id = g.id)`;
 
-/** The adapter for a stored game the client can read and whose seats fit it; otherwise an error. */
+/**
+ * The adapter for a stored game the client can read and whose seats fit it; otherwise an error.
+ * `row` carries game_type, schema_version, payload, created_by, status and roster.
+ */
 function playable(row: Record<string, unknown>, types: string[]): GameTypeAdapter {
   const adapter = readable(row, types);
-  if (!adapter.seatsValid(row.payload, (row.roster ?? []) as SeatedPlayer[], row.created_by as string)) throw INVALID_SEATS();
+  const roster = (row.roster ?? []) as SeatedPlayer[];
+  if (!adapter.seatsValid(row.payload, roster, row.created_by as string, row.status as GameView['status'])) throw INVALID_SEATS();
   return adapter;
 }
 
@@ -648,7 +652,7 @@ async function reissueInvitation(tx: TransactionSql, gameId: string): Promise<st
 async function regenerateInvitation(sql: Sql, player: Player, gameId: string, types: string[]) {
   if (!UUID.test(gameId)) throw new ApiError(404, 'game_not_found', 'Game not found.');
   const [game] = await sql`
-    select g.created_by, g.game_type, g.schema_version, g.payload, ${ROSTER(sql)} as roster from games g
+    select g.created_by, g.game_type, g.schema_version, g.payload, g.status, ${ROSTER(sql)} as roster from games g
       join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
      where g.id = ${gameId}`;
   if (!game) throw new ApiError(404, 'game_not_found', 'Game not found.');
@@ -672,13 +676,15 @@ async function redeemInvitation(sql: Sql, player: Player, body: Record<string, u
   const gameId = await sql.begin(async (tx) => {
     // Locking the invitation serialises competing claims: exactly one can take the seat.
     const [invitation] = await tx`
-      select i.game_id, i.seat, i.redeemed_by, g.game_type, g.schema_version, g.payload, g.created_by,
+      select i.game_id, i.seat, i.redeemed_by, g.game_type, g.schema_version, g.payload, g.created_by, g.status,
              ${ROSTER(tx)} as roster
         from game_invitations i join games g on g.id = i.game_id
        where i.token_hash = decode(${tokenHash}, 'hex')
          for update of i`;
     if (!invitation) throw new ApiError(404, 'invitation_not_found', 'Invitation not found.');
-    // Never seat a player in a game their client cannot show, or whose seats do not fit it.
+    // Refused before any write: a game the client cannot show, a game that has no invitations
+    // (a table seats everyone when it is created), or one whose seats do not fit it.
+    if (readable(invitation, types).family !== 'chess') throw NOT_FOR_THIS_GAME('An invitation');
     playable(invitation, types);
     if (invitation.redeemed_by === player.id) return invitation.game_id as string; // retry by the same player
     if (invitation.redeemed_by) throw new ApiError(409, 'invitation_used', 'This invitation has already been used.');
@@ -743,7 +749,7 @@ async function loadHistory(sql: Sql, playerId: string, asked: string[]): Promise
     const adapter = adapterFor(row.game_type, row.schema_version);
     if (!adapter || adapter.family !== 'chess') continue; // unreadable here: left out, left untouched
     // Seats that do not fit the game (e.g. a third player): never counted towards any tally.
-    if (!adapter.seatsValid(row.payload, row.roster as SeatedPlayer[], row.created_by)) continue;
+    if (!adapter.seatsValid(row.payload, row.roster as SeatedPlayer[], row.created_by, 'finished')) continue;
     const key = `${row.game_type}:${row.opponent_id}`;
     let entry = byOpponent.get(key);
     if (!entry) {

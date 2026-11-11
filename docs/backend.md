@@ -304,14 +304,15 @@ create tables. The web client does not yet (#86).
   finished game. `GET /history` lists finished tables under `tables`, each with its own
   ranking. They never enter the per-opponent chess tallies under `history`, which stay pairwise
   and chess-family only.
-- **Not for tables**: resigning, "Play again" and invitation links get `422
-  unsupported_action`. A table someone stops playing stays in progress (accepted for v0.4.0).
+- **Not for tables**: resigning, "Play again", and renewing or redeeming an invitation get
+  `422 unsupported_action`, before anything is written. A table someone stops playing stays in progress (accepted for v0.4.0).
 - **Previous opponents**: everyone seated at a table becomes a previous opponent of everyone
   else there (owner's decision), so two guests may afterwards start chess, Fischer Random or a
   table with each other.
 - **Seats are validated** wherever a game is read, played, counted or continued: lists, single
   reads, actions, history tallies, finished tables, rematches and invitation renewal and
-  redeem. Chess-family games hold only `white`/`black`. A table needs a record the rules can
+  redeem. A chess-family game holds only White while its invitation is open (`waiting`) and
+  exactly White and Black once active or finished. A table needs a record the rules can
   replay, exactly `p1`…`pN` for its `N` players, and its creator (the host) in `p1`. A game that
   does not fit (only possible by writing rows outside this API) is left out of lists and
   tallies and gets `409 invalid_seats` on direct requests, untouched. One such row never breaks

@@ -24,6 +24,8 @@ export type ChessSeat = 'white' | 'black';
 export type TableSeat = 'p1' | 'p2' | 'p3' | 'p4';
 export type Seat = ChessSeat | TableSeat;
 
+export type GameStatus = 'waiting' | 'active' | 'finished';
+
 /** One row of game_participants. */
 export interface SeatedPlayer {
   seat: string;
@@ -62,7 +64,7 @@ export interface GameTypeAdapter {
    * kind of seats, their count and order, and the right player in the first seat. A game that
    * fails is never shown, played, counted or continued (its rows are left untouched).
    */
-  seatsValid(payload: unknown, roster: SeatedPlayer[], createdBy: string): boolean;
+  seatsValid(payload: unknown, roster: SeatedPlayer[], createdBy: string, status: GameStatus): boolean;
   /** The seat to move in a saved payload; null when nobody is to move (a finished table). */
   turn(payload: unknown): Seat | null;
   moveCount(payload: unknown): number;
@@ -102,11 +104,14 @@ const ILLEGAL_MOVE = { status: 422, code: 'illegal_move', message: 'That move is
 const record = (payload: unknown): GameRecord => ({ schemaVersion: 1, ...(payload as ChessPayload) });
 const chessTurn = (payload: unknown): Seat => (replay(record(payload)).turn() === 'w' ? 'white' : 'black');
 
-/** Chess-family seats: White and/or Black (Black is empty while an invitation is open). */
-const chessSeatsValid = (_payload: unknown, roster: SeatedPlayer[]) =>
-  roster.length <= 2 &&
-  roster.every(({ seat }) => seat === 'white' || seat === 'black') &&
-  new Set(roster.map(({ seat }) => seat)).size === roster.length;
+/**
+ * Chess-family seats by status: while the invitation is open (`waiting`) only the creator's
+ * White seat; once active or finished, exactly White and Black.
+ */
+const chessSeatsValid = (_payload: unknown, roster: SeatedPlayer[], _createdBy: string, status: GameStatus) => {
+  const seats = roster.map(({ seat }) => seat).sort();
+  return status === 'waiting' ? seats.join() === 'white' : seats.join() === 'black,white';
+};
 
 export const chess: GameTypeAdapter = {
   type: 'chess',
@@ -253,8 +258,9 @@ export function yatzyAdapter(roll: (count: number) => yatzyRules.Die[] = rollDic
     },
     // A record the rules can replay (so two to four players), seated exactly p1..pN for its N
     // players, with the host (the creator) in p1: turn order starts with the host.
-    seatsValid(payload, roster, createdBy) {
-      if (typeof payload !== 'object' || payload === null) return false;
+    seatsValid(payload, roster, createdBy, status) {
+      // Everyone is seated when a table is created: it is never waiting for anyone.
+      if (status === 'waiting' || typeof payload !== 'object' || payload === null) return false;
       const state = yatzyRules.replay(yatzyRecord(payload));
       if ('error' in state || roster.length !== state.players.length) return false;
       const sorted = [...roster].sort((a, b) => a.seat.localeCompare(b.seat));

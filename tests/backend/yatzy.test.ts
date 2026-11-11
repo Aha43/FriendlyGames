@@ -869,6 +869,80 @@ describe('seats that do not fit the game', () => {
     expect((await call('POST', `/games/${good}/rematch${ALL}`, { credential: a.credential })).status).toBe(201);
   });
 
+  it('an active or finished chess game needs both seats: no rematch from a one-seat game (review of 9e108d5)', async () => {
+    const { host, guests } = await friends(1);
+    const guest = guests[0];
+    const chessGame = async (status: string, seats: [TestPlayer, string][]) => {
+      const finished = status === 'finished';
+      const [game] = await sql`
+        insert into games (game_type, schema_version, status, result, termination, revision, payload, created_by)
+        values ('chess', 1, ${status}, ${finished ? 'white' : null}, ${finished ? 'resignation' : null}, 1, ${sql.json(chessPayload as never)}, ${host.id})
+        returning id`;
+      for (const [p, s] of seats) await seat(game.id, p, s);
+      return game.id as string;
+    };
+    const historyBefore = (await call('GET', `/history${ALL}`, { credential: host.credential })).body.history;
+    for (const [status, seats] of [
+      ['finished', [[host, 'white']]],
+      ['finished', [[host, 'black']]],
+      ['active', [[host, 'white']]],
+      ['waiting', [[host, 'white'], [guest, 'black']]],
+    ] as [string, [TestPlayer, string][]][]) {
+      const id = await chessGame(status, seats);
+      const label = `${status} ${seats.map(([, s]) => s).join()}`;
+      const rematch = await call('POST', `/games/${id}/rematch${ALL}`, { credential: host.credential });
+      expect(rematch.status, label).toBe(409);
+      expect(rematch.body.error.code, label).toBe('invalid_seats');
+      expect((await sql`select count(*)::int as n from games where rematch_of = ${id}`)[0].n, label).toBe(0);
+      expect((await read(host, id)).body.error.code, label).toBe('invalid_seats');
+      expect((await act(host, id, 1, { type: 'move', from: 'e2', to: 'e4' })).body.error.code, label).toBe('invalid_seats');
+      expect((await call('GET', `/games${ALL}`, { credential: host.credential })).body.games.map((g: { id: string }) => g.id), label).not.toContain(id);
+    }
+    expect((await call('GET', `/history${ALL}`, { credential: host.credential })).body.history).toEqual(historyBefore);
+
+    // Open invitations (White alone, waiting) and full games keep working, including a rematch
+    // started by the player who had Black, who then plays White.
+    const open = await call('POST', `/games${ALL}`, { credential: host.credential, body: { friendEmail: `open-${randomUUID()}@example.test` } });
+    expect(open.status).toBe(201);
+    expect((await read(host, open.body.game.id)).body.game).toMatchObject({ status: 'waiting', players: { white: { id: host.id }, black: null } });
+    expect((await call('POST', `/games/${open.body.game.id}/invitation${ALL}`, { credential: host.credential })).status).toBe(200);
+    const full = await chessGame('finished', [[host, 'white'], [guest, 'black']]);
+    const rematch = await call('POST', `/games/${full}/rematch${ALL}`, { credential: guest.credential });
+    expect(rematch.status).toBe(201);
+    expect(rematch.body.game).toMatchObject({ status: 'active', players: { white: { id: guest.id }, black: { id: host.id } } });
+    expect((await read(host, rematch.body.game.id)).status).toBe(200);
+  });
+
+  it('an invitation attached to a table is refused before anyone is seated or it is used (review of 9e108d5)', async () => {
+    const { host, guests, game } = await table(1);
+    const outsider = await newPlayer('Outsider');
+    const token = 'A'.repeat(43);
+    const run = randomUUID().replaceAll('-', '');
+    const real = `${run}${token}`.slice(0, 43);
+    await sql`
+      insert into game_invitations (game_id, token_hash, seat, invited_email)
+      values (${game.id}, sha256(convert_to(${real}, 'UTF8')), 'black', ${outsider.email})`;
+    const roster = () => sql`select player_id, seat from game_participants where game_id = ${game.id} order by seat`;
+    const invitation = () => sql`select token_hash, seat, redeemed_at, redeemed_by, created_at from game_invitations where game_id = ${game.id}`;
+    const [rosterBefore, invitationBefore] = [await roster(), await invitation()];
+
+    for (const player of [outsider, guests[0], host]) {
+      const refused = await call('POST', `/invitations/redeem${ALL}`, { credential: player.credential, body: { token: real } });
+      expect(refused.status).toBe(422);
+      expect(refused.body.error.code).toBe('unsupported_action');
+    }
+    // A chess-only client is told the game needs a newer version; nothing is written either.
+    const old = await call('POST', `/invitations/redeem${CHESS}`, { credential: outsider.credential, body: { token: real } });
+    expect(old.body.error.code).toBe('unsupported_game');
+    expect(await roster()).toEqual(rosterBefore);
+    expect(await invitation()).toEqual(invitationBefore);
+    expect(invitationBefore[0].redeemed_by).toBeNull();
+    // The table is still valid and playable for those seated, and unknown to the outsider.
+    expect((await throwDice(host, game.id, 0)).status).toBe(200);
+    expect((await read(guests[0], game.id)).status).toBe(200);
+    expect((await read(outsider, game.id)).status).toBe(404);
+  });
+
   it('a finished table stays in the history however many newer unfinished tables there are (review of 4fb7c9f)', async () => {
     const { host, guests } = await friends(1);
     const finished = await storedTable([host, guests[0]], completeGame('free', 2));

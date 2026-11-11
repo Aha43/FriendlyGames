@@ -2,7 +2,7 @@
 // score, what it reads from a request, and fair server dice.
 import { describe, expect, it } from 'vitest';
 import type { Die } from '../_shared/yatzy/rules.ts';
-import { rollDice, yatzyAdapter, yatzyOptions } from './gameTypes.ts';
+import { chess, chess960, rollDice, yatzyAdapter, yatzyOptions } from './gameTypes.ts';
 
 const fixed = (dice: Die[]) => (count: number) => dice.slice(0, count);
 
@@ -64,19 +64,37 @@ describe('the Yatzy adapter', () => {
     const adapter = yatzyAdapter();
     const three = adapter.create(yatzyOptions('forced', 3));
     const roster = (...seats: string[]) => seats.map((seat) => ({ seat, playerId: seat === 'p1' ? 'host' : `guest-${seat}` }));
-    expect(adapter.seatsValid(three, roster('p2', 'p1', 'p3'), 'host')).toBe(true);
+    expect(adapter.seatsValid(three, roster('p2', 'p1', 'p3'), 'host', 'active')).toBe(true);
     for (const seats of [['p1', 'p2'], ['p1', 'p2', 'p4'], ['p1', 'p2', 'p3', 'p4'], ['white', 'black', 'p3'], ['p1', 'p1', 'p2'], []]) {
-      expect(adapter.seatsValid(three, roster(...seats), 'host'), seats.join()).toBe(false);
+      expect(adapter.seatsValid(three, roster(...seats), 'host', 'active'), seats.join()).toBe(false);
     }
     // The host is not in the first seat: a guest would throw first.
-    expect(adapter.seatsValid(three, roster('p1', 'p2', 'p3'), 'guest-p2')).toBe(false);
+    expect(adapter.seatsValid(three, roster('p1', 'p2', 'p3'), 'guest-p2', 'active')).toBe(false);
     // Records the rules cannot replay never count as seated correctly, whatever the seats.
     for (const payload of [{ mode: 'free', log: [] }, { mode: 'free', players: 1, log: [] }, { mode: 'fast', players: 2, log: [] }, { mode: 'free', players: 2, log: [null] }, null, 'yatzy']) {
-      expect(adapter.seatsValid(payload, roster('p1', 'p2').slice(0, (payload as { players?: number } | null)?.players ?? 2), 'host'), JSON.stringify(payload)).toBe(false);
+      expect(adapter.seatsValid(payload, roster('p1', 'p2').slice(0, (payload as { players?: number } | null)?.players ?? 2), 'host', 'active'), JSON.stringify(payload)).toBe(false);
     }
+    expect(adapter.seatsValid(three, roster('p1', 'p2', 'p3'), 'host', 'finished')).toBe(true);
+    expect(adapter.seatsValid(three, roster('p1', 'p2', 'p3'), 'host', 'waiting')).toBe(false);
     expect(yatzyOptions('free', 1)).toBeNull();
     expect(yatzyOptions('free', 5)).toBeNull();
     expect(yatzyOptions('fast', 2)).toBeNull();
+  });
+
+  it('chess seats depend on the status: White alone while waiting, both once active or finished', () => {
+    const seats = (...names: string[]) => names.map((seat) => ({ seat, playerId: seat }));
+    for (const adapter of [chess, chess960]) {
+      expect(adapter.seatsValid(null, seats('white'), 'white', 'waiting')).toBe(true);
+      expect(adapter.seatsValid(null, seats('black', 'white'), 'white', 'active')).toBe(true);
+      expect(adapter.seatsValid(null, seats('white', 'black'), 'black', 'finished')).toBe(true); // a rematch created by Black
+      for (const [status, names] of [
+        ['waiting', []], ['waiting', ['black']], ['waiting', ['white', 'black']],
+        ['active', ['white']], ['active', ['black']], ['active', []],
+        ['finished', ['white']], ['finished', ['black']], ['finished', ['white', 'black', 'p3']], ['finished', ['white', 'p2']],
+      ] as const) {
+        expect(adapter.seatsValid(null, seats(...names), 'white', status), `${status} ${names.join()}`).toBe(false);
+      }
+    }
   });
 
   it('ends a table as scored when the last card is full', () => {
