@@ -1,8 +1,9 @@
 // Yatzy save-format rehearsal (#84), against the real local backend. Inside a rolled-back
 // transaction: legacy chess and Chess960 records are made through today's API, the proposed
 // schema change (supabase/proposals/yatzy_games.sql) is applied over them, and Yatzy tables are
-// stored in the proposed shape. Today's API is also the supported rollback target once Yatzy
-// tables exist, so every check below runs against it unchanged.
+// stored in the proposed shape. Today's API is the live backend `1c0850a`, the supported rollback
+// target once Yatzy tables exist (never before the #53 dispatcher, which would replay Chess960 as
+// chess), so every check below runs against it unchanged.
 import { readFileSync } from 'node:fs';
 import type { Sql, TransactionSql } from 'postgres';
 import { afterAll, describe, expect, it } from 'vitest';

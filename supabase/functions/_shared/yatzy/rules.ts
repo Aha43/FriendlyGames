@@ -239,17 +239,25 @@ function step(state: YatzyState, entry: LogEntry): RuleError | null {
   return { code: 'bad_entry', message: 'Unknown Yatzy action.' };
 }
 
-/** Rebuilds the state from a saved record, checking every entry. */
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * Rebuilds the state from a saved record, checking the record and every entry. Anything malformed
+ * (read from storage or sent by a client) gives a structured error; replay never throws.
+ */
 export function replay(record: YatzyRecord): YatzyState | { error: RuleError } {
-  if (record?.schemaVersion !== 1 || !Array.isArray(record.log)) return fail('bad_record', 'Not a Yatzy record.');
-  let state: YatzyState;
-  try {
-    state = startState(record);
-    if (record.players < MIN_PLAYERS || record.players > MAX_PLAYERS) throw new RangeError();
-  } catch {
-    return fail('bad_record', 'Not a Yatzy record.');
+  const raw: unknown = record;
+  if (!isObject(raw) || raw.schemaVersion !== 1) return fail('bad_record', 'Not a Yatzy record.');
+  if (raw.mode !== 'forced' && raw.mode !== 'free') return fail('bad_record', 'Unknown Yatzy mode.');
+  const players = raw.players;
+  if (typeof players !== 'number' || !Number.isInteger(players) || players < MIN_PLAYERS || players > MAX_PLAYERS) {
+    return fail('bad_record', `A Yatzy table seats ${MIN_PLAYERS}–${MAX_PLAYERS} players.`);
   }
+  if (!Array.isArray(raw.log)) return fail('bad_record', 'Not a Yatzy record.');
+  const state = startState(record);
   for (const [i, entry] of record.log.entries()) {
+    if (!isObject(entry)) return fail('bad_entry', `Entry ${i}: Unknown Yatzy action.`);
     const error = step(state, entry);
     if (error) return fail(error.code, `Entry ${i}: ${error.message}`);
   }

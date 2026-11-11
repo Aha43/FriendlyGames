@@ -336,4 +336,39 @@ describe('saving and resuming', () => {
     expect(replay({ ...record, schemaVersion: 2 } as unknown as YatzyRecord)).toMatchObject({ error: { code: 'bad_record' } });
     expect(replay({ ...record, log: [{ t: 'score', row: 'chance' }] })).toMatchObject({ error: { code: 'not_thrown' } });
   });
+
+  it('rejects malformed records and entries with a structured error, never throwing', () => {
+    const good = play(newRecord('free', 2), [{ throw: [1, 2, 3, 4, 5] }]);
+    const malformed: [string, unknown, string][] = [
+      ['no record', null, 'bad_record'],
+      ['a string', 'yatzy', 'bad_record'],
+      ['an array', [], 'bad_record'],
+      ['unknown mode', { ...good, mode: 'random' }, 'bad_record'],
+      ['missing mode', { ...good, mode: undefined }, 'bad_record'],
+      ['players as text', { ...good, players: '3' }, 'bad_record'],
+      ['fractional players', { ...good, players: 2.5 }, 'bad_record'],
+      ['one player', { ...good, players: 1 }, 'bad_record'],
+      ['five players', { ...good, players: 5 }, 'bad_record'],
+      ['NaN players', { ...good, players: Number.NaN }, 'bad_record'],
+      ['missing players', { ...good, players: undefined }, 'bad_record'],
+      ['log not a list', { ...good, log: {} }, 'bad_record'],
+      ['a null entry', { ...good, log: [null] }, 'bad_entry'],
+      ['a null entry after a throw', { ...good, log: [...good.log, null] }, 'bad_entry'],
+      ['a text entry', { ...good, log: ['throw'] }, 'bad_entry'],
+      ['an unknown entry', { ...good, log: [{ t: 'shuffle' }] }, 'bad_entry'],
+      ['a throw without dice', { ...good, log: [{ t: 'throw', keep: [] }] }, 'bad_dice'],
+      ['a throw without keep', { ...good, log: [{ t: 'throw', dice: [1, 2, 3, 4, 5] }] }, 'bad_keep'],
+      ['a score of no row', { ...good, log: [...good.log, { t: 'score', row: null }] }, 'bad_row'],
+    ];
+    for (const [label, record, code] of malformed) {
+      let result: ReturnType<typeof replay> | undefined;
+      expect(() => (result = replay(record as YatzyRecord)), label).not.toThrow();
+      expect(result, label).toMatchObject({ error: { code } });
+    }
+    // The same guard protects throwing and scoring on a malformed record.
+    expect(applyThrow({ ...good, mode: 'random' } as unknown as YatzyRecord, [], roll([1, 1, 1, 1, 1]))).toMatchObject({
+      error: { code: 'bad_record' },
+    });
+    expect(applyScore({ ...good, log: [null] } as unknown as YatzyRecord, 'chance')).toMatchObject({ error: { code: 'bad_entry' } });
+  });
 });

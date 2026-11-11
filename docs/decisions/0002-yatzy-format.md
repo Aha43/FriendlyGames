@@ -43,12 +43,14 @@ The module has these parts:
 - `applyThrow(record, keep, roll)`: `roll(n)` supplies `n` new dice, while kept positions keep
   their dice
 - `applyScore(record, row)`
-- `replay(record)`: checks every entry and rejects tampered records rather than guessing; for
-  example, a kept die that changed or a seventh face fails
+- `replay(record)`: checks the record and every entry and rejects bad input with a structured
+  error rather than guessing or throwing. That covers a tampered log (a kept die that changed,
+  a seventh face) and a malformed record (an unknown mode, a player count that isn't a whole
+  number from 2 to 4, a missing or null entry).
 - `openRows`, `throwCost` and `preview`: what the table may show before a commit
 - `standings` and `winners`
 
-The rules are deterministic for given dice, and `roll` is the only source of chance. 60 tests
+The rules are deterministic for given dice, and `roll` is the only source of chance. 61 tests
 in `rules.test.ts` cover:
 - every row, with zero entries, five equal dice, straights and full house edge cases
 - the bonus at 63 and not at 62
@@ -59,6 +61,7 @@ in `rules.test.ts` cover:
 - 2, 3 and 4 players
 - a tie on points broken by tokens, and joint winners on both
 - a mid-turn resume from a JSON round trip, and a finished game rebuilt from its record alone
+- tampered and malformed records, rejected without throwing
 
 Deterministic fixtures live in `fixtures.ts`, which is test code only.
 
@@ -103,7 +106,10 @@ These stay unchanged:
 
 Nothing in the database checks that a seat matches its table's type (chess seats on chess,
 `p1`–`p4` on Yatzy). The API enforces that when it seats players, as it already does for the
-White/Black pair. A trigger could add the check in the database if the review wants that.
+White/Black pair. Codex's review of #84 recommends keeping it there. #85 validates each seat's
+type, the seat count against `players`, and the order (`p1` the host, then `p2`… with no gaps)
+in the API, with integration tests. A trigger stays possible later if that proves
+insufficient.
 
 ## API for #85 (proposed)
 
@@ -165,11 +171,18 @@ transaction:
    notation that doesn't fit, a resign with notation, and an unknown result are all refused. A
    finished table is frozen like any finished game.
 
-Because step 3 onward runs against **today's API**, the same test shows the rollback: with
-Yatzy records present, the function can go back to the #72 backend (`1c0850a`) or anything
-before #85. Chess games, history, invitations and direct starts keep working there, and Yatzy
-is simply unavailable, its records untouched. The migration is forward-only and harmless to
-those backends. Older clients ask only for chess types and are unaffected.
+Step 3 onward runs against today's API, the live backend `1c0850a` (#72). So the same test is
+the rollback evidence: **once Yatzy records exist, the supported function rollback is to
+`1c0850a`.** There, chess games, history, invitations and direct starts keep working. Yatzy is
+simply unavailable, its records untouched and refused with `422`. Keep the migration: it is
+forward-only and harmless to `1c0850a`. Older clients ask only for chess types and are
+unaffected.
+
+Other targets are not rehearsed. The existing Chess960 rollback limit still applies on top of
+this: never roll the backend back before the #53 dispatcher, because a pre-#53 backend would
+replay Chess960 records with orthodox rules
+([game-types.md](../game-types.md#rollout-and-rollback)). It would not leave Yatzy out
+either.
 
 ## Not proved here
 
@@ -186,5 +199,6 @@ None. The rules are original code, and the dice and scorecard art are for #86 to
 1. The record format above: a log of throws with their dice, and scores.
 2. The constraint widening, with seats `p1`–`p4` in `game_participants`, and the
    `scored`/`scorecards-complete` result.
-3. Whether to add a database check that seats match their table's type, or leave it to the API.
+3. Seats match their table's type, count and order: checked in the API with integration tests
+   in #85 (recommended in review), not by a database trigger.
 4. The proposed API shape for #85.
