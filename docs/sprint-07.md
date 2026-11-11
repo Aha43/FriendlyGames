@@ -78,7 +78,7 @@ trademark clearance if the game becomes a separately marketed product.
 | Order | Issue | Reviewable result |
 | --- | --- | --- |
 | 1 | [#83 — Release plan](https://github.com/Aha43/FriendlyGames/issues/83) | Review the scope and issue order with the owner and Claude. |
-| 2 | [#84 — Rules and save-format proof](https://github.com/Aha43/FriendlyGames/issues/84) | Demonstrate scores, token economy, ordered turns, resume and a compatible storage/API design on disposable data. |
+| 2 | [#84 — Rules and save-format proof](https://github.com/Aha43/FriendlyGames/issues/84) | Demonstrate scores, token economy, ordered turns, resume and a compatible storage/API design on disposable data. Proposed: [decision 0002](decisions/0002-yatzy-format.md). |
 | 3 | [#85 — Shared backend](https://github.com/Aha43/FriendlyGames/issues/85) | Authorize and persist group play, dice outcomes, retries and results. Verify production backend before the UI merges. |
 | 4 | [#86 — Dice table and group picker](https://github.com/Aha43/FriendlyGames/issues/86) | Complete the browser flow with score previews, phone and keyboard operation, resume and finished scorecards. |
 | 5 | [#87 — Release qualification](https://github.com/Aha43/FriendlyGames/issues/87) | Qualify the integrated result, record rollout evidence, prepare v0.4.0 and hand off the release command. |

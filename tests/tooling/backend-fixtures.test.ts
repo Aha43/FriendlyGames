@@ -142,6 +142,7 @@ describe('migration rehearsals', () => {
       'tests/backend/migrations/player-credentials.test.ts',
       'tests/backend/migrations/unique-email.test.ts',
       'tests/backend/migrations/unique-names.test.ts',
+      'tests/backend/migrations/yatzy-format.test.ts',
     ]);
   });
 });
