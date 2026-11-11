@@ -1,8 +1,9 @@
 # 0002 — Yatzy rules, saved format and group tables
 
-Status: **proposed** for review (#84). Date: 2026-11-11. Owner, Codex and Claude decide. This
-document enables nothing by itself. The schema change is a rehearsed proposal outside
-`supabase/migrations`, and no API or UI exposes Yatzy yet.
+Status: **accepted** in the #84 review (2026-11-11) and **built on the server in #85**: the
+schema change is migration `20261111120000_yatzy_games.sql` and the API is described in
+[backend.md](../backend.md#yatzy-tables-85). No UI exposes Yatzy until #86. The sections below
+are the #84 proposal as reviewed; where #85 differs it says so.
 
 ## Decision in one paragraph
 
@@ -83,8 +84,8 @@ Deterministic fixtures live in `fixtures.ts`, which is test code only.
 
 ## Storage change (proposal)
 
-The proposal is [`supabase/proposals/yatzy_games.sql`](../../supabase/proposals/yatzy_games.sql);
-#85 copies it into `supabase/migrations` after review.
+#84 proposed this as `supabase/proposals/yatzy_games.sql`. #85 moved it, unchanged, to
+[`supabase/migrations/20261111120000_yatzy_games.sql`](../../supabase/migrations/20261111120000_yatzy_games.sql).
 
 | Constraint | Today | Proposed |
 | --- | --- | --- |
@@ -202,3 +203,18 @@ None. The rules are original code, and the dice and scorecard art are for #86 to
 3. Seats match their table's type, count and order: checked in the API with integration tests
    in #85 (recommended in review), not by a database trigger.
 4. The proposed API shape for #85.
+
+## As built in #85
+
+The API follows the proposal above, with these details settled while building it:
+
+- **Refusals:** resign, rematch and invitation renewal on a table get `422 unsupported_action`.
+- **Invalid seats:** seat type, count and order are checked whenever a game is read or acted
+  on. A game that fails gets `409 invalid_seats` and is left out of lists.
+- **History:** finished tables come back from `GET /history` under `tables`, only for clients
+  that ask for `yatzy`. The `history` list is limited to chess-family types.
+- **View:** `turn` is `null` for a finished table. `players` holds `p1`… in turn order.
+- **Rehearsal moved:** `tests/backend/migrations/yatzy-format.test.ts` now rehearses the real
+  migration over chess records on the pre-migration schema. The old-client and co-player checks
+  from the #84 rehearsal run through the real API in `tests/backend/yatzy.test.ts`. The #84
+  run against `1c0850a` remains the rollback evidence.

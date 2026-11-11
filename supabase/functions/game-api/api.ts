@@ -1,8 +1,18 @@
 // Request handling for the shared-game API. Clients submit actions; the server derives every
 // position and outcome from the stored record with the rules of the game's type (gameTypes.ts).
 import type { Sql, TransactionSql } from 'postgres';
-import type { GameResult, Termination } from '../_shared/chess/game.ts';
-import { adapterFor, clientTypes, creatableAdapter, type GameTypeAdapter, type Seat, type TypedAction } from './gameTypes.ts';
+import type { Termination } from '../_shared/chess/game.ts';
+import {
+  adapterFor,
+  clientTypes,
+  creatableAdapter,
+  TABLE_SEATS,
+  yatzyOptions,
+  type GameTypeAdapter,
+  type Outcome,
+  type Seat,
+  type TypedAction,
+} from './gameTypes.ts';
 
 type Db = Sql | TransactionSql;
 
@@ -17,15 +27,16 @@ export interface GameView {
   type: string;
   schemaVersion: number;
   status: 'waiting' | 'active' | 'finished';
-  result: GameResult | null;
-  termination: Termination | null;
+  result: Outcome['result'] | null;
+  termination: Outcome['termination'] | null;
   revision: number;
   createdAt: string;
   updatedAt: string;
-  players: Record<Seat, Player | null>;
+  /** Chess family: `white` and `black` (null while open). A table: its seats `p1`.. in turn order. */
+  players: Partial<Record<Seat, Player | null>>;
   yourSeat: Seat;
-  /** The seat to move, for any type (#53). */
-  turn: Seat;
+  /** The seat to move, for any type (#53); null when nobody is (a finished table). */
+  turn: Seat | null;
   /** Moves played so far, for any type (#53). */
   moveCount: number;
   /** Standard chess only: the saved record and the side to move. */
@@ -45,6 +56,15 @@ function readable(row: Record<string, unknown>, types: string[]): GameTypeAdapte
   if (!adapter) throw UNSUPPORTED();
   return adapter;
 }
+
+/** A flow the game's type does not have (e.g. resigning or rematching a Yatzy table). */
+const NOT_FOR_THIS_GAME = (what: string) => new ApiError(422, 'unsupported_action', `${what} is not available for this game.`);
+
+/**
+ * Seats that do not fit the game's type, count or order (#85): written by something other than
+ * this API. Such a game is left out of lists and refused here, its rows untouched.
+ */
+const INVALID_SEATS = () => new ApiError(409, 'invalid_seats', 'This game’s players are not set up correctly.');
 
 class ApiError extends Error {
   constructor(
@@ -115,7 +135,12 @@ async function route(request: Request, sql: Sql, config: ApiConfig): Promise<Res
     const player = await authenticate(sql, request);
     if (route === 'GET /me') return json(200, { player: await loadMe(sql, player.id) });
     if (route === 'GET /games') return json(200, { games: await loadViews(sql, player.id, types) });
-    if (route === 'GET /history') return json(200, { history: await loadHistory(sql, player.id, types) });
+    if (route === 'GET /history') {
+      // `tables` only for clients that ask for a table type; older clients get exactly `history`.
+      const history = await loadHistory(sql, player.id, types);
+      const asksForTables = types.some((type) => creatableAdapter(type)?.family === 'table');
+      return json(200, asksForTables ? { history, tables: await loadTables(sql, player.id, types) } : { history });
+    }
     if (route === 'GET /opponents') return json(200, { opponents: await loadOpponents(sql, player.id) });
     if (route === 'POST /games') {
       const { status, body } = await createGame(sql, player, await readBody(request), types);
@@ -286,8 +311,8 @@ interface GameRow {
   game_type: string;
   schema_version: number;
   status: GameView['status'];
-  result: GameResult | null;
-  termination: Termination | null;
+  result: Outcome['result'] | null;
+  termination: Outcome['termination'] | null;
   revision: number;
   payload: unknown;
   created_at: Date;
@@ -297,9 +322,14 @@ interface GameRow {
   rematch_id: string | null;
 }
 
+const seatsValid = (row: GameRow, adapter: GameTypeAdapter) =>
+  adapter.seatsValid(row.payload, row.participants.map((p) => p.seat));
+
 function toView(row: GameRow, adapter: GameTypeAdapter): GameView {
-  const players: Record<Seat, Player | null> = { white: null, black: null };
-  for (const p of row.participants) players[p.seat] = { id: p.id, displayName: p.displayName };
+  const players: GameView['players'] = adapter.family === 'chess' ? { white: null, black: null } : {};
+  for (const p of [...row.participants].sort((a, b) => a.seat.localeCompare(b.seat))) {
+    players[p.seat] = { id: p.id, displayName: p.displayName };
+  }
   return {
     id: row.id,
     type: row.game_type,
@@ -343,7 +373,7 @@ async function loadViews(sql: Db, playerId: string, types: string[]): Promise<Ga
   const rows = await loadRows(sql, playerId, null, types);
   return rows.flatMap((row) => {
     const adapter = adapterFor(row.game_type, row.schema_version);
-    return adapter ? [toView(row, adapter)] : [];
+    return adapter && seatsValid(row, adapter) ? [toView(row, adapter)] : [];
   });
 }
 
@@ -351,7 +381,9 @@ async function loadViews(sql: Db, playerId: string, types: string[]): Promise<Ga
 async function loadView(sql: Db, playerId: string, gameId: string, types: string[]): Promise<GameView> {
   const [row] = UUID.test(gameId) ? await loadRows(sql, playerId, gameId, null) : [];
   if (!row) throw new ApiError(404, 'game_not_found', 'Game not found.');
-  return toView(row, readable(row as unknown as Record<string, unknown>, types));
+  const adapter = readable(row as unknown as Record<string, unknown>, types);
+  if (!seatsValid(row, adapter)) throw INVALID_SEATS();
+  return toView(row, adapter);
 }
 
 /**
@@ -403,7 +435,6 @@ const NOT_AN_OPPONENT = () =>
   new ApiError(404, 'opponent_not_found', 'You have no earlier game with that player. Invite them by email instead.');
 
 async function createGame(sql: Sql, player: Player, body: Record<string, unknown>, types: string[]) {
-  const target = createTarget(body);
   const requestId = body.requestId ?? null;
   if (requestId !== null && (typeof requestId !== 'string' || !UUID.test(requestId))) {
     throw new ApiError(400, 'bad_request', '"requestId" must be a UUID.');
@@ -412,6 +443,11 @@ async function createGame(sql: Sql, player: Player, body: Record<string, unknown
   const type = body.type ?? 'chess';
   const adapter = typeof type === 'string' && types.includes(type) ? creatableAdapter(type) : null;
   if (!adapter) throw new ApiError(400, 'unsupported_game_type', 'This game type is not available.');
+  if (adapter.family === 'table') return await createTable(sql, player, body, requestId, adapter, types);
+  if (body.friendPlayerIds !== undefined || body.mode !== undefined) {
+    throw new ApiError(400, 'bad_request', '"friendPlayerIds" and "mode" are for tables, not this game type.');
+  }
+  const target = createTarget(body);
 
   const direct = target.mode === 'player';
   const created = await sql.begin(async (tx) => {
@@ -453,9 +489,7 @@ async function createGame(sql: Sql, player: Player, body: Record<string, unknown
       const sameTarget = direct
         ? !earlier.has_invitation && earlier.black_id === target.playerId
         : earlier.has_invitation && earlier.invited_email === target.email;
-      if (earlier.game_type !== adapter.type || !sameTarget) {
-        throw new ApiError(409, 'request_id_reused', 'This request ID was already used to create a different game.');
-      }
+      if (earlier.game_type !== adapter.type || !sameTarget) throw REQUEST_ID_REUSED();
       // Same type, but possibly a stored version this server or client cannot read: refuse before
       // touching its invitation, as POST /games/:id/invitation does.
       readable(earlier, types);
@@ -488,6 +522,79 @@ async function createGame(sql: Sql, player: Player, body: Record<string, unknown
   };
 }
 
+const REQUEST_ID_REUSED = () =>
+  new ApiError(409, 'request_id_reused', 'This request ID was already used to create a different game.');
+
+/**
+ * A table (#85, Yatzy): the host and one to three previous opponents, all seated at once in the
+ * order chosen (host first), active immediately, no invitation. `friendPlayerIds` are player IDs
+ * the host has sat at a game with; names and emails are never accepted here.
+ */
+async function createTable(
+  sql: Sql,
+  player: Player,
+  body: Record<string, unknown>,
+  requestId: string | null,
+  adapter: GameTypeAdapter,
+  types: string[],
+) {
+  if (body.friendEmail !== undefined || body.friendPlayerId !== undefined) {
+    throw new ApiError(400, 'bad_request', 'A table takes "friendPlayerIds", not "friendEmail" or "friendPlayerId".');
+  }
+  const ids = body.friendPlayerIds;
+  if (!Array.isArray(ids) || ids.length < 1 || ids.length > TABLE_SEATS.length - 1 || !ids.every((id) => typeof id === 'string' && UUID.test(id))) {
+    throw new ApiError(400, 'bad_request', `"friendPlayerIds" must be 1–${TABLE_SEATS.length - 1} player IDs.`);
+  }
+  const guests = (ids as string[]).map((id) => id.toLowerCase());
+  if (new Set(guests).size !== guests.length) {
+    throw new ApiError(400, 'bad_request', '"friendPlayerIds" must name each player once.');
+  }
+  const options = yatzyOptions(body.mode, guests.length + 1);
+  if (!options) throw new ApiError(400, 'bad_request', '"mode" must be "forced" or "free".');
+  const roster = [player.id, ...guests]; // turn order: host, then guests as chosen
+
+  const created = await sql.begin(async (tx) => {
+    // Every guest must be someone the host has sat at a game with (any type). One answer for
+    // yourself, an unknown ID and a stranger, whichever guest it is.
+    if (guests.includes(player.id)) throw NOT_AN_OPPONENT();
+    const known = await tx<{ id: string }[]>`
+      select distinct o.player_id as id
+        from game_participants me
+        join game_participants o on o.game_id = me.game_id
+       where me.player_id = ${player.id} and o.player_id = any(${guests}::uuid[])`;
+    if (known.length !== guests.length) throw NOT_AN_OPPONENT();
+
+    const [game] = await tx`
+      insert into games (game_type, schema_version, status, payload, created_by, create_request_id)
+      values (${adapter.type}, ${adapter.schemaVersion}, 'active',
+              ${tx.json(adapter.create(options) as never)}, ${player.id}, ${requestId})
+      on conflict (created_by, create_request_id) do nothing
+      returning id`;
+    if (!game) {
+      // The request's identity is its type, mode and ordered roster, read back from the first
+      // request's rows. The same ID for anything else is refused before anything is modified.
+      const [earlier] = await tx`
+        select g.id, g.game_type, g.schema_version, g.payload->>'mode' as mode,
+               (select array_agg(p.player_id order by p.seat) from game_participants p where p.game_id = g.id) as roster
+          from games g
+         where g.created_by = ${player.id} and g.create_request_id = ${requestId}`;
+      const sameRoster = Array.isArray(earlier.roster) && earlier.roster.join() === roster.join();
+      if (earlier.game_type !== adapter.type || earlier.mode !== options.mode || !sameRoster) throw REQUEST_ID_REUSED();
+      readable(earlier, types);
+      return { gameId: earlier.id as string, duplicate: true };
+    }
+    for (const [index, id] of roster.entries()) {
+      await tx`insert into game_participants (game_id, player_id, seat) values (${game.id}, ${id}, ${TABLE_SEATS[index]})`;
+    }
+    return { gameId: game.id as string, duplicate: false };
+  });
+
+  return {
+    status: created.duplicate ? 200 : 201,
+    body: { game: await loadView(sql, player.id, created.gameId, types), invitation: null, duplicate: created.duplicate },
+  };
+}
+
 /**
  * Replace a game's unused invitation with a new one and return its token; null once redeemed.
  * The earlier link stops working. Locks the invitation row, as redeeming does, so the two serialise.
@@ -511,7 +618,7 @@ async function regenerateInvitation(sql: Sql, player: Player, gameId: string, ty
       join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
      where g.id = ${gameId}`;
   if (!game) throw new ApiError(404, 'game_not_found', 'Game not found.');
-  readable(game, types);
+  if (readable(game, types).family !== 'chess') throw NOT_FOR_THIS_GAME('An invitation link');
   if (game.created_by !== player.id) {
     throw new ApiError(403, 'not_creator', 'Only the player who created the game can invite.');
   }
@@ -576,8 +683,13 @@ export interface HistoryEntry {
   }[];
 }
 
-/** Finished games per opponent, newest first, with an exact tally. Only the player's own games. */
-async function loadHistory(sql: Sql, playerId: string, types: string[]): Promise<HistoryEntry[]> {
+/**
+ * Finished games per opponent, newest first, with an exact tally. Only the player's own games,
+ * and only chess-family types: a table has one ranking for everyone at it and never adds to a
+ * per-opponent win/loss tally (see loadTables).
+ */
+async function loadHistory(sql: Sql, playerId: string, asked: string[]): Promise<HistoryEntry[]> {
+  const types = asked.filter((type) => creatableAdapter(type)?.family === 'chess');
   const rows = await sql`
     select g.id, g.game_type, g.schema_version, g.payload, g.result, g.termination,
            g.updated_at as finished_at, me.seat as your_seat,
@@ -587,13 +699,14 @@ async function loadHistory(sql: Sql, playerId: string, types: string[]): Promise
       join game_participants opp on opp.game_id = g.id and opp.player_id <> ${playerId}
       join players pl on pl.id = opp.player_id
      where g.status = 'finished' and g.game_type = any(${types}::text[])
+       and me.seat in ('white', 'black') and opp.seat in ('white', 'black')
      order by g.updated_at desc, g.id`;
 
   // One entry per game type AND opponent: results of different types are never combined.
   const byOpponent = new Map<string, HistoryEntry>();
   for (const row of rows) {
     const adapter = adapterFor(row.game_type, row.schema_version);
-    if (!adapter) continue; // a schema this server cannot read: left out, left untouched
+    if (!adapter || adapter.family !== 'chess') continue; // unreadable here: left out, left untouched
     const key = `${row.game_type}:${row.opponent_id}`;
     let entry = byOpponent.get(key);
     if (!entry) {
@@ -621,6 +734,41 @@ async function loadHistory(sql: Sql, playerId: string, types: string[]): Promise
   return [...byOpponent.values()];
 }
 
+export interface TableResult {
+  id: string;
+  gameType: string;
+  finishedAt: string;
+  yourSeat: Seat;
+  /** The finished table as its players see it: seats with names, and the type's ranking. */
+  players: GameView['players'];
+  result: Record<string, unknown>;
+}
+
+/**
+ * Finished tables the player sat at, newest first (#85): each with its own ranking, kept apart
+ * from the per-opponent chess tallies. Only asked-for table types this server reads.
+ */
+async function loadTables(sql: Sql, playerId: string, asked: string[]): Promise<TableResult[]> {
+  const types = asked.filter((type) => creatableAdapter(type)?.family === 'table');
+  if (types.length === 0) return [];
+  const rows = (await loadRows(sql, playerId, null, types)).filter((row) => row.status === 'finished');
+  return rows.flatMap((row) => {
+    const adapter = adapterFor(row.game_type, row.schema_version);
+    if (!adapter || adapter.family !== 'table' || !seatsValid(row, adapter)) return [];
+    const view = toView(row, adapter);
+    return [
+      {
+        id: row.id,
+        gameType: row.game_type,
+        finishedAt: row.updated_at.toISOString(),
+        yourSeat: row.your_seat,
+        players: view.players,
+        result: adapter.view(row.payload),
+      },
+    ];
+  });
+}
+
 /**
  * "Play again": a new game between the same two players, colours swapped, no invitation needed.
  * Each finished game has at most one rematch, so a second request (from either player) finds it.
@@ -634,7 +782,7 @@ async function startRematch(sql: Sql, player: Player, gameId: string, types: str
         join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
        where g.id = ${gameId}`;
     if (!source) throw new ApiError(404, 'game_not_found', 'Game not found.');
-    readable(source, types);
+    if (readable(source, types).family !== 'chess') throw NOT_FOR_THIS_GAME('Play again');
     if (source.status !== 'finished') throw new ApiError(409, 'not_finished', 'This game is still going.');
     // "Play again" keeps the game type, with that type's current rules and a fresh start.
     const adapter = creatableAdapter(source.game_type);
@@ -690,17 +838,23 @@ async function submitAction(sql: Sql, player: Player, gameId: string, body: Reco
   return await sql.begin(async (tx) => {
     // The row lock serialises actions on one game; the revision check rejects stale clients.
     const [game] = await tx`
-      select g.game_type, g.schema_version, g.status, g.revision, g.payload, g.created_by, me.seat
+      select g.game_type, g.schema_version, g.status, g.revision, g.payload, g.created_by, me.seat,
+             (select array_agg(p.seat) from game_participants p where p.game_id = g.id) as seats
         from games g
         join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
        where g.id = ${gameId}
          for update of g`;
     if (!game) throw new ApiError(404, 'game_not_found', 'Game not found.');
     const adapter = readable(game, types);
+    if (!adapter.seatsValid(game.payload, game.seats as string[])) throw INVALID_SEATS();
 
-    // Resigning is common to every type; anything else is read by the game's type.
+    // Resigning is common to the chess family; anything else is read by the game's type.
+    const resignable = adapter.family === 'chess';
+    if (raw?.type === 'resign' && !resignable) throw NOT_FOR_THIS_GAME('Resigning');
     const action: TypedAction | null = raw?.type === 'resign' ? { type: 'resign' } : adapter.parseAction(raw);
-    if (!action) throw new ApiError(400, 'bad_request', `"action" is not a valid ${adapter.type} action or {type: "resign"}.`);
+    if (!action) {
+      throw new ApiError(400, 'bad_request', `"action" is not a valid ${adapter.type} action${resignable ? ' or {type: "resign"}' : ''}.`);
+    }
 
     // A request ID seen before: the same action again (a retry after a lost reply) gets the
     // current game; anything else is a client bug. Decided before the turn, revision or rules,
@@ -734,7 +888,7 @@ async function submitAction(sql: Sql, player: Player, gameId: string, body: Reco
 
     const seat = game.seat as Seat;
     let payload: unknown = game.payload;
-    let outcome: { result: GameResult; termination: Termination } | null;
+    let outcome: Outcome | null;
     let stored: { kind: string; move: string | null } = { kind: 'resign', move: null };
 
     if (action.type === 'resign') {

@@ -12,6 +12,10 @@ versions live in `package.json`; actual deployments are recorded separately in
   turn order for two to four players, ranking with the token tiebreak, and a proposed schema
   change rehearsed over existing chess records ([decision 0002](docs/decisions/0002-yatzy-format.md)).
   Nothing is enabled yet (#84).
+- Yatzy on the server: tables for two to four previous opponents in turn order, server-rolled
+  dice, throws and scores with safe retries, banked throws, finished rankings and per-table
+  results kept apart from chess tallies. Additive migration
+  `20261111120000_yatzy_games.sql`; the app does not offer Yatzy yet (#85).
 
 ## v0.3.0 — Play again with friends (2026-11-10)
 

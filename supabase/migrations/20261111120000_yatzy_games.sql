@@ -1,8 +1,5 @@
--- PROPOSED for #85, rehearsed by #84 (tests/backend/migrations/yatzy-format.test.ts). Not a
--- migration yet: `supabase db push` only reads supabase/migrations, so nothing here reaches any
--- database until #85 copies it there after review. See docs/decisions/0002-yatzy-format.md.
---
--- Yatzy as a third game type, for two to four players. Additive: only checks are widened, every
+-- Yatzy as a third game type, for two to four players (#85; format rehearsed in #84, see
+-- docs/decisions/0002-yatzy-format.md). Additive: only checks are widened, every
 -- existing row already satisfies them and none is rewritten. Chess and Fischer Random keep their
 -- seats, results, actions and invitations exactly as they are.
 

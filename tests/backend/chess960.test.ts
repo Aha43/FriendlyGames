@@ -345,13 +345,13 @@ describe('other rules', () => {
 });
 
 describe('the database', () => {
-  it('accepts castles only with notation, and only the two game types', async () => {
+  it('accepts castles only with notation, and only known game types', async () => {
     const { white, id } = await newGame(OPEN_CORNERS);
     const insert = (kind: string, move: string | null) => sql`
       insert into game_actions (game_id, player_id, request_id, kind, move, revision)
       values (${id}, ${white.id}, ${randomUUID()}, ${kind}, ${move}, 99)`;
     await expect(insert('castle', null)).rejects.toThrow(/move_has_notation/);
-    await expect(insert('resign', 'b1h1')).rejects.toThrow(/move_has_notation/);
+    await expect(insert('resign', 'b1h1')).rejects.toThrow(/move_has_notation|game_actions_move_check/);
     await expect(insert('swap', 'b1h1')).rejects.toThrow(/game_actions_kind_check/);
     await expect(sql`update games set game_type = 'checkers' where id = ${id}`).rejects.toThrow(/games_game_type_check/);
   });
