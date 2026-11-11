@@ -14,10 +14,12 @@ starting a table, and use the same scorecard and token balance rules in both.
 
 - **Forced** fills the scorecard from top to bottom. **Free** lets the current
   player choose any unused row after the first throw or a later throw.
-- A player starts a turn by throwing five dice. On later throws the player picks
-  which dice to retain. Committing a row records its calculated score and ends the
-  turn. A row with no matching combination records zero. Show the points and any
-  token award before committing.
+- The first throw rolls five dice. Each later throw identifies the dice to keep,
+  and the server rolls the rest. The client sends positions to retain. The server
+  checks the throw count and token balance and supplies the dice values.
+  A player must throw at least once before scoring a row. Scoring records the
+  calculated points and ends the turn. A row with no matching combination
+  records zero. Show the points and any token award before committing.
 - Each player starts the game with zero tokens. Committing on the first, second
   or third throw banks two, one or zero tokens respectively. The balance carries
   across that player's turns for this game. A fourth or later throw spends one
@@ -27,30 +29,44 @@ starting a table, and use the same scorecard and token balance rules in both.
 - Proposed baseline is the ordinary five-dice, fifteen-row Norwegian scorecard.
   In order: ones through sixes, one pair, two pairs, three of a kind, four of a
   kind, small straight, large straight, full house, chance and Yatzy. The upper
-  section awards 50 bonus points at 63 or more. Straights are 1–5 and 2–6, worth
-  15 and 20. Five equal dice in the Yatzy row score 50. Use the highest matching
-  pair or set, two distinct values for two pairs, and distinct pair and triple
-  values for full house. See the
-  [Norwegian scorecard reference](https://www.rusta.com/globalassets/productimages/ba_762202840101_spelregler_yatzy_no_002.pdf).
-- Finish after every player fills the scorecard. Highest total wins, with joint
-  winners on a tie. Preserve the final scorecard so each player can reopen it.
+  section awards 50 bonus points at 63 or more. One pair, two pairs, three of a
+  kind and four of a kind sum the matching dice. Use the highest eligible
+  combination, with two distinct values for two pairs. Full house requires
+  distinct pair and triple values. Full house and chance sum all five dice.
+  Straights are 1–5 and 2–6, worth a fixed 15 and 20 points. Five equal dice
+  qualify for three or four of a kind and score 50 in the Yatzy row. They score
+  zero for two pairs and full house. The
+  [Rusta scorecard](https://www.rusta.com/globalassets/productimages/ba_762202840101_spelregler_yatzy_no_002.pdf)
+  uses free order and at most three throws. Forced order and banked throws are
+  the owner's house rules.
+- Finish after every player fills the scorecard. Rank by total points first, then
+  by unused tokens among players tied on points. Players tied on both measures
+  at the top are joint winners. Preserve the final scorecard and token balances
+  so each player can reopen it.
 
 ## First release proposal
 
 Use the existing name picker to choose distinct previous opponents. The host
 chooses one to three opponents and starts one table with everyone seated. Show
-the turn order before starting, with the host first and the chosen order after
-that. Each selected player sees the table in their existing lobby. The server
+the turn order before starting, with the host first and the guests in selection
+order. Each selected player sees the table in their existing lobby. The server
 checks that the host has shared a seated game with every selected player.
-As with today's direct start, the recipient can open the game from their lobby.
-Sharing a Yatzy table would make its participants previous opponents for later
-games. The first release proposes known opponents only for Yatzy. Email and link
-invitations remain available in the chess flows.
+Everyone seated at a shared Yatzy table becomes a previous opponent of everyone
+else at the table, including guests who had only played the host before. That
+relationship also allows direct chess and Fischer Random starts. The first
+release uses known opponents for Yatzy. Email and link invitations remain
+available in the chess flows.
 
-The owner and Claude should review the scorecard baseline, two-to-four-player
-limit, direct group seating and known-opponents-only launch scope before the
-proof starts. Group invitation links for new players, local pass-and-play, teams,
-mid-game roster changes, and Yatzy rematch controls are outside this proposal.
+While watching another player's turn, seated players see the latest committed
+throw and any scored row on the normal table refresh. A refresh may skip
+intermediate throws. Save the committed dice, the positions retained on the
+last throw, and the throw number for refresh and resume.
+
+**Known limitation:** an unfinished table stays in progress in each player's
+lobby when someone stops playing. v0.4.0 has no leave or abandon action.
+
+Group invitation links for new players, local pass-and-play, teams, mid-game
+roster changes and Yatzy rematch controls are outside this proposal.
 
 Use FriendlyGames branding and Yatzy as a descriptive game label. Write original
 rules help, scorecard UI and artwork. Keep the current licence and record any
@@ -69,14 +85,18 @@ trademark clearance if the game becomes a separately marketed product.
 
 ## Storage, rollout and release evidence
 
-The [current boundary](game-types.md) reuses the lifecycle but still has
-White/Black seats, chess results and chess action assumptions. The proof should
-map those constraints, propose the smallest compatible change, and show how an
-ordered roster, active player, recorded dice, scores and joint winners survive a
-reload and a finished-game read. Keep the existing chess schemas and client
-responses compatible. Decide how to represent group records and results after
-rehearsing the proposed format on disposable Supabase. Keep Yatzy scoring rules
-separate from routing and presentation.
+The [current boundary](game-types.md) reuses the lifecycle and has chess-specific
+seats, results and actions. In the current schema, `game_participants.seat`
+allows only `'white'` and `'black'`, with primary key `(game_id, seat)`.
+The opponents list, history and direct-start authorization all read participant
+rows. #84 must propose ordered Yatzy seats that preserve existing chess rows,
+and show how the roster, active player, dice, scores and joint winners survive
+a reload and finished-game read. Verify that the opponents list and direct-start
+checks see every pair of Yatzy co-players, including for chess requests. Chess
+history keeps pairwise tallies. Yatzy history lists the result per table with
+scores, remaining tokens and winners, outside the per-opponent win/loss tallies.
+Rehearse the format on disposable Supabase and keep Yatzy scoring separate from
+routing and presentation.
 
 The server generates dice and commits each outcome and token change with its
 request ID and revision. Retrying an accepted throw returns the committed dice.
@@ -92,8 +112,9 @@ frontend exposes Yatzy. Record the live backend and frontend commits separately.
 
 Run full CI on real Supabase, complete two-player and three-player journeys,
 exercise the maximum roster, both modes, banked throws, multiple token spends,
-lost replies, reload and archived results. Check desktop and phone layouts and
-existing chess games, invitations, rematches and saves. Obtain the owner's
+lost replies, reload and archived results, including both levels of tie.
+Check desktop and phone layouts and existing chess games, invitations, rematches
+and saves. Record the abandoned-table limitation in the release notes. Obtain the owner's
 play observation for acceptance. The release issue prepares version and
 changelog changes. After the owner accepts and merges, the owner runs
 `make release` and decides when to close the milestone. Record the published tag
