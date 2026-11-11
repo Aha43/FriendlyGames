@@ -60,14 +60,20 @@ describe('the Yatzy adapter', () => {
     expect(adapter.isRetryOf({ kind: 'score', move: 'row:ones' }, { type: 'score', row: 'twos' })).toBe(false);
   });
 
-  it('accepts exactly the seats p1..pN for a record of N players', () => {
+  it('accepts exactly the seats p1..pN for a readable record of N players, with the host in p1', () => {
     const adapter = yatzyAdapter();
     const three = adapter.create(yatzyOptions('forced', 3));
-    expect(adapter.seatsValid(three, ['p2', 'p1', 'p3'])).toBe(true);
+    const roster = (...seats: string[]) => seats.map((seat) => ({ seat, playerId: seat === 'p1' ? 'host' : `guest-${seat}` }));
+    expect(adapter.seatsValid(three, roster('p2', 'p1', 'p3'), 'host')).toBe(true);
     for (const seats of [['p1', 'p2'], ['p1', 'p2', 'p4'], ['p1', 'p2', 'p3', 'p4'], ['white', 'black', 'p3'], ['p1', 'p1', 'p2'], []]) {
-      expect(adapter.seatsValid(three, seats), seats.join()).toBe(false);
+      expect(adapter.seatsValid(three, roster(...seats), 'host'), seats.join()).toBe(false);
     }
-    expect(adapter.seatsValid({ mode: 'free', log: [] }, ['p1', 'p2'])).toBe(false);
+    // The host is not in the first seat: a guest would throw first.
+    expect(adapter.seatsValid(three, roster('p1', 'p2', 'p3'), 'guest-p2')).toBe(false);
+    // Records the rules cannot replay never count as seated correctly, whatever the seats.
+    for (const payload of [{ mode: 'free', log: [] }, { mode: 'free', players: 1, log: [] }, { mode: 'fast', players: 2, log: [] }, { mode: 'free', players: 2, log: [null] }, null, 'yatzy']) {
+      expect(adapter.seatsValid(payload, roster('p1', 'p2').slice(0, (payload as { players?: number } | null)?.players ?? 2), 'host'), JSON.stringify(payload)).toBe(false);
+    }
     expect(yatzyOptions('free', 1)).toBeNull();
     expect(yatzyOptions('free', 5)).toBeNull();
     expect(yatzyOptions('fast', 2)).toBeNull();

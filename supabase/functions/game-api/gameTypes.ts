@@ -24,6 +24,12 @@ export type ChessSeat = 'white' | 'black';
 export type TableSeat = 'p1' | 'p2' | 'p3' | 'p4';
 export type Seat = ChessSeat | TableSeat;
 
+/** One row of game_participants. */
+export interface SeatedPlayer {
+  seat: string;
+  playerId: string;
+}
+
 /** An action the adapter defines (a resignation is common and never reaches it). */
 export type TypedAction = { type: string } & Record<string, unknown>;
 
@@ -52,10 +58,11 @@ export interface GameTypeAdapter {
   /** The saved payload of a new game (`options` are the type's own, already validated). */
   create(options?: unknown): unknown;
   /**
-   * Whether the seated players fit the saved game: the right kind of seats, their count and
-   * order. A game that fails is never shown or played (its rows are left untouched).
+   * Whether the saved game and its seated players fit this type: a readable record, the right
+   * kind of seats, their count and order, and the right player in the first seat. A game that
+   * fails is never shown, played, counted or continued (its rows are left untouched).
    */
-  seatsValid(payload: unknown, seats: string[]): boolean;
+  seatsValid(payload: unknown, roster: SeatedPlayer[], createdBy: string): boolean;
   /** The seat to move in a saved payload; null when nobody is to move (a finished table). */
   turn(payload: unknown): Seat | null;
   moveCount(payload: unknown): number;
@@ -96,8 +103,10 @@ const record = (payload: unknown): GameRecord => ({ schemaVersion: 1, ...(payloa
 const chessTurn = (payload: unknown): Seat => (replay(record(payload)).turn() === 'w' ? 'white' : 'black');
 
 /** Chess-family seats: White and/or Black (Black is empty while an invitation is open). */
-const chessSeatsValid = (_payload: unknown, seats: string[]) =>
-  seats.length <= 2 && seats.every((seat) => seat === 'white' || seat === 'black') && new Set(seats).size === seats.length;
+const chessSeatsValid = (_payload: unknown, roster: SeatedPlayer[]) =>
+  roster.length <= 2 &&
+  roster.every(({ seat }) => seat === 'white' || seat === 'black') &&
+  new Set(roster.map(({ seat }) => seat)).size === roster.length;
 
 export const chess: GameTypeAdapter = {
   type: 'chess',
@@ -242,12 +251,14 @@ export function yatzyAdapter(roll: (count: number) => yatzyRules.Die[] = rollDic
       const { log } = yatzyRules.newRecord(mode, players);
       return { mode, players, log } satisfies YatzyPayload;
     },
-    // Exactly p1..pN in order, N being the player count the record was created with.
-    seatsValid(payload, seats) {
-      const players = (payload as Partial<YatzyPayload> | null)?.players;
-      if (typeof players !== 'number' || seats.length !== players) return false;
-      const sorted = [...seats].sort();
-      return sorted.every((seat, index) => seat === TABLE_SEATS[index]);
+    // A record the rules can replay (so two to four players), seated exactly p1..pN for its N
+    // players, with the host (the creator) in p1: turn order starts with the host.
+    seatsValid(payload, roster, createdBy) {
+      if (typeof payload !== 'object' || payload === null) return false;
+      const state = yatzyRules.replay(yatzyRecord(payload));
+      if ('error' in state || roster.length !== state.players.length) return false;
+      const sorted = [...roster].sort((a, b) => a.seat.localeCompare(b.seat));
+      return sorted.every(({ seat }, index) => seat === TABLE_SEATS[index]) && sorted[0].playerId === createdBy;
     },
     turn(payload) {
       const { current } = yatzyState(payload);

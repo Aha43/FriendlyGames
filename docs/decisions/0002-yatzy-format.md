@@ -209,8 +209,10 @@ None. The rules are original code, and the dice and scorecard art are for #86 to
 The API follows the proposal above, with these details settled while building it:
 
 - **Refusals:** resign, rematch and invitation renewal on a table get `422 unsupported_action`.
-- **Invalid seats:** seat type, count and order are checked whenever a game is read or acted
-  on. A game that fails gets `409 invalid_seats` and is left out of lists.
+- **Invalid seats:** seat type, count and order, the host in `p1`, and a record the rules can
+  replay are checked wherever a game is read, played, counted in history or continued by a
+  rematch or invitation. A game that fails gets `409 invalid_seats` and is left out of lists
+  and tallies.
 - **History:** finished tables come back from `GET /history` under `tables`, only for clients
   that ask for `yatzy`. The `history` list is limited to chess-family types.
 - **View:** `turn` is `null` for a finished table. `players` holds `p1`… in turn order.

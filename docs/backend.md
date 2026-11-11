@@ -309,10 +309,15 @@ create tables. The web client does not yet (#86).
 - **Previous opponents**: everyone seated at a table becomes a previous opponent of everyone
   else there (owner's decision), so two guests may afterwards start chess, Fischer Random or a
   table with each other.
-- **Seats are validated** whenever a game is read or acted on: chess-family games hold only
-  `white`/`black`; a table holds exactly `p1`…`pN` for the `N` players in its record. A game
-  whose seats do not fit (only possible by writing rows outside this API) is left out of lists
-  and gets `409 invalid_seats`, untouched.
+- **Seats are validated** wherever a game is read, played, counted or continued: lists, single
+  reads, actions, history tallies, finished tables, rematches and invitation renewal and
+  redeem. Chess-family games hold only `white`/`black`. A table needs a record the rules can
+  replay, exactly `p1`…`pN` for its `N` players, and its creator (the host) in `p1`. A game that
+  does not fit (only possible by writing rows outside this API) is left out of lists and
+  tallies and gets `409 invalid_seats` on direct requests, untouched. One such row never breaks
+  a player's list.
+- **Finished tables** in `GET /history` are selected as finished by the query (newest 200), so
+  unfinished tables never crowd a result out.
 - **Deployment**: migration `20261111120000_yatzy_games.sql` (widens checks only; no existing
   row changes) and the function, by the owner with `make deploy-backend`, before the UI that
   offers Yatzy (#86) merges. Until then no client asks for Yatzy and nothing changes for

@@ -10,6 +10,7 @@ import {
   yatzyOptions,
   type GameTypeAdapter,
   type Outcome,
+  type SeatedPlayer,
   type Seat,
   type TypedAction,
 } from './gameTypes.ts';
@@ -317,13 +318,26 @@ interface GameRow {
   payload: unknown;
   created_at: Date;
   updated_at: Date;
+  created_by: string;
   your_seat: Seat;
   participants: { seat: Seat; id: string; displayName: string }[];
   rematch_id: string | null;
 }
 
 const seatsValid = (row: GameRow, adapter: GameTypeAdapter) =>
-  adapter.seatsValid(row.payload, row.participants.map((p) => p.seat));
+  adapter.seatsValid(row.payload, row.participants.map((p) => ({ seat: p.seat, playerId: p.id })), row.created_by);
+
+/** Every seat of a game, for the seat check where the game is not loaded as a view. */
+const ROSTER = (sql: Db) => sql`
+  (select json_agg(json_build_object('seat', p.seat, 'playerId', p.player_id))
+     from game_participants p where p.game_id = g.id)`;
+
+/** The adapter for a stored game the client can read and whose seats fit it; otherwise an error. */
+function playable(row: Record<string, unknown>, types: string[]): GameTypeAdapter {
+  const adapter = readable(row, types);
+  if (!adapter.seatsValid(row.payload, (row.roster ?? []) as SeatedPlayer[], row.created_by as string)) throw INVALID_SEATS();
+  return adapter;
+}
 
 function toView(row: GameRow, adapter: GameTypeAdapter): GameView {
   const players: GameView['players'] = adapter.family === 'chess' ? { white: null, black: null } : {};
@@ -349,10 +363,16 @@ function toView(row: GameRow, adapter: GameTypeAdapter): GameView {
   };
 }
 
-async function loadRows(sql: Db, playerId: string, gameId: string | null, types: string[] | null): Promise<GameRow[]> {
+async function loadRows(
+  sql: Db,
+  playerId: string,
+  gameId: string | null,
+  types: string[] | null,
+  status: GameView['status'] | null = null,
+): Promise<GameRow[]> {
   return await sql<GameRow[]>`
     select g.id, g.game_type, g.schema_version, g.status, g.result, g.termination, g.revision, g.payload,
-           g.created_at, g.updated_at, me.seat as your_seat,
+           g.created_at, g.updated_at, g.created_by, me.seat as your_seat,
            (select json_agg(json_build_object('seat', p.seat, 'id', p.player_id, 'displayName', pl.display_name))
               from game_participants p join players pl on pl.id = p.player_id
              where p.game_id = g.id) as participants,
@@ -361,6 +381,7 @@ async function loadRows(sql: Db, playerId: string, gameId: string | null, types:
       join game_participants me on me.game_id = g.id and me.player_id = ${playerId}
      where (${gameId}::uuid is null or g.id = ${gameId}::uuid)
        and (${types}::text[] is null or g.game_type = any(${types}::text[]))
+       and (${status}::text is null or g.status = ${status}::text)
      order by g.updated_at desc
      limit 200`;
 }
@@ -373,8 +394,21 @@ async function loadViews(sql: Db, playerId: string, types: string[]): Promise<Ga
   const rows = await loadRows(sql, playerId, null, types);
   return rows.flatMap((row) => {
     const adapter = adapterFor(row.game_type, row.schema_version);
-    return adapter && seatsValid(row, adapter) ? [toView(row, adapter)] : [];
+    return adapter && seatsValid(row, adapter) ? viewOrNothing(row, adapter) : [];
   });
+}
+
+/**
+ * One game of a list as a view; a record the rules cannot read is left out (and logged by ID
+ * only), so one bad row never takes the player's whole list down.
+ */
+function viewOrNothing(row: GameRow, adapter: GameTypeAdapter): GameView[] {
+  try {
+    return [toView(row, adapter)];
+  } catch {
+    console.error('game-api: unreadable game left out of a list:', row.id);
+    return [];
+  }
 }
 
 /** One game, only for its participants (anyone else: not found); unsupported_game if unreadable. */
@@ -614,11 +648,12 @@ async function reissueInvitation(tx: TransactionSql, gameId: string): Promise<st
 async function regenerateInvitation(sql: Sql, player: Player, gameId: string, types: string[]) {
   if (!UUID.test(gameId)) throw new ApiError(404, 'game_not_found', 'Game not found.');
   const [game] = await sql`
-    select g.created_by, g.game_type, g.schema_version from games g
+    select g.created_by, g.game_type, g.schema_version, g.payload, ${ROSTER(sql)} as roster from games g
       join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
      where g.id = ${gameId}`;
   if (!game) throw new ApiError(404, 'game_not_found', 'Game not found.');
   if (readable(game, types).family !== 'chess') throw NOT_FOR_THIS_GAME('An invitation link');
+  playable(game, types);
   if (game.created_by !== player.id) {
     throw new ApiError(403, 'not_creator', 'Only the player who created the game can invite.');
   }
@@ -637,13 +672,14 @@ async function redeemInvitation(sql: Sql, player: Player, body: Record<string, u
   const gameId = await sql.begin(async (tx) => {
     // Locking the invitation serialises competing claims: exactly one can take the seat.
     const [invitation] = await tx`
-      select i.game_id, i.seat, i.redeemed_by, g.game_type, g.schema_version
+      select i.game_id, i.seat, i.redeemed_by, g.game_type, g.schema_version, g.payload, g.created_by,
+             ${ROSTER(tx)} as roster
         from game_invitations i join games g on g.id = i.game_id
        where i.token_hash = decode(${tokenHash}, 'hex')
          for update of i`;
     if (!invitation) throw new ApiError(404, 'invitation_not_found', 'Invitation not found.');
-    // Never seat a player in a game their client cannot show.
-    readable(invitation, types);
+    // Never seat a player in a game their client cannot show, or whose seats do not fit it.
+    playable(invitation, types);
     if (invitation.redeemed_by === player.id) return invitation.game_id as string; // retry by the same player
     if (invitation.redeemed_by) throw new ApiError(409, 'invitation_used', 'This invitation has already been used.');
 
@@ -692,14 +728,13 @@ async function loadHistory(sql: Sql, playerId: string, asked: string[]): Promise
   const types = asked.filter((type) => creatableAdapter(type)?.family === 'chess');
   const rows = await sql`
     select g.id, g.game_type, g.schema_version, g.payload, g.result, g.termination,
-           g.updated_at as finished_at, me.seat as your_seat,
+           g.updated_at as finished_at, me.seat as your_seat, g.created_by, ${ROSTER(sql)} as roster,
            opp.player_id as opponent_id, pl.display_name as opponent_name
       from games g
       join game_participants me on me.game_id = g.id and me.player_id = ${playerId}
       join game_participants opp on opp.game_id = g.id and opp.player_id <> ${playerId}
       join players pl on pl.id = opp.player_id
      where g.status = 'finished' and g.game_type = any(${types}::text[])
-       and me.seat in ('white', 'black') and opp.seat in ('white', 'black')
      order by g.updated_at desc, g.id`;
 
   // One entry per game type AND opponent: results of different types are never combined.
@@ -707,6 +742,8 @@ async function loadHistory(sql: Sql, playerId: string, asked: string[]): Promise
   for (const row of rows) {
     const adapter = adapterFor(row.game_type, row.schema_version);
     if (!adapter || adapter.family !== 'chess') continue; // unreadable here: left out, left untouched
+    // Seats that do not fit the game (e.g. a third player): never counted towards any tally.
+    if (!adapter.seatsValid(row.payload, row.roster as SeatedPlayer[], row.created_by)) continue;
     const key = `${row.game_type}:${row.opponent_id}`;
     let entry = byOpponent.get(key);
     if (!entry) {
@@ -751,11 +788,13 @@ export interface TableResult {
 async function loadTables(sql: Sql, playerId: string, asked: string[]): Promise<TableResult[]> {
   const types = asked.filter((type) => creatableAdapter(type)?.family === 'table');
   if (types.length === 0) return [];
-  const rows = (await loadRows(sql, playerId, null, types)).filter((row) => row.status === 'finished');
+  // Finished tables only, chosen by the query: unfinished ones never crowd a result out of the limit.
+  const rows = await loadRows(sql, playerId, null, types, 'finished');
   return rows.flatMap((row) => {
     const adapter = adapterFor(row.game_type, row.schema_version);
     if (!adapter || adapter.family !== 'table' || !seatsValid(row, adapter)) return [];
-    const view = toView(row, adapter);
+    const [view] = viewOrNothing(row, adapter);
+    if (!view) return [];
     return [
       {
         id: row.id,
@@ -778,11 +817,14 @@ async function startRematch(sql: Sql, player: Player, gameId: string, types: str
 
   const started = await sql.begin(async (tx) => {
     const [source] = await tx`
-      select g.status, g.game_type, g.schema_version from games g
+      select g.status, g.game_type, g.schema_version, g.payload, g.created_by, ${ROSTER(tx)} as roster
+        from games g
         join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
        where g.id = ${gameId}`;
     if (!source) throw new ApiError(404, 'game_not_found', 'Game not found.');
     if (readable(source, types).family !== 'chess') throw NOT_FOR_THIS_GAME('Play again');
+    // Never continue a game whose seats do not fit it: the rematch would copy them.
+    playable(source, types);
     if (source.status !== 'finished') throw new ApiError(409, 'not_finished', 'This game is still going.');
     // "Play again" keeps the game type, with that type's current rules and a fresh start.
     const adapter = creatableAdapter(source.game_type);
@@ -839,14 +881,13 @@ async function submitAction(sql: Sql, player: Player, gameId: string, body: Reco
     // The row lock serialises actions on one game; the revision check rejects stale clients.
     const [game] = await tx`
       select g.game_type, g.schema_version, g.status, g.revision, g.payload, g.created_by, me.seat,
-             (select array_agg(p.seat) from game_participants p where p.game_id = g.id) as seats
+             ${ROSTER(tx)} as roster
         from games g
         join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
        where g.id = ${gameId}
          for update of g`;
     if (!game) throw new ApiError(404, 'game_not_found', 'Game not found.');
-    const adapter = readable(game, types);
-    if (!adapter.seatsValid(game.payload, game.seats as string[])) throw INVALID_SEATS();
+    const adapter = playable(game, types);
 
     // Resigning is common to the chess family; anything else is read by the game's type.
     const resignable = adapter.family === 'chess';

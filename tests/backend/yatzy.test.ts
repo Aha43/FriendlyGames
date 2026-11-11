@@ -767,6 +767,12 @@ describe('seats that do not fit the game', () => {
       ['a gap in the order', async () => { const id = await insertGame(host, 'yatzy', empty(2)); await seat(id, host, 'p1'); await seat(id, a, 'p3'); return id; }],
       ['no first seat', async () => { const id = await insertGame(host, 'yatzy', empty(2)); await seat(id, host, 'p2'); await seat(id, a, 'p3'); return id; }],
       ['a single player', async () => { const id = await insertGame(host, 'yatzy', empty(2)); await seat(id, host, 'p1'); return id; }],
+      ['a one-player record with one seat', async () => { const id = await insertGame(host, 'yatzy', empty(1)); await seat(id, host, 'p1'); return id; }],
+      ['a five-player record', async () => { const id = await insertGame(host, 'yatzy', empty(5)); await seat(id, host, 'p1'); await seat(id, a, 'p2'); return id; }],
+      ['a record with an unknown mode', async () => { const id = await insertGame(host, 'yatzy', { mode: 'fast', players: 2, log: [] }); await seat(id, host, 'p1'); await seat(id, a, 'p2'); return id; }],
+      ['a record with a broken log', async () => { const id = await insertGame(host, 'yatzy', { mode: 'free', players: 2, log: [null] }); await seat(id, host, 'p1'); await seat(id, a, 'p2'); return id; }],
+      ['a record that is not an object', async () => { const id = await insertGame(host, 'yatzy', 'yatzy'); await seat(id, host, 'p1'); await seat(id, a, 'p2'); return id; }],
+      ['the host not in the first seat', async () => { const id = await insertGame(host, 'yatzy', empty(2)); await seat(id, a, 'p1'); await seat(id, host, 'p2'); return id; }],
       ['a table seat at a chess game', async () => { const id = await insertGame(host, 'chess', chessPayload); await seat(id, host, 'white'); await seat(id, a, 'p2'); return id; }],
       ['three players at a chess game', async () => { const id = await insertGame(host, 'chess', chessPayload); await seat(id, host, 'white'); await seat(id, a, 'black'); await seat(id, b, 'p3'); return id; }],
     ];
@@ -790,6 +796,99 @@ describe('seats that do not fit the game', () => {
     // The valid games around them are still listed and playable.
     const good = await createTable(host, [a.id, b.id]);
     expect((await throwDice(host, good.body.game.id, 0)).status).toBe(200);
+  });
+
+  it('one bad table never breaks the games list, and a guest in the first seat cannot throw (review of 4fb7c9f)', async () => {
+    const { host, guests } = await friends(1);
+    const guest = guests[0];
+    const chessBefore = (await call('GET', `/games${ALL}`, { credential: host.credential })).body.games;
+    expect(chessBefore).toHaveLength(1);
+    // A one-seat table whose record says one player: its seats match its record, but no rules read it.
+    const lonely = await insertGame(host, 'yatzy', empty(1));
+    await seat(lonely, host, 'p1');
+    // The host created this table but sits second: the guest would be first to throw.
+    const swapped = await insertGame(host, 'yatzy', empty(2));
+    await seat(swapped, guest, 'p1');
+    await seat(swapped, host, 'p2');
+
+    for (const player of [host, guest]) {
+      const list = await call('GET', `/games${ALL}`, { credential: player.credential });
+      expect(list.status).toBe(200);
+      expect(list.body.games.map((g: { id: string }) => g.id)).toEqual([chessBefore[0].id]);
+      const history = await call('GET', `/history${ALL}`, { credential: player.credential });
+      expect(history.status).toBe(200);
+    }
+    for (const [player, action] of [[guest, { type: 'throw', keep: [] }], [host, { type: 'throw', keep: [] }], [guest, { type: 'score', row: 'chance' }]] as const) {
+      const refused = await act(player, swapped, 0, action);
+      expect(refused.status).toBe(409);
+      expect(refused.body.error.code).toBe('invalid_seats');
+    }
+    expect((await read(host, lonely)).body.error.code).toBe('invalid_seats');
+    for (const id of [lonely, swapped]) {
+      expect(await stored(id)).toMatchObject({ revision: 0, status: 'active' });
+      expect(await actions(id)).toHaveLength(0);
+    }
+  });
+
+  it('a chess game with a malformed roster adds to no tally and gets no rematch or invitation (review of 4fb7c9f)', async () => {
+    const { host, guests } = await friends(2);
+    const [a, b] = guests;
+    const tally = async (p: TestPlayer) => (await call('GET', `/history${ALL}`, { credential: p.credential })).body.history;
+    const before = { host: await tally(host), a: await tally(a), b: await tally(b) };
+    const finishedChess = async () =>
+      (await sql`
+        insert into games (game_type, schema_version, status, result, termination, revision, payload, created_by)
+        values ('chess', 1, 'finished', 'white', 'resignation', 1, ${sql.json(chessPayload as never)}, ${host.id}) returning id`)[0].id as string;
+    // White and Black plus a third player; and White with a table seat for Black.
+    const three = await finishedChess();
+    await seat(three, host, 'white');
+    await seat(three, a, 'black');
+    await seat(three, b, 'p3');
+    const mixed = await finishedChess();
+    await seat(mixed, host, 'white');
+    await seat(mixed, a, 'p2');
+
+    expect({ host: await tally(host), a: await tally(a), b: await tally(b) }).toEqual(before);
+    expect((await call('GET', `/history${CHESS}`, { credential: host.credential })).body.history).toEqual(before.host);
+    for (const id of [three, mixed]) {
+      for (const player of [host, a]) {
+        for (const path of ['rematch', 'invitation']) {
+          const refused = await call('POST', `/games/${id}/${path}${ALL}`, { credential: player.credential });
+          expect(refused.status, path).toBe(409);
+          expect(refused.body.error.code, path).toBe('invalid_seats');
+        }
+      }
+      expect((await sql`select count(*)::int as n from games where rematch_of = ${id}`)[0].n).toBe(0);
+    }
+    // A well-formed finished game between the same two still counts and rematches.
+    const good = await finishedChess();
+    await seat(good, host, 'white');
+    await seat(good, a, 'black');
+    const after = await tally(host);
+    expect(after.find((h: { opponent: { id: string } }) => h.opponent.id === a.id)).toMatchObject({ wins: 1, losses: 0, games: [{ id: good }] });
+    expect((await call('POST', `/games/${good}/rematch${ALL}`, { credential: a.credential })).status).toBe(201);
+  });
+
+  it('a finished table stays in the history however many newer unfinished tables there are (review of 4fb7c9f)', async () => {
+    const { host, guests } = await friends(1);
+    const finished = await storedTable([host, guests[0]], completeGame('free', 2));
+    // 205 newer unfinished tables at the same two seats: more than one page of the games list.
+    await sql`
+      with made as (
+        insert into games (game_type, schema_version, status, revision, payload, created_by, updated_at)
+        select 'yatzy', 1, 'active', 0, ${sql.json(empty(2) as never)}, ${host.id}, now() + (n || ' seconds')::interval
+          from generate_series(1, 205) n
+        returning id
+      )
+      insert into game_participants (game_id, player_id, seat)
+      select id, ${host.id}::uuid, 'p1' from made union all select id, ${guests[0].id}::uuid, 'p2' from made`;
+    for (const player of [host, guests[0]]) {
+      const list = await call('GET', `/games${ALL}`, { credential: player.credential });
+      expect(list.body.games).toHaveLength(200);
+      expect(list.body.games.map((g: { id: string }) => g.id)).not.toContain(finished);
+      const history = await call('GET', `/history${ALL}`, { credential: player.credential });
+      expect(history.body.tables.map((t: { id: string }) => t.id)).toEqual([finished]);
+    }
   });
 
   it('a record whose player count is not 2–4 is never created by the API', async () => {
