@@ -6,8 +6,19 @@ import LocalPage from './pages/LocalPage';
 import Lobby from './pages/Lobby';
 import Onboarding from './pages/Onboarding';
 import SharedGamePage from './pages/SharedGamePage';
+import YatzyPage from './pages/YatzyPage';
+import type { TableGame } from './shared/gameApi';
 import { forgetIdentity, loadIdentity, type Identity } from './shared/identity';
 import { useRoute } from './shared/route';
+
+/**
+ * One shared game. Its type is only known once loaded: the chess page loads it, and hands a
+ * table (Yatzy) over to the table page (#86).
+ */
+function GamePage(props: { identity: Identity; gameId: string; onIdentityRejected: () => void }) {
+  const [table, setTable] = useState<TableGame | null>(null);
+  return table ? <YatzyPage {...props} initial={table} /> : <SharedGamePage {...props} onTable={setTable} />;
+}
 
 /** The corresponding source of every published build (GPL-3.0-or-later, see LICENSE). */
 const SOURCE_URL = 'https://github.com/Aha43/FriendlyGames';
@@ -49,9 +60,7 @@ export default function App() {
   } else if (route.page === 'join') {
     content = <JoinPage key={route.token} identity={identity} token={route.token} onIdentityRejected={onIdentityRejected} />;
   } else if (route.page === 'game') {
-    content = (
-      <SharedGamePage key={route.gameId} identity={identity} gameId={route.gameId} onIdentityRejected={onIdentityRejected} />
-    );
+    content = <GamePage key={route.gameId} identity={identity} gameId={route.gameId} onIdentityRejected={onIdentityRejected} />;
   } else {
     content = <Lobby identity={identity} onIdentityRejected={onIdentityRejected} />;
   }
@@ -64,7 +73,7 @@ export default function App() {
         <h1>
           <a href="#/">FriendlyGames</a>
         </h1>
-        <span className="topbar-game">Chess</span>
+        <span className="topbar-game">Chess &amp; Yatzy</span>
         <nav className="topbar-nav" aria-label="Main">
           {route.page === 'local' ? <a href="#/">Your games</a> : <a href="#/local">Local game</a>}
           {identity && route.page !== 'local' && <span className="topbar-player">{identity.displayName}</span>}

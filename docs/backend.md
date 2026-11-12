@@ -271,7 +271,7 @@ Yatzy is the first game that is not chess-family: a **table** of two to four pla
 order, with one ranking for everyone at it. Rules, record and the reasons are in
 [decision 0002](decisions/0002-yatzy-format.md); the rules module is
 `supabase/functions/_shared/yatzy/rules.ts`. Only clients that ask for `types=…,yatzy` see or
-create tables. The web client does not yet (#86).
+create tables. The web client does since #86.
 
 - **Creating** (`POST /games` with `type: "yatzy"`, `mode`, `friendPlayerIds`): the host and one
   to three **previous opponents**, each checked on the server exactly as for a direct chess

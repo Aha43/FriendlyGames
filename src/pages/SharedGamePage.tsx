@@ -9,9 +9,9 @@ import PlayBoard from '../components/PlayBoard';
 import PlayerPlate, { type PlateBadge } from '../components/PlayerPlate';
 import { badgeFor } from '../shared/badges';
 import { describeGame, opponentName, other } from '../shared/describe';
-import { ApiError, gameApi, NetworkError, type GameAction, type Seat, type SharedGame } from '../shared/gameApi';
+import { ApiError, gameApi, isTable, NetworkError, type AnyGame, type GameAction, type Seat, type SharedGame, type TableGame } from '../shared/gameApi';
 import { upTo, type BoardAction } from '../games/chessFamily';
-import { chessFamilyView, GAME_TYPES, UNSUPPORTED_GAME_TEXT, type ChessFamilyView } from '../games/registry';
+import { chessFamilyView, GAME_TYPES, tableView, UNSUPPORTED_GAME_TEXT, type ChessFamilyView } from '../games/registry';
 import { forgetInvitation, invitationFor, rememberInvitation, type Identity } from '../shared/identity';
 import { newRequestId } from '../shared/requestId';
 import { navigate } from '../shared/route';
@@ -55,9 +55,11 @@ interface SharedGamePageProps {
   identity: Identity;
   gameId: string;
   onIdentityRejected: () => void;
+  /** The game turned out to be a table (Yatzy), which has its own page (#86). */
+  onTable?: (game: TableGame) => void;
 }
 
-export default function SharedGamePage({ identity, gameId, onIdentityRejected }: SharedGamePageProps) {
+export default function SharedGamePage({ identity, gameId, onIdentityRejected, onTable }: SharedGamePageProps) {
   const [game, setGame] = useState<SharedGame | null>(null);
   const [missing, setMissing] = useState(false);
   // A game this client cannot show (a type it does not know, #53): explained, never guessed at.
@@ -81,14 +83,22 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected }:
   const changedFirst = resolved && !wasSaved(pending!, game!, view!);
 
   /** Accept a confirmed game from the server, never going back to an older revision. */
-  const accept = useCallback((next: SharedGame) => {
-    if (!chessFamilyView(next)) {
-      setUnsupported(true);
-      return;
-    }
-    setGame((current) => (current && current.id === next.id && current.revision > next.revision ? current : next));
-    if (next.status !== 'waiting') forgetInvitation(next.id);
-  }, []);
+  const accept = useCallback(
+    (next: AnyGame) => {
+      if (isTable(next)) {
+        if (tableView(next) && onTable) onTable(next);
+        else setUnsupported(true);
+        return;
+      }
+      if (!chessFamilyView(next)) {
+        setUnsupported(true);
+        return;
+      }
+      setGame((current) => (current && current.id === next.id && current.revision > next.revision ? current : next));
+      if (next.status !== 'waiting') forgetInvitation(next.id);
+    },
+    [onTable],
+  );
 
   const refresh = useCallback(async () => {
     try {

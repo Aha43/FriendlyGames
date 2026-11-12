@@ -1,6 +1,6 @@
 // The game types this client can show (#53, #55). The server only sends games of these types
 // (`types` on every request), and a game page is chosen by the type's family.
-import type { SharedGame } from '../shared/gameApi';
+import { isTable, type AnyGame, type TableGame } from '../shared/gameApi';
 import { chessRules } from './chess';
 import { chess960Rules } from './chess960';
 import type { ChessFamilyRules, ChessRecord } from './chessFamily';
@@ -30,11 +30,25 @@ export const GAME_TYPES: Record<GameType, GameTypeEntry> = {
   },
 };
 
+/** Table games (#86): two to four seated players and one ranking; shown by their own page. */
+export const TABLE_TYPES = {
+  yatzy: { label: 'Yatzy', schemaVersions: [1] as readonly number[] },
+} as const;
+export type TableType = keyof typeof TABLE_TYPES;
+
 /** Sent as `types` with every game request. */
-export const SUPPORTED_TYPES: readonly string[] = Object.keys(GAME_TYPES);
+export const SUPPORTED_TYPES: readonly string[] = [...Object.keys(GAME_TYPES), ...Object.keys(TABLE_TYPES)];
 
 /** The label for a type name from the server, e.g. in history. */
-export const typeLabel = (type: string): string => GAME_TYPES[type as GameType]?.label ?? type;
+export const typeLabel = (type: string): string =>
+  GAME_TYPES[type as GameType]?.label ?? TABLE_TYPES[type as TableType]?.label ?? type;
+
+/** A table this client can show: a known table type in a schema version it reads. */
+export function tableView(game: AnyGame): TableGame | null {
+  if (!isTable(game)) return null;
+  const entry = TABLE_TYPES[game.type as TableType];
+  return entry && entry.schemaVersions.includes(game.schemaVersion) && game.yatzy ? game : null;
+}
 
 /** A chess-family game whose saved record this client can replay, with the rules to replay it. */
 export interface ChessFamilyView {
@@ -43,9 +57,9 @@ export interface ChessFamilyView {
   record: ChessRecord;
 }
 
-export function chessFamilyView(game: SharedGame): ChessFamilyView | null {
+export function chessFamilyView(game: AnyGame): ChessFamilyView | null {
   const entry = GAME_TYPES[game.type as GameType];
-  if (!entry || entry.family !== 'chess' || !entry.schemaVersions.includes(game.schemaVersion)) return null;
+  if (isTable(game) || !entry || entry.family !== 'chess' || !entry.schemaVersions.includes(game.schemaVersion)) return null;
   const saved = game[entry.view];
   if (!saved) return null;
   return {

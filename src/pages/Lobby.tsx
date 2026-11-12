@@ -1,9 +1,21 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import ChessHistory from '../components/ChessHistory';
 import InvitationShare from '../components/InvitationShare';
-import { CHESS960_CASTLING, CHESS960_SUMMARY, GAME_TYPES, typeLabel, type GameType } from '../games/registry';
+import NewTable, { type UncertainTable } from '../components/NewTable';
+import YatzyHistory from '../components/YatzyHistory';
+import { CHESS960_CASTLING, CHESS960_SUMMARY, GAME_TYPES, tableView, typeLabel, type GameType } from '../games/registry';
+import { describeTable, MODE_LABELS, othersAt, seated } from '../games/yatzy';
 import { describeGame, opponentName } from '../shared/describe';
-import { ApiError, gameApi, NetworkError, type HistoryEntry, type PreviousOpponent, type SharedGame } from '../shared/gameApi';
+import {
+  ApiError,
+  gameApi,
+  isTable,
+  NetworkError,
+  type AnyGame,
+  type HistoryEntry,
+  type PreviousOpponent,
+  type TableResult,
+} from '../shared/gameApi';
 import { forgetInvitation, rememberInvitation, tokenFromInvitation, type Identity } from '../shared/identity';
 import { navigate } from '../shared/route';
 import { newRequestId } from '../shared/requestId';
@@ -16,8 +28,9 @@ interface LobbyProps {
 }
 
 export default function Lobby({ identity, onIdentityRejected }: LobbyProps) {
-  const [games, setGames] = useState<SharedGame[] | null>(null);
+  const [games, setGames] = useState<AnyGame[] | null>(null);
   const [history, setHistory] = useState<HistoryEntry[] | null>(null);
+  const [tables, setTables] = useState<TableResult[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   // An answer that arrives after the lobby has closed is ignored (its timers are already cleared).
   const open = useRef(false);
@@ -30,10 +43,14 @@ export default function Lobby({ identity, onIdentityRejected }: LobbyProps) {
     ]);
     if (!open.current) return;
     if (games.status === 'fulfilled') {
-      setGames(games.value.games);
+      // A table in a schema this client cannot read is left out, like any unknown game.
+      setGames(games.value.games.filter((game) => !isTable(game) || tableView(game)));
       for (const game of games.value.games) if (game.status !== 'waiting') forgetInvitation(game.id);
     }
-    if (history.status === 'fulfilled') setHistory(history.value.history);
+    if (history.status === 'fulfilled') {
+      setHistory(history.value.history);
+      setTables((history.value.tables ?? []).filter((table) => table.gameType === 'yatzy' && table.result?.yatzy?.standings));
+    }
 
     const failure = [games, history].find((r) => r.status === 'rejected')?.reason;
     if (failure instanceof ApiError && failure.status === 401) onIdentityRejected();
@@ -69,6 +86,7 @@ export default function Lobby({ identity, onIdentityRejected }: LobbyProps) {
       </section>
 
       {history && <ChessHistory history={history} />}
+      <YatzyHistory tables={tables} />
 
       <NewGame identity={identity} onCreated={refresh} onIdentityRejected={onIdentityRejected} />
       <JoinByLink />
@@ -80,10 +98,25 @@ export default function Lobby({ identity, onIdentityRejected }: LobbyProps) {
   );
 }
 
-function GameLinks({ games, label }: { games: SharedGame[]; label: string }) {
+function GameLinks({ games, label }: { games: AnyGame[]; label: string }) {
   return (
     <ul className="game-links" aria-label={label}>
       {games.map((game) => {
+        if (isTable(game)) {
+          const yourTurn = game.turn === game.yourSeat;
+          return (
+            <li key={game.id}>
+              <a href={`#/game/${game.id}`} className={`game-link${yourTurn ? ' game-link-your-turn' : ''}`}>
+                <span className="game-link-title">with {othersAt(game)}</span>
+                <span className="game-link-status">{describeTable(game)}</span>
+                <span className="game-link-meta">
+                  <span className="game-link-type game-link-type-yatzy">Yatzy</span> · {MODE_LABELS[game.yatzy.mode]} ·{' '}
+                  {seated(game.players).length} players
+                </span>
+              </a>
+            </li>
+          );
+        }
         const opponent = opponentName(game);
         const yourTurn = game.status !== 'finished' && game.turn === game.yourSeat;
         return (
@@ -120,7 +153,7 @@ function NewGame({
   onIdentityRejected: () => void;
 }) {
   const [email, setEmail] = useState('');
-  const [type, setType] = useState<GameType>('chess');
+  const [type, setType] = useState<GameType | 'yatzy'>('chess');
   // Nobody is chosen until the player picks someone (#73).
   const [choice, setChoice] = useState<Target | null>(null);
   const [opponents, setOpponents] = useState<PreviousOpponent[] | null>(null);
@@ -132,7 +165,10 @@ function NewGame({
   const [created, setCreated] = useState<{ gameId: string; token: string | null; type: GameType } | null>(null);
   // An attempt whose outcome is unknown. Retrying the same target (same friend email or same
   // opponent) and type with its request ID finds the game if it was created; changing any is a new request.
-  const [uncertain, setUncertain] = useState<{ requestId: string; target: string; type: GameType } | null>(null);
+  const [uncertain, setUncertain] = useState<{ requestId: string; target: string; type: string } | null>(null);
+  // The same for a Yatzy table: kept here so it survives choosing another game and coming back.
+  const [uncertainTable, setUncertainTable] = useState<UncertainTable | null>(null);
+  const [tableBusy, setTableBusy] = useState(false);
   const open = useRef(false);
 
   const loadOpponents = useCallback(async () => {
@@ -172,7 +208,7 @@ function NewGame({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (submitting.current || target === null) return;
+    if (submitting.current || target === null || type === 'yatzy') return;
     const friendEmail = email.trim();
     const requestId = retrying && uncertain ? uncertain.requestId : newRequestId();
     submitting.current = true;
@@ -212,10 +248,50 @@ function NewGame({
 
   const label = busy ? 'Creating…' : retrying ? 'Try again' : mode === 'email' ? 'Create game' : 'Start game';
 
+  // While a start is on its way, the game choice holds still: switching would take the form
+  // (and with a table, its submit guard) away before the outcome is known, and a second start
+  // of the same game would get a new request ID.
+  const typePicker = (
+    <fieldset className="type-picker" disabled={busy || tableBusy}>
+      <legend>Game</legend>
+      {(['chess', 'chess960', 'yatzy'] as const).map((option) => (
+        <label key={option} className="type-option">
+          <input type="radio" name="game-type" value={option} checked={type === option} onChange={() => setType(option)} />
+          {option === 'chess960' ? 'Fischer Random (Chess960)' : typeLabel(option)}
+        </label>
+      ))}
+    </fieldset>
+  );
+  const opponentsStatus = (
+    <>
+      {opponents === null && !opponentsFailed && <p className="muted">Looking for people you’ve played with…</p>}
+      {opponentsFailed && (
+        <p className="banner banner-warning opponents-failed">
+          Couldn’t load the people you’ve played with.{known || type === 'yatzy' ? '' : ' You can still invite someone by email.'}{' '}
+          <button type="button" className="text-button" onClick={loadOpponents}>
+            Load the list again
+          </button>
+        </p>
+      )}
+    </>
+  );
+
   return (
     <section className="card" aria-labelledby="new-game-title">
       <h2 id="new-game-title">Start a game</h2>
-      {created ? (
+      {type === 'yatzy' ? (
+        <NewTable
+          identity={identity}
+          typePicker={typePicker}
+          opponentsStatus={opponentsStatus}
+          opponents={opponents}
+          uncertain={uncertainTable}
+          onUncertain={setUncertainTable}
+          onBusy={setTableBusy}
+          onCreated={onCreated}
+          onIdentityRejected={onIdentityRejected}
+        />
+      ) : created ? (
         <>
           {created.token ? (
             <>
@@ -236,21 +312,7 @@ function NewGame({
         </>
       ) : (
         <form onSubmit={submit} className="form">
-          <fieldset className="type-picker">
-            <legend>Game</legend>
-            {(['chess', 'chess960'] as const).map((option) => (
-              <label key={option} className="type-option">
-                <input
-                  type="radio"
-                  name="game-type"
-                  value={option}
-                  checked={type === option}
-                  onChange={() => setType(option)}
-                />
-                {option === 'chess960' ? 'Fischer Random (Chess960)' : GAME_TYPES[option].label}
-              </label>
-            ))}
-          </fieldset>
+          {typePicker}
           {type === 'chess960' && (
             <div className="type-explainer">
               <p>{CHESS960_SUMMARY} The server draws your starting arrangement when the game is created.</p>
@@ -258,15 +320,7 @@ function NewGame({
             </div>
           )}
 
-          {opponents === null && !opponentsFailed && <p className="muted">Looking for people you’ve played with…</p>}
-          {opponentsFailed && (
-            <p className="banner banner-warning opponents-failed">
-              Couldn’t load the people you’ve played with.{known ? '' : ' You can still invite someone by email.'}{' '}
-              <button type="button" className="text-button" onClick={loadOpponents}>
-                Load the list again
-              </button>
-            </p>
-          )}
+          {opponentsStatus}
           {known && (
             <fieldset className="opponent-picker">
               <legend>Play with</legend>

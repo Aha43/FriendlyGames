@@ -41,6 +41,77 @@ export interface SharedGame {
   rematchGameId: string | null;
 }
 
+/** A seat at a table (Yatzy): turn order, `p1` being the host. */
+export type TableSeat = 'p1' | 'p2' | 'p3' | 'p4';
+
+/** One player's card as the server replays it. */
+export interface YatzyCard {
+  seat: TableSeat;
+  /** Rows scored so far, by row name (see `@shared/yatzy/rules.ts`). */
+  scores: Record<string, number>;
+  upperSum: number;
+  bonus: number;
+  total: number;
+  /** Banked throws. */
+  tokens: number;
+}
+
+export interface YatzyStanding {
+  seat: TableSeat;
+  total: number;
+  tokens: number;
+  /** 1 for the winner(s); equal on points and tokens share a place. */
+  place: number;
+}
+
+export interface YatzyView {
+  mode: 'forced' | 'free';
+  current: TableSeat | null;
+  /** The turn in progress: the latest committed throw, the positions kept for it, its number. */
+  turn: { throws: number; dice: number[] | null; kept: number[] };
+  players: YatzyCard[];
+  standings: YatzyStanding[] | null;
+  winners: TableSeat[] | null;
+}
+
+/** A Yatzy table (#85): two to four seated players, one ranking for the table. */
+export interface TableGame {
+  id: string;
+  type: 'yatzy';
+  schemaVersion: number;
+  status: 'active' | 'finished';
+  result: 'scored' | null;
+  termination: 'scorecards-complete' | null;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+  players: Partial<Record<TableSeat, PlayerSummary>>;
+  yourSeat: TableSeat;
+  /** The seat to act; null once finished. */
+  turn: TableSeat | null;
+  /** Throws and scores so far. */
+  moveCount: number;
+  yatzy: YatzyView;
+  rematchGameId: null;
+}
+
+/** Any game the server sends this client. */
+export type AnyGame = SharedGame | TableGame;
+
+export const isTable = (game: AnyGame): game is TableGame => game.type === 'yatzy';
+
+/** A finished table in the history: its own ranking, never part of a chess tally. */
+export interface TableResult {
+  id: string;
+  gameType: string;
+  finishedAt: string;
+  yourSeat: TableSeat;
+  players: Partial<Record<TableSeat, PlayerSummary>>;
+  result: { yatzy: YatzyView };
+}
+
+export type TableAction = { type: 'throw'; keep: number[] } | { type: 'score'; row: string };
+
 export interface HistoryEntry {
   gameType: string;
   opponent: PlayerSummary;
@@ -79,7 +150,7 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
-    readonly game?: SharedGame,
+    readonly game?: AnyGame,
   ) {
     super(message);
   }
@@ -170,12 +241,12 @@ async function attemptRequest<T>(method: 'GET' | 'POST', path: string, credentia
     // fall through with null
   }
   if (!response.ok) {
-    const error = (data as { error?: { code?: string; message?: string; game?: SharedGame } } | null)?.error;
+    const error = (data as { error?: { code?: string; message?: string; game?: AnyGame } } | null)?.error;
     const game = error?.game ? withCommonFields(error.game) : undefined;
     throw new ApiError(response.status, error?.code ?? 'unknown', error?.message ?? 'Request failed.', game);
   }
   if (data && typeof data === 'object') {
-    const body = data as { game?: SharedGame; games?: SharedGame[] };
+    const body = data as { game?: AnyGame; games?: AnyGame[] };
     if (body.game) body.game = withCommonFields(body.game);
     if (Array.isArray(body.games)) body.games = body.games.map(withCommonFields);
   }
@@ -187,9 +258,11 @@ async function attemptRequest<T>(method: 'GET' | 'POST', path: string, credentia
  * The web client publishes on merge, before the owner deploys the backend, so fill them in
  * from the chess view rather than show "undefined moves" in the meantime.
  */
-function withCommonFields(game: SharedGame): SharedGame {
-  if ((game.turn !== undefined && game.moveCount !== undefined) || !game.chess) return game;
-  return { ...game, turn: game.turn ?? game.chess.turn, moveCount: game.moveCount ?? game.chess.moves.length };
+function withCommonFields(game: AnyGame): AnyGame {
+  if (isTable(game)) return game;
+  const chess: SharedGame = game;
+  if ((chess.turn !== undefined && chess.moveCount !== undefined) || !chess.chess) return chess;
+  return { ...chess, turn: chess.turn ?? chess.chess.turn, moveCount: chess.moveCount ?? chess.chess.moves.length };
 }
 
 export const gameApi = {
@@ -206,14 +279,17 @@ export const gameApi = {
       displayName === undefined ? { email } : { email, displayName },
     ),
   me: (credential: string) => request<{ player: PlayerSummary & { email: string } }>('GET', '/me', credential),
-  listGames: (credential: string) => request<{ games: SharedGame[] }>('GET', '/games', credential),
-  /** Finished games per opponent with an exact tally. */
-  history: (credential: string) => request<{ history: HistoryEntry[] }>('GET', '/history', credential),
+  listGames: (credential: string) => request<{ games: AnyGame[] }>('GET', '/games', credential),
+  /**
+   * Finished chess-family games per opponent with an exact tally, and finished tables on their
+   * own list (absent from a backend before #85).
+   */
+  history: (credential: string) => request<{ history: HistoryEntry[]; tables?: TableResult[] }>('GET', '/history', credential),
   /** A new game with the same two players, colours swapped. Both players asking get the same game. */
   rematch: (credential: string, id: string) =>
     request<{ game: SharedGame; duplicate: boolean }>('POST', `/games/${encodeURIComponent(id)}/rematch`, credential),
   getGame: (credential: string, id: string) =>
-    request<{ game: SharedGame }>('GET', `/games/${encodeURIComponent(id)}`, credential),
+    request<{ game: AnyGame }>('GET', `/games/${encodeURIComponent(id)}`, credential),
   /**
    * Retrying with the same requestId (and the same friend and type) finds the same game;
    * `invitation` is null once the friend has joined.
@@ -235,6 +311,25 @@ export const gameApi = {
       friendPlayerId,
       requestId,
       type,
+    }),
+  /**
+   * A Yatzy table (#85) with one to three previous opponents, by player ID, seated after the
+   * host in the order given and active at once. Retrying with the same requestId (same mode and
+   * ordered roster) finds the same table.
+   */
+  createTable: (credential: string, mode: 'forced' | 'free', friendPlayerIds: string[], requestId: string) =>
+    request<{ game: TableGame; invitation: null; duplicate: boolean }>('POST', '/games', credential, {
+      type: 'yatzy',
+      mode,
+      friendPlayerIds,
+      requestId,
+    }),
+  /** A throw or a score at a table. Retrying with the same requestId and intent is answered once. */
+  submitTableAction: (credential: string, id: string, requestId: string, expectedRevision: number, action: TableAction) =>
+    request<{ game: TableGame; duplicate: boolean }>('POST', `/games/${encodeURIComponent(id)}/actions`, credential, {
+      requestId,
+      expectedRevision,
+      action,
     }),
   /** A new invitation link for the creator of a game nobody has joined; earlier links stop working. */
   renewInvitation: (credential: string, id: string) =>

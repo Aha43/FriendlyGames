@@ -511,7 +511,7 @@ h2 {
   padding-top: 0.1rem;
 }
 
-.game-players { grid-area: players; min-width: 0; }
+.game-players { grid-area: players; min-width: 0; overflow-wrap: anywhere; }
 .game-vs { color: var(--ink-soft); font-size: 0.8rem; }
 
 .game-result {
@@ -525,8 +525,10 @@ h2 {
 
 .game-ending {
   grid-area: ending;
+  min-width: 0;
   font-size: 0.78rem;
   color: var(--ink-soft);
+  overflow-wrap: anywhere;
 }
 
 /* ---------- footer ---------- */
@@ -909,7 +911,8 @@ h2 {
 
 .game-link {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* The status takes what it needs up to 60%, then wraps: a long name never widens the link. */
+  grid-template-columns: minmax(0, 1fr) fit-content(60%);
   grid-template-areas:
     'title status'
     'meta meta';
@@ -941,8 +944,8 @@ h2 {
   white-space: nowrap;
 }
 
-.game-link-status { grid-area: status; font-size: 0.85rem; font-weight: 600; color: var(--green); text-align: right; }
-.game-link-meta { grid-area: meta; font-size: 0.78rem; color: var(--ink-soft); }
+.game-link-status { grid-area: status; min-width: 0; font-size: 0.85rem; font-weight: 600; color: var(--green); text-align: right; overflow-wrap: anywhere; }
+.game-link-meta { grid-area: meta; min-width: 0; font-size: 0.78rem; color: var(--ink-soft); overflow-wrap: anywhere; }
 
 /* ---------- invitation ---------- */
 
@@ -1270,3 +1273,292 @@ h2 {
   outline: 3px solid #2f6fd6;
   outline-offset: 2px;
 }
+
+/* ---------- Yatzy (#86) ---------- */
+
+.game-link-type-yatzy { color: var(--green); }
+
+.yatzy-table { gap: 0.75rem; }
+
+.yatzy-head {
+  background: rgba(251, 245, 233, 0.94);
+  border-radius: 12px;
+  padding: 0.55rem 0.8rem 0.6rem;
+}
+
+.yatzy-mode {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+
+.yatzy-status {
+  margin: 0.1rem 0 0;
+  font-family: var(--serif);
+  font-size: 1.2rem;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.yatzy-status-finished { color: var(--green); }
+
+/* The felt the dice land on. */
+.dice-tray {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: clamp(0.3rem, 2vw, 0.75rem);
+  padding: clamp(0.6rem, 3vw, 1.1rem);
+  border-radius: 12px;
+  background: radial-gradient(ellipse at 50% 30%, #6f8250, #4c5c33);
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.die {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.15rem 0 0.1rem;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font: inherit;
+  color: var(--wood-text);
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+
+.die:disabled { cursor: default; }
+
+.die-face {
+  width: 100%;
+  max-width: 4.5rem;
+  aspect-ratio: 1;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.35));
+}
+
+.die-face rect {
+  fill: #fdf8ec;
+  stroke: #cdbb96;
+  stroke-width: 3;
+}
+
+.die-face circle { fill: var(--ink); }
+
+.die-blank .die-face rect {
+  fill: rgba(253, 248, 236, 0.18);
+  stroke: rgba(253, 248, 236, 0.5);
+  stroke-dasharray: 8 6;
+}
+
+/* A kept die is raised and ringed, and says so in words: never colour alone. */
+.die-kept { transform: translateY(-0.3rem); }
+
+.die-kept .die-face rect {
+  fill: #fbe7b0;
+  stroke: var(--gold);
+  stroke-width: 7;
+}
+
+.die-state {
+  min-height: 1.1em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+}
+
+.die:not(.die-kept) .die-state { font-weight: 500; opacity: 0.85; }
+
+.die:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .die { transition: none; }
+}
+
+.throw-info {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--wood-text);
+  overflow-wrap: anywhere;
+}
+
+.yatzy-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.yatzy-actions .button { width: 100%; }
+
+.throw-note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--wood-text);
+  overflow-wrap: anywhere;
+}
+
+/* Scorecard: the row names and one narrow column per player; fits four players at 320px. */
+.yatzy-panel { display: flex; flex-direction: column; gap: 0.6rem; }
+.yatzy-panel .game-notice { min-height: 0; }
+.yatzy-panel .game-notice:empty { display: none; }
+
+.scorecard {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.scorecard caption {
+  caption-side: top;
+  text-align: left;
+  font-family: var(--serif);
+  font-size: 1.1rem;
+  font-weight: 600;
+  padding-bottom: 0.3rem;
+}
+
+.scorecard th,
+.scorecard td {
+  height: 2.1rem;
+  padding: 0.1rem 0.25rem;
+  border-bottom: 1px solid var(--paper-edge);
+  text-align: center;
+  overflow: hidden;
+}
+
+.scorecard th[scope='row'],
+.scorecard thead th:first-child {
+  width: 7.6rem;
+  text-align: left;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.scorecard-4 th[scope='row'],
+.scorecard-4 thead th:first-child { width: 6.6rem; font-size: 0.8rem; }
+
+.scorecard thead th {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  vertical-align: bottom;
+}
+
+.scorecard-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scorecard-me { background: rgba(217, 162, 58, 0.12); }
+.scorecard thead .scorecard-current { color: var(--ink); box-shadow: inset 0 -3px 0 var(--gold); }
+
+.scorecard-sum th,
+.scorecard-sum td { background-color: rgba(0, 0, 0, 0.035); color: var(--ink-soft); font-size: 0.8rem; }
+.scorecard-total th,
+.scorecard-total td { color: var(--ink); font-size: 0.95rem; font-weight: 700; }
+.scorecard-total th[scope='row'] { font-weight: 700; }
+
+.scorecard-chosen th[scope='row'] { font-weight: 700; }
+
+.scorecard-preview { color: var(--ink-soft); font-style: italic; }
+
+.scorecard-pick {
+  width: 100%;
+  min-height: 1.8rem;
+  padding: 0;
+  border: 1.5px dashed var(--wood-light);
+  border-radius: 7px;
+  background: #fffaf0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--wood-dark);
+  cursor: pointer;
+}
+
+.scorecard-pick[aria-pressed='true'] {
+  border-style: solid;
+  border-color: var(--wood-dark);
+  background: var(--wood-dark);
+  color: var(--wood-text);
+}
+
+.scorecard-pick:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 1px;
+}
+
+/* The explicit score action stays in reach under a long card on a phone. */
+.score-bar {
+  position: sticky;
+  bottom: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--paper-edge);
+  border-radius: 12px;
+  background: #fffaf0;
+  box-shadow: 0 4px 14px rgba(60, 32, 12, 0.18);
+}
+
+.score-bar .button { width: 100%; }
+.score-bar-note { margin: 0; font-size: 0.82rem; color: var(--ink-soft); }
+
+.yatzy-results {
+  background: rgba(251, 245, 233, 0.94);
+  border-radius: 12px;
+  padding: 0.6rem 0.8rem;
+}
+
+.standings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.standing {
+  display: grid;
+  grid-template-columns: 2.4rem minmax(0, 1fr);
+  grid-template-areas: 'place name' 'place score';
+  column-gap: 0.4rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: 8px;
+}
+
+.standing-winner { background: rgba(217, 162, 58, 0.22); }
+.standing-place { grid-area: place; align-self: center; font-family: var(--serif); font-size: 1.15rem; font-weight: 600; }
+.standing-name { grid-area: name; font-weight: 600; overflow-wrap: anywhere; }
+.standing-score { grid-area: score; font-size: 0.82rem; color: var(--ink-soft); overflow-wrap: anywhere; }
+
+.tiebreak { margin: 0.5rem 0 0; font-size: 0.85rem; overflow-wrap: anywhere; }
+
+/* Names are up to 40 characters with nowhere to break: every line that carries one wraps. */
+.yatzy-table,
+.yatzy-panel { min-width: 0; }
+.yatzy-head,
+.yatzy-results,
+.yatzy-panel .game-notice,
+.yatzy-panel .banner,
+.score-bar-note { overflow-wrap: anywhere; }
+
+/* Starting a table. */
+.turn-order { display: flex; flex-direction: column; gap: 0.2rem; }
+.turn-order-title { margin: 0; font-size: 0.88rem; font-weight: 600; color: var(--ink-soft); }
+.turn-order ol { margin: 0; padding-left: 1.4rem; overflow-wrap: anywhere; }
