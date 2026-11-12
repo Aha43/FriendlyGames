@@ -244,8 +244,9 @@ history. A small adapter per stored `(game_type, schema_version)` owns that type
 saved payload, actions, turn, move count, view and outcome (`game-api/gameTypes.ts`). A
 static registry picks the adapter from the stored row; nothing falls back to chess.
 
-- **Types**: `chess` (schema 1, chess.js, unchanged) and `chess960`, Fischer Random
-  (schema 1, chessops; #54, see below). The web client offers both since #55.
+- **Types**: `chess` (schema 1, chess.js, unchanged), `chess960`, Fischer Random
+  (schema 1, chessops; #54, see below) and `yatzy` (schema 1; #85, see below). The web client
+  offers the two chess types since #55.
 - **Which types a client reads**: every game request may carry `?types=chess,chess960`.
   Omitted means `chess` only, which is what every client before #53 expects (it reads
   `.chess.moves`). Unknown names are ignored. This is compatibility metadata, never
@@ -259,9 +260,71 @@ static registry picks the adapter from the stored row; nothing falls back to che
   enabled, or that the client does not read, gets `400 unsupported_game_type`.
 - **A request ID** found again is compared with what the request asks for, before the turn,
   revision or rules are looked at (see Actions): a retry may arrive after the game moved on.
-- Seats (White/Black) and results (white/black/draw) are still chess-family columns. A
-  future non-chess type would bring its own seats, results, adapter and presenter; see
-  [game-types.md](game-types.md).
+- Each adapter belongs to a **family**. `chess`: White/Black seats, white/black/draw results,
+  email or single-opponent creation, resignation, rematch and per-opponent history. `table`
+  (Yatzy): ordered seats `p1`–`p4`, a roster of previous opponents, one ranking per table and
+  none of those chess flows. See [game-types.md](game-types.md).
+
+## Yatzy tables (#85)
+
+Yatzy is the first game that is not chess-family: a **table** of two to four players in turn
+order, with one ranking for everyone at it. Rules, record and the reasons are in
+[decision 0002](decisions/0002-yatzy-format.md); the rules module is
+`supabase/functions/_shared/yatzy/rules.ts`. Only clients that ask for `types=…,yatzy` see or
+create tables. The web client does not yet (#86).
+
+- **Creating** (`POST /games` with `type: "yatzy"`, `mode`, `friendPlayerIds`): the host and one
+  to three **previous opponents**, each checked on the server exactly as for a direct chess
+  start. All are seated at once as `p1` (the host), `p2`… in the order given, the table is
+  `active` immediately and there is no invitation. Names, emails and repeated or unknown IDs are
+  refused; yourself, an unknown ID and a stranger all get the same `404 opponent_not_found`.
+  A `requestId` stands for the type, mode and ordered roster; anything else under the same ID is
+  `409 request_id_reused`.
+- **Throwing** (`{ type: "throw", keep: [positions] }`): the server rolls. The first throw of a
+  turn rolls five dice; a later one keeps the named positions (0–4, at most four) and rolls the
+  rest. The fourth and later throws of a turn each spend one banked token, and are refused
+  without one. The dice, kept positions and throw number are saved with the action. A request
+  that carries dice, points or tokens is refused (`400`), never trusted or ignored.
+- **Scoring** (`{ type: "score", row }`): needs at least one throw. The server calculates the
+  points from the saved dice, banks 2, 1 or 0 tokens for scoring on the first, second or third
+  throw (nothing after a paid throw), and passes the turn or finishes the table, all in one
+  commit. Forced mode takes only the next row on the card; Free any empty row.
+- **Retries**: as for every action, a request ID seen before is compared with what the request
+  asks for (the kept positions, or the row) before the revision, turn or rules. The same
+  intent gets the current table with `duplicate: true`: the committed dice, no new roll, no
+  second token or score. A different intent under that ID is `409 request_id_reused`.
+- **Turns and membership**: only the seated player whose turn it is may act (`409
+  not_your_turn`); a stale `expectedRevision` gets `409 stale_revision` with the current table;
+  anyone not seated gets `404 game_not_found`.
+- **What everyone seated sees** on their usual refresh (`GET /games`, `GET /games/:id`): the
+  mode, the seats with names, whose turn it is, the latest committed throw (dice, kept
+  positions, throw number), every player's scores, bonus, total and tokens, and, once finished,
+  the standings (by total, then unused tokens; equal on both share a place) and the winners.
+- **Finished**: `result: "scored"`, `termination: "scorecards-complete"`, frozen like every
+  finished game. `GET /history` lists finished tables under `tables`, each with its own
+  ranking. They never enter the per-opponent chess tallies under `history`, which stay pairwise
+  and chess-family only.
+- **Not for tables**: resigning, "Play again", and renewing or redeeming an invitation get
+  `422 unsupported_action`, before anything is written. A table someone stops playing stays in progress (accepted for v0.4.0).
+- **Previous opponents**: everyone seated at a table becomes a previous opponent of everyone
+  else there (owner's decision), so two guests may afterwards start chess, Fischer Random or a
+  table with each other.
+- **Seats are validated** wherever a game is read, played, counted or continued: lists, single
+  reads, actions, history tallies, finished tables, rematches and invitation renewal and
+  redeem. A chess-family game holds only White while its invitation is open (`waiting`) and
+  exactly White and Black once active or finished. A table needs a record the rules can
+  replay, exactly `p1`…`pN` for its `N` players, and its creator (the host) in `p1`. A game that
+  does not fit (only possible by writing rows outside this API) is left out of lists and
+  tallies and gets `409 invalid_seats` on direct requests, untouched. One such row never breaks
+  a player's list.
+- **Finished tables** in `GET /history` are selected as finished by the query (newest 200), so
+  unfinished tables never crowd a result out.
+- **Deployment**: migration `20261111120000_yatzy_games.sql` (widens checks only; no existing
+  row changes) and the function, by the owner with `make deploy-backend`, before the UI that
+  offers Yatzy (#86) merges. Until then no client asks for Yatzy and nothing changes for
+  players. **Rollback** of the function is supported to `1c0850a` (#72), where chess keeps
+  working and tables are simply unavailable (rehearsed in #84); never before the #53
+  dispatcher. Keep the migration: it is forward-only and harmless to `1c0850a`.
 
 ## Fischer Random (Chess960, #54)
 
@@ -304,12 +367,15 @@ endpoints accept the `types` query parameter described under Game types.
 | `POST /invitations/redeem` | `{ token }` | `200 { game }` |
 | `GET /games` | | `200 { games: [game…] }` (newest activity first, at most 200) |
 | `GET /games/:id` | | `200 { game }` |
-| `GET /history` | | `200 { history: [{ gameType, opponent, wins, draws, losses, games: [{ id, finishedAt, outcome, termination, yourSeat, moveCount }] }] }` |
+| `GET /history` | | `200 { history: [{ gameType, opponent, wins, draws, losses, games: [{ id, finishedAt, outcome, termination, yourSeat, moveCount }] }] }` (chess family only); with `yatzy` in `types` also `tables: [{ id, gameType, finishedAt, yourSeat, players, result: { yatzy } }]` |
+| `POST /games` (Yatzy table, #85) | `{ type: "yatzy", mode: "forced"\|"free", friendPlayerIds: [1–3 IDs], requestId? }` | `201 { game, invitation: null, duplicate: false }`: an **active** table, host `p1`, guests `p2`… in the order given; retry `200 { …, duplicate: true }`; `404 opponent_not_found`; `400` for a malformed roster or mode |
 | `POST /games/:id/rematch` | | `201 { game, duplicate: false }`, or `200 { game, duplicate: true }` if it already exists |
 | `POST /games/:id/actions` | `{ requestId, expectedRevision, action }` | `200 { game, duplicate }` |
 
 `action` is `{ "type": "move", "from": "e2", "to": "e4", "promotion"?: "q"|"r"|"b"|"n" }`,
-`{ "type": "castle", "side": "kingside"|"queenside" }` (Chess960 only) or `{ "type": "resign" }`.
+`{ "type": "castle", "side": "kingside"|"queenside" }` (Chess960 only) or `{ "type": "resign" }`
+(chess family). For a Yatzy table it is `{ "type": "throw", "keep": [0–4…] }` or
+`{ "type": "score", "row": "ones"|…|"yatzy" }`, with no other fields.
 `requestId` is a UUID.
 
 A **game** looks like:
@@ -386,10 +452,10 @@ Migrations live in `supabase/migrations/`.
 | `players` | id, display name, `credential_hash` (the first browser's; kept for compatibility with the previous function version, not used for authentication) |
 | `player_credentials` | one SHA-256 credential hash per browser that entered the player's email |
 | `player_contacts` | private email per player |
-| `games` | envelope: type, schema version, status, result, termination, revision, timestamps, `payload` (`{ initialFen, moves }`), `create_request_id`, `rematch_of` |
-| `game_participants` | game, player, seat (unique per game and per player) |
+| `games` | envelope: type, schema version, status, result, termination, revision, timestamps, `payload` (chess family: `{ initialFen, moves }`; Yatzy: `{ mode, players, log }`), `create_request_id`, `rematch_of` |
+| `game_participants` | game, player, seat (`white`/`black`, or `p1`–`p4` at a table; unique per game and per player) |
 | `game_invitations` | token hash, seat, invited email, redemption |
-| `game_actions` | every accepted move/resignation with request ID and resulting revision |
+| `game_actions` | every accepted move, castle, resignation, throw and score with request ID and resulting revision |
 
 All tables have row level security enabled without policies, and privileges are
 revoked from `anon` and `authenticated`. The Supabase REST and GraphQL APIs therefore

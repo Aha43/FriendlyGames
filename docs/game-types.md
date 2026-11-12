@@ -141,6 +141,18 @@ castle, including ambiguous destinations or a stationary king. The persisted
 action/notation must preserve this distinction. Standard chess retains today's
 king-two-squares interaction. Local Chess960 has its own save.
 
+## A third type that is not chess (#85)
+
+Yatzy uses the shared lifecycle with its own seats, results and actions, as this contract
+expected of a non-chess type. Adapters now declare a family: `chess` (White/Black, pairwise
+history, resignation, rematch, email invitations) or `table` (ordered seats `p1`–`p4`, a roster
+of previous opponents, one ranking per table). The common service keeps identity, membership,
+row locks, revisions, request IDs and the `types` opt-in for both. See
+[decision 0002](decisions/0002-yatzy-format.md) and [backend.md](backend.md#yatzy-tables-85).
+
+Rollback once tables exist: the function may go back to `1c0850a` (#72), never before the #53
+dispatcher above.
+
 ## First gate: engine and record proof (#52)
 
 **Proposed outcome:** [decision 0001](decisions/0001-chess960-engine.md). chessops 0.15.1 for
