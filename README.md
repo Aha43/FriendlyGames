@@ -21,6 +21,16 @@ Nobody is chosen until you pick someone; choose the game, pick a name and press 
 play White, they play Black, and the game appears in both lobbies straight away. *Invite someone
 new* keeps the email-and-link invitation for anyone you haven't played yet.
 
+**Yatzy** is for two to four friends at one table. Under *Start a game*, choose *Yatzy*, the
+order (*Forced*: fill the card top to bottom; *Free*: any empty row) and one to three people you
+have already played, in the order they will take their turns after you. Everyone is seated at
+once and finds the table in their lobby. The server throws the dice: tap dice to keep them
+between throws, then press the throw button; pick a row to see what it would score and press
+*Score*. Scoring on your first or second throw banks two or one extra throws for a later turn,
+and unused ones break a tie. Finished tables are kept under *Yatzy results*, apart from the
+chess tallies. Having shared a table, any two of its players can start a chess game with each
+other.
+
 In **Fischer Random** the pieces behind the pawns start in one of 960 arrangements, drawn by the
 server when the game is created and the same for both sides; every piece moves as usual. To
 castle, select your king and use a castle button: king and rook end on g/f (kingside) or c/d

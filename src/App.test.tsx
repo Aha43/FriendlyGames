@@ -2,7 +2,9 @@ import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
+import { completeGame } from '@shared/yatzy/fixtures.ts';
 import { ApiError, gameApi, NetworkError, type SharedGame } from './shared/gameApi';
+import { table, TABLE_ID } from './test/yatzyTable';
 
 const CREDENTIAL = 'C'.repeat(43);
 const TOKEN = 'T'.repeat(43);
@@ -617,6 +619,217 @@ describe('lobby', () => {
       expect(within(picker).getAllByRole('radio')).toHaveLength(7); // six names and Invite someone new
       await user.click(screen.getByRole('button', { name: 'Show all 9' }));
       expect(within(picker).getAllByRole('radio')).toHaveLength(10);
+    });
+  });
+
+  describe('Yatzy with friends (#86)', () => {
+    const friend = (id: string, displayName: string) => ({ id, displayName, sharedGames: 2, lastSharedGameUpdatedAt: '2026-11-09T18:00:00Z' });
+    const HARALD = friend('00000000-0000-4000-8000-00000000000a', 'Harald');
+    const WILLIAM = friend('00000000-0000-4000-8000-00000000000b', 'William');
+    const OYSTEIN = friend('00000000-0000-4000-8000-00000000000c', 'Øystein');
+    const KARI = friend('00000000-0000-4000-8000-00000000000d', 'Kari');
+    const UUID = expect.stringMatching(/^[0-9a-f-]{36}$/);
+    const made = (mode: 'forced' | 'free', players: number) => ({ game: table(mode, players), invitation: null, duplicate: false }) as const;
+    const turnOrder = () => within(screen.getByRole('list', { name: 'Turn order' })).getAllByRole('listitem').map((li) => li.textContent);
+    const chooseYatzy = async (user: ReturnType<typeof userEvent.setup>) => {
+      await screen.findByRole('group', { name: 'Play with' });
+      await user.click(screen.getByRole('radio', { name: 'Yatzy' }));
+    };
+
+    beforeEach(() => {
+      vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+      vi.mocked(gameApi.listOpponents).mockResolvedValue({ opponents: [HARALD, WILLIAM, OYSTEIN, KARI] });
+    });
+
+    it('offers Yatzy next to the chess games, explains it, and seats nobody until picked', async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await chooseYatzy(user);
+      expect(screen.getByText(/Yatzy for two to four players, with people you’ve already played/)).toBeInTheDocument();
+      expect(screen.getByText(/Score on your first throw to bank two extra throws/)).toBeInTheDocument();
+      expect(screen.getByRole('radio', { name: 'Forced' })).toBeChecked();
+      expect(screen.getByText('Forced: fill the card from the top, one row after another.')).toBeInTheDocument();
+      await user.click(screen.getByRole('radio', { name: 'Free' }));
+      expect(screen.getByText('Free: score any empty row you like.')).toBeInTheDocument();
+      const players = screen.getByRole('group', { name: 'Players (pick 1 to 3, in playing order)' });
+      for (const box of within(players).getAllByRole('checkbox')) expect(box).not.toBeChecked();
+      expect(turnOrder()).toEqual(['You (host)']);
+      expect(screen.getByRole('button', { name: 'Start Yatzy' })).toBeDisabled();
+      // No email, link or single-opponent choice on this path.
+      expect(screen.queryByLabelText('Friend’s email')).not.toBeInTheDocument();
+      expect(screen.queryByRole('radio', { name: 'Invite someone new' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('radio', { name: 'Harald' })).not.toBeInTheDocument();
+    });
+
+    it('shows the turn order, host first and guests as picked, before starting; a table holds four', async () => {
+      const user = userEvent.setup();
+      render(<App />);
+      await chooseYatzy(user);
+      await user.click(screen.getByRole('checkbox', { name: 'William' }));
+      await user.click(screen.getByRole('checkbox', { name: 'Harald' }));
+      expect(turnOrder()).toEqual(['You (host)', 'William', 'Harald']);
+      expect(within(screen.getByRole('checkbox', { name: 'William' }).closest('label')!).getByText('Plays second')).toBeInTheDocument();
+      // Unpicking and picking again moves a guest to the end.
+      await user.click(screen.getByRole('checkbox', { name: 'William' }));
+      await user.click(screen.getByRole('checkbox', { name: 'William' }));
+      expect(turnOrder()).toEqual(['You (host)', 'Harald', 'William']);
+      await user.click(screen.getByRole('checkbox', { name: 'Øystein' }));
+      expect(turnOrder()).toEqual(['You (host)', 'Harald', 'William', 'Øystein']);
+      expect(screen.getByText('That’s a full table of four.')).toBeInTheDocument();
+      expect(screen.getByRole('checkbox', { name: 'Kari' })).toBeDisabled();
+      expect(screen.getByRole('checkbox', { name: 'Harald' })).toBeEnabled();
+    });
+
+    it('starts the table by player IDs in that order and opens it', async () => {
+      const user = userEvent.setup();
+      const create = vi.spyOn(gameApi, 'createTable').mockResolvedValue(made('free', 3));
+      vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: table('free', 3) });
+      render(<App />);
+      await chooseYatzy(user);
+      await user.click(screen.getByRole('radio', { name: 'Free' }));
+      await user.click(screen.getByRole('checkbox', { name: 'William' }));
+      await user.click(screen.getByRole('checkbox', { name: 'Harald' }));
+      await user.click(screen.getByRole('button', { name: 'Start Yatzy' }));
+      expect(create).toHaveBeenCalledWith(CREDENTIAL, 'free', [WILLIAM.id, HARALD.id], UUID);
+      await waitFor(() => expect(window.location.hash).toBe(`#/game/${TABLE_ID}`));
+      // The game route hands a table to the Yatzy page.
+      expect(await screen.findByRole('region', { name: 'Yatzy: you with Harald and William' })).toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('Your turn: throw the dice');
+      expect(screen.queryByRole('grid', { name: 'Chess board' })).not.toBeInTheDocument();
+    });
+
+    it('works from the keyboard', async () => {
+      const user = userEvent.setup();
+      const create = vi.spyOn(gameApi, 'createTable').mockResolvedValue(made('forced', 2));
+      vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: table('forced', 2) });
+      render(<App />);
+      await chooseYatzy(user);
+      screen.getByRole('checkbox', { name: 'Harald' }).focus();
+      await user.keyboard(' ');
+      expect(screen.getByRole('checkbox', { name: 'Harald' })).toBeChecked();
+      await user.keyboard('{Enter}');
+      expect(create).toHaveBeenCalledWith(CREDENTIAL, 'forced', [HARALD.id], UUID);
+    });
+
+    it('retries an unconfirmed start with the same request; another mode, roster or order is a new one', async () => {
+      const user = userEvent.setup();
+      const create = vi.spyOn(gameApi, 'createTable').mockRejectedValue(new NetworkError('lost'));
+      render(<App />);
+      await chooseYatzy(user);
+      await user.click(screen.getByRole('checkbox', { name: 'Harald' }));
+      await user.click(screen.getByRole('checkbox', { name: 'William' }));
+      await user.click(screen.getByRole('button', { name: 'Start Yatzy' }));
+      expect(await screen.findByText(/Couldn’t confirm whether the table was created/)).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Try again' }));
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+      expect(create.mock.calls[1]).toEqual(create.mock.calls[0]);
+      const ids = new Set([create.mock.calls[0][3]]);
+
+      // A different mode.
+      await user.click(screen.getByRole('radio', { name: 'Free' }));
+      await user.click(await screen.findByRole('button', { name: 'Start Yatzy' }));
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(3));
+      // The same two guests in the other order.
+      await user.click(screen.getByRole('checkbox', { name: 'Harald' }));
+      await user.click(screen.getByRole('checkbox', { name: 'Harald' }));
+      await user.click(await screen.findByRole('button', { name: 'Start Yatzy' }));
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(4));
+      expect(create.mock.calls[3][2]).toEqual([WILLIAM.id, HARALD.id]);
+      // One guest fewer.
+      await user.click(screen.getByRole('checkbox', { name: 'Harald' }));
+      await user.click(await screen.findByRole('button', { name: 'Start Yatzy' }));
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(5));
+      for (const call of create.mock.calls.slice(2)) ids.add(call[3]);
+      expect(ids.size).toBe(4);
+      // The same intent again keeps its ID.
+      await user.click(screen.getByRole('button', { name: 'Try again' }));
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(6));
+      expect(create.mock.calls[5]).toEqual(create.mock.calls[4]);
+    });
+
+    it('sends one request however often Start Yatzy is pressed, and explains a refusal', async () => {
+      const user = userEvent.setup();
+      let fail!: (e: unknown) => void;
+      const create = vi.spyOn(gameApi, 'createTable').mockReturnValue(new Promise((_, reject) => (fail = reject)));
+      render(<App />);
+      await chooseYatzy(user);
+      await user.click(screen.getByRole('checkbox', { name: 'Harald' }));
+      await user.dblClick(screen.getByRole('button', { name: 'Start Yatzy' }));
+      expect(screen.getByRole('button', { name: 'Creating…' })).toBeDisabled();
+      expect(create).toHaveBeenCalledTimes(1);
+      fail(new ApiError(404, 'opponent_not_found', 'x'));
+      expect(await screen.findByText('You can only seat people you’ve already played a game with.')).toHaveAttribute('role', 'alert');
+    });
+
+    it('says how to get someone to seat when nobody has been played yet, and a load failure is not that', async () => {
+      const user = userEvent.setup();
+      vi.mocked(gameApi.listOpponents).mockResolvedValueOnce({ opponents: [] }).mockRejectedValue(new NetworkError('offline'));
+      const first = render(<App />);
+      await waitFor(() => expect(screen.queryByText(/Looking for people/)).not.toBeInTheDocument());
+      await user.click(screen.getByRole('radio', { name: 'Yatzy' }));
+      expect(screen.getByText(/Nobody to seat yet\. Yatzy is for people you’ve already played/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Start Yatzy' })).toBeDisabled();
+      first.unmount();
+
+      render(<App />);
+      await user.click(await screen.findByRole('radio', { name: 'Yatzy' }));
+      expect(await screen.findByText(/Couldn’t load the people you’ve played with\./)).toBeInTheDocument();
+      expect(screen.queryByText(/Nobody to seat yet/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/invite someone by email/)).not.toBeInTheDocument();
+    });
+
+    it('lists tables in progress with whose turn it is, next to chess games', async () => {
+      const waiting = table('forced', 3, [{ throw: [1, 2, 3, 4, 6] }, { score: 'ones' }], { id: '99999999-0000-4000-8000-000000000001' });
+      vi.mocked(gameApi.listGames).mockResolvedValue({ games: [table('free', 4), waiting, game()] });
+      render(<App />);
+      const links = within(await screen.findByRole('list', { name: 'Games in progress' })).getAllByRole('link');
+      expect(links.map((l) => l.textContent)).toEqual([
+        'with Harald, William and ØysteinYour turnYatzy · Free · 4 players',
+        'with Harald and WilliamHarald’s turnYatzy · Forced · 3 players',
+        'vs HaraldYour moveChess · You play White · 0 moves',
+      ]);
+      expect(links[0]).toHaveAttribute('href', `#/game/${TABLE_ID}`);
+    });
+
+    it('keeps finished tables in their own list, apart from the chess tallies', async () => {
+      const finished = table('free', 3, completeGame('free', 3, (seat, row) => (row === 'yatzy' && seat !== 1 ? [{ throw: [1, 2, 3, 4, 6] }, { score: 'yatzy' }] : undefined)));
+      vi.spyOn(gameApi, 'history').mockResolvedValue({
+        history: [{ gameType: 'chess', opponent: { id: 'p-harald', displayName: 'Harald' }, wins: 1, draws: 0, losses: 0, games: [] }],
+        tables: [{ id: TABLE_ID, gameType: 'yatzy', finishedAt: '2026-11-12T11:00:00Z', yourSeat: 'p1', players: finished.players, result: { yatzy: finished.yatzy } }],
+      });
+      render(<App />);
+      const results = within(await screen.findByRole('list', { name: 'Finished Yatzy tables' })).getAllByRole('link');
+      expect(results).toHaveLength(1);
+      expect(results[0]).toHaveTextContent('12 Nov 2026With Harald and William2ndHarald wins · You scored 280 · Free');
+      expect(results[0]).toHaveAttribute('href', `#/game/${TABLE_ID}`);
+      // Chess keeps its per-opponent tally, untouched by the table.
+      const tally = screen.getByLabelText('Tally with Harald');
+      expect(tally).toHaveTextContent('You1');
+      expect(screen.getByRole('heading', { name: 'Chess history' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Yatzy results' })).toBeInTheDocument();
+    });
+
+    it('shows no Yatzy results card from a backend that sends none', async () => {
+      vi.spyOn(gameApi, 'history').mockResolvedValue({ history: [] });
+      render(<App />);
+      expect(await screen.findByRole('heading', { name: 'Chess history' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Yatzy results' })).not.toBeInTheDocument();
+    });
+
+    it('opens a finished table from the lobby with its scorecard and result', async () => {
+      const finished = table('free', 2, completeGame('free', 2));
+      vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: finished });
+      window.location.hash = `#/game/${TABLE_ID}`;
+      render(<App />);
+      expect(await screen.findByRole('status')).toHaveTextContent('Finished. You and Harald share the win');
+      expect(screen.getByRole('table', { name: 'Final scorecard' })).toBeInTheDocument();
+    });
+
+    it('explains a table in a version this client cannot read', async () => {
+      vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: table('free', 2, [], { schemaVersion: 2 }) });
+      window.location.hash = `#/game/${TABLE_ID}`;
+      render(<App />);
+      expect(await screen.findByRole('heading', { name: 'Can’t show this game' })).toBeInTheDocument();
     });
   });
 

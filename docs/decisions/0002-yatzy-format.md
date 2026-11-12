@@ -2,7 +2,7 @@
 
 Status: **accepted** in the #84 review (2026-11-11) and **built on the server in #85**: the
 schema change is migration `20261111120000_yatzy_games.sql` and the API is described in
-[backend.md](../backend.md#yatzy-tables-85). No UI exposes Yatzy until #86. The sections below
+[backend.md](../backend.md#yatzy-tables-85). The UI came with #86. The sections below
 are the #84 proposal as reviewed; where #85 differs it says so.
 
 ## Decision in one paragraph

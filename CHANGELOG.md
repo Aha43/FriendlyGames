@@ -6,6 +6,24 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
+### Added
+
+- Yatzy with friends, for two to four players. Under *Start a game*, choose Yatzy, Forced or
+  Free order, and one to three people you've already played, in the order they take their
+  turns; everyone is seated at once. The server throws the dice. Keep dice between throws, see
+  what each row would score, and score with one explicit press. Scoring on your first or second
+  throw banks extra throws for later; the table says what a throw costs and what a score banks
+  before you commit. Works by keyboard and on a 320px phone with four players. A turn resumes
+  on any device with the same dice, and a lost reply is retried without a second roll.
+  Finished tables show the full scorecard, the places, and how a tie was settled, and are
+  listed under *Yatzy results*, apart from the chess tallies (#86).
+- People who have shared a Yatzy table can start chess or Fischer Random with each other from
+  *Play with* (#85, #86).
+
+### Changed
+
+- The top bar reads "Chess & Yatzy".
+
 ### Development
 
 - Yatzy rules and saved-format proof for Sprint 7: shared scoring, Forced/Free, banked throws,
