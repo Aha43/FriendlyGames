@@ -168,6 +168,7 @@ function NewGame({
   const [uncertain, setUncertain] = useState<{ requestId: string; target: string; type: string } | null>(null);
   // The same for a Yatzy table: kept here so it survives choosing another game and coming back.
   const [uncertainTable, setUncertainTable] = useState<UncertainTable | null>(null);
+  const [tableBusy, setTableBusy] = useState(false);
   const open = useRef(false);
 
   const loadOpponents = useCallback(async () => {
@@ -247,8 +248,11 @@ function NewGame({
 
   const label = busy ? 'Creating…' : retrying ? 'Try again' : mode === 'email' ? 'Create game' : 'Start game';
 
+  // While a start is on its way, the game choice holds still: switching would take the form
+  // (and with a table, its submit guard) away before the outcome is known, and a second start
+  // of the same game would get a new request ID.
   const typePicker = (
-    <fieldset className="type-picker">
+    <fieldset className="type-picker" disabled={busy || tableBusy}>
       <legend>Game</legend>
       {(['chess', 'chess960', 'yatzy'] as const).map((option) => (
         <label key={option} className="type-option">
@@ -283,6 +287,7 @@ function NewGame({
           opponents={opponents}
           uncertain={uncertainTable}
           onUncertain={setUncertainTable}
+          onBusy={setTableBusy}
           onCreated={onCreated}
           onIdentityRejected={onIdentityRejected}
         />

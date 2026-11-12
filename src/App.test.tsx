@@ -783,6 +783,56 @@ describe('lobby', () => {
       await waitFor(() => expect(window.location.hash).toBe(`#/game/${TABLE_ID}`));
     });
 
+    it('holds the game choice still while a start is on its way, so it cannot be sent twice (review of 1345127)', async () => {
+      const user = userEvent.setup();
+      let lose!: (e: unknown) => void;
+      const create = vi
+        .spyOn(gameApi, 'createTable')
+        .mockReturnValueOnce(new Promise((_, reject) => (lose = reject)))
+        .mockResolvedValueOnce({ ...made('forced', 2), duplicate: true });
+      vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: table('forced', 2) });
+      render(<App />);
+      await chooseYatzy(user);
+      await user.click(screen.getByRole('checkbox', { name: 'Harald' }));
+      await user.click(screen.getByRole('button', { name: 'Start Yatzy' }));
+
+      // The request is in flight: no other game can be chosen, by pointer or keyboard.
+      expect(screen.getByRole('button', { name: 'Creating…' })).toBeDisabled();
+      for (const name of ['Chess', 'Fischer Random (Chess960)', 'Yatzy']) expect(screen.getByRole('radio', { name })).toBeDisabled();
+      await user.click(screen.getByRole('radio', { name: 'Chess' }));
+      screen.getByRole('radio', { name: 'Yatzy' }).focus();
+      await user.keyboard('{ArrowUp}');
+      expect(screen.getByRole('radio', { name: 'Yatzy' })).toBeChecked();
+      expect(screen.getByRole('checkbox', { name: 'Harald' })).toBeChecked();
+      expect(create).toHaveBeenCalledTimes(1);
+
+      // Its reply is lost. The choice is free again, and the same table retries the same request.
+      lose(new NetworkError('lost'));
+      expect(await screen.findByText(/Couldn’t confirm whether the table was created/)).toBeInTheDocument();
+      expect(screen.getByRole('radio', { name: 'Chess' })).toBeEnabled();
+      await user.click(screen.getByRole('radio', { name: 'Chess' }));
+      await user.click(screen.getByRole('radio', { name: 'Yatzy' }));
+      await user.click(screen.getByRole('checkbox', { name: 'Harald' }));
+      await user.click(screen.getByRole('button', { name: 'Try again' }));
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+      expect(create.mock.calls[1]).toEqual(create.mock.calls[0]);
+    });
+
+    it('holds the game choice still while a chess start is on its way too', async () => {
+      const user = userEvent.setup();
+      let finish!: (v: { game: SharedGame; invitation: null; duplicate: boolean }) => void;
+      const createWith = vi.spyOn(gameApi, 'createGameWith').mockReturnValue(new Promise((resolve) => (finish = resolve)));
+      render(<App />);
+      await user.click(await screen.findByRole('radio', { name: 'Harald' }));
+      await user.click(screen.getByRole('button', { name: 'Start game' }));
+      expect(screen.getByRole('radio', { name: 'Yatzy' })).toBeDisabled();
+      await user.click(screen.getByRole('radio', { name: 'Yatzy' }));
+      expect(screen.getByRole('radio', { name: 'Chess' })).toBeChecked();
+      expect(createWith).toHaveBeenCalledTimes(1);
+      finish({ game: game({ revision: 0 }), invitation: null, duplicate: false });
+      await waitFor(() => expect(window.location.hash).toBe(`#/game/${GAME_ID}`));
+    });
+
     it('sends one request however often Start Yatzy is pressed, and explains a refusal', async () => {
       const user = userEvent.setup();
       let fail!: (e: unknown) => void;

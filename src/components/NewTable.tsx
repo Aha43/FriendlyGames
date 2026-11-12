@@ -26,6 +26,11 @@ interface NewTableProps {
    */
   uncertain: UncertainTable | null;
   onUncertain: (attempt: UncertainTable | null) => void;
+  /**
+   * Told while a start is on its way to the server, so the lobby can hold the game choice still:
+   * leaving this form mid-request would forget the request before its outcome is known.
+   */
+  onBusy: (busy: boolean) => void;
   onCreated: () => void;
   onIdentityRejected: () => void;
 }
@@ -43,6 +48,7 @@ export default function NewTable({
   opponents,
   uncertain,
   onUncertain,
+  onBusy,
   onCreated,
   onIdentityRejected,
 }: NewTableProps) {
@@ -72,6 +78,7 @@ export default function NewTable({
     const requestId = retrying && uncertain ? uncertain.requestId : newRequestId();
     submitting.current = true;
     setBusy(true);
+    onBusy(true);
     setError(null);
     try {
       const { game } = await gameApi.createTable(identity.credential, mode, roster, requestId);
@@ -90,6 +97,7 @@ export default function NewTable({
     } finally {
       submitting.current = false;
       setBusy(false);
+      onBusy(false);
     }
   }
 
