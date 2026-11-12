@@ -469,8 +469,11 @@ function SumRow({ label, game, value, strong = false }: { label: string; game: T
 function Results({ game }: { game: TableGame }) {
   const standings = game.yatzy.standings!;
   const how = decidedBy(standings);
-  const leaders = standings.filter((s) => s.total === standings[0].total);
-  const tied = listNames(leaders.map((s) => nameAt(game, s.seat)).sort((a, b) => Number(b === 'You') - Number(a === 'You')));
+  const top = standings[0];
+  const youFirst = (seats: TableSeat[]) => listNames(seats.map((seat) => nameAt(game, seat)).sort((a, b) => Number(b === 'You') - Number(a === 'You')));
+  // Everyone level on points with the leader, and of those, who actually won (first place).
+  const level = standings.filter((s) => s.total === top.total).map((s) => s.seat);
+  const winners = standings.filter((s) => s.place === 1).map((s) => s.seat);
   return (
     <div className="yatzy-results">
       <ol className="standings" aria-label="Final standings">
@@ -486,15 +489,22 @@ function Results({ game }: { game: TableGame }) {
       </ol>
       {how === 'tokens' && (
         <p className="tiebreak">
-          {tied} tied on {standings[0].total} points. The most banked throws left decides: {nameAt(game, standings[0].seat)}{' '}
-          had {standings[0].tokens}.
+          {youFirst(level)} tied on {top.total} points. The most banked throws left decides: {nameAt(game, top.seat)} had{' '}
+          {top.tokens}.
         </p>
       )}
-      {how === 'shared' && (
-        <p className="tiebreak">
-          {tied} tied on both points ({standings[0].total}) and banked throws ({standings[0].tokens}), so they share the win.
-        </p>
-      )}
+      {how === 'shared' &&
+        (level.length > winners.length ? (
+          // More players were level on points than share the win: banked throws separated them.
+          <p className="tiebreak">
+            {youFirst(level)} tied on {top.total} points. {youFirst(winners)} had the most banked throws left ({top.tokens}{' '}
+            each), so they share the win.
+          </p>
+        ) : (
+          <p className="tiebreak">
+            {youFirst(winners)} tied on both points ({top.total}) and banked throws ({top.tokens}), so they share the win.
+          </p>
+        ))}
     </div>
   );
 }

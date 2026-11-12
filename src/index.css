@@ -511,7 +511,7 @@ h2 {
   padding-top: 0.1rem;
 }
 
-.game-players { grid-area: players; min-width: 0; }
+.game-players { grid-area: players; min-width: 0; overflow-wrap: anywhere; }
 .game-vs { color: var(--ink-soft); font-size: 0.8rem; }
 
 .game-result {
@@ -525,8 +525,10 @@ h2 {
 
 .game-ending {
   grid-area: ending;
+  min-width: 0;
   font-size: 0.78rem;
   color: var(--ink-soft);
+  overflow-wrap: anywhere;
 }
 
 /* ---------- footer ---------- */
@@ -909,7 +911,8 @@ h2 {
 
 .game-link {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  /* The status takes what it needs up to 60%, then wraps: a long name never widens the link. */
+  grid-template-columns: minmax(0, 1fr) fit-content(60%);
   grid-template-areas:
     'title status'
     'meta meta';
@@ -941,8 +944,8 @@ h2 {
   white-space: nowrap;
 }
 
-.game-link-status { grid-area: status; font-size: 0.85rem; font-weight: 600; color: var(--green); text-align: right; }
-.game-link-meta { grid-area: meta; font-size: 0.78rem; color: var(--ink-soft); }
+.game-link-status { grid-area: status; min-width: 0; font-size: 0.85rem; font-weight: 600; color: var(--green); text-align: right; overflow-wrap: anywhere; }
+.game-link-meta { grid-area: meta; min-width: 0; font-size: 0.78rem; color: var(--ink-soft); overflow-wrap: anywhere; }
 
 /* ---------- invitation ---------- */
 
@@ -1385,6 +1388,7 @@ h2 {
   margin: 0;
   font-size: 0.88rem;
   color: var(--wood-text);
+  overflow-wrap: anywhere;
 }
 
 .yatzy-actions {
@@ -1399,6 +1403,7 @@ h2 {
   margin: 0;
   font-size: 0.82rem;
   color: var(--wood-text);
+  overflow-wrap: anywhere;
 }
 
 /* Scorecard: the row names and one narrow column per player; fits four players at 320px. */
@@ -1540,9 +1545,18 @@ h2 {
 .standing-winner { background: rgba(217, 162, 58, 0.22); }
 .standing-place { grid-area: place; align-self: center; font-family: var(--serif); font-size: 1.15rem; font-weight: 600; }
 .standing-name { grid-area: name; font-weight: 600; overflow-wrap: anywhere; }
-.standing-score { grid-area: score; font-size: 0.82rem; color: var(--ink-soft); }
+.standing-score { grid-area: score; font-size: 0.82rem; color: var(--ink-soft); overflow-wrap: anywhere; }
 
-.tiebreak { margin: 0.5rem 0 0; font-size: 0.85rem; }
+.tiebreak { margin: 0.5rem 0 0; font-size: 0.85rem; overflow-wrap: anywhere; }
+
+/* Names are up to 40 characters with nowhere to break: every line that carries one wraps. */
+.yatzy-table,
+.yatzy-panel { min-width: 0; }
+.yatzy-head,
+.yatzy-results,
+.yatzy-panel .game-notice,
+.yatzy-panel .banner,
+.score-bar-note { overflow-wrap: anywhere; }
 
 /* Starting a table. */
 .turn-order { display: flex; flex-direction: column; gap: 0.2rem; }

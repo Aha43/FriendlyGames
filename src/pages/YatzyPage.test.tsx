@@ -371,7 +371,18 @@ describe('a finished table', () => {
     show(table('free', 4, completeGame('free', 4, ending({ 0: yatzyOn(2), 1: miss, 2: yatzyOn(2), 3: yatzyOn(3) }))));
     expect(status()).toHaveTextContent('Finished. You and William share the win');
     expect(standings().map((s) => s!.slice(0, 3))).toEqual(['1st', '1st', '3rd', '4th']);
-    expect(screen.getByText('You, William and Øystein tied on both points (330) and banked throws (29), so they share the win.')).toBeInTheDocument();
+    // Three are level on points, but only two of them on banked throws: only those two won.
+    expect(
+      screen.getByText('You, William and Øystein tied on 330 points. You and William had the most banked throws left (29 each), so they share the win.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/tied on both/)).not.toBeInTheDocument();
+  });
+
+  it('says everyone level on points and banked throws shares the win', () => {
+    show(table('free', 3, completeGame('free', 3, ending({ 0: yatzyOn(2), 1: miss, 2: yatzyOn(2) }))));
+    expect(status()).toHaveTextContent('Finished. You and William share the win');
+    expect(standings().map((s) => s!.slice(0, 3))).toEqual(['1st', '1st', '3rd']);
+    expect(screen.getByText('You and William tied on both points (330) and banked throws (29), so they share the win.')).toBeInTheDocument();
   });
 
   it('does not poll a finished table', async () => {

@@ -747,6 +747,42 @@ describe('lobby', () => {
       expect(create.mock.calls[5]).toEqual(create.mock.calls[4]);
     });
 
+    it('keeps the request of an unconfirmed start while another game is chosen and Yatzy chosen again (review of af58355)', async () => {
+      const user = userEvent.setup();
+      // The table was created, but its reply was lost; the retry must find it, not make another.
+      const create = vi
+        .spyOn(gameApi, 'createTable')
+        .mockRejectedValueOnce(new NetworkError('lost'))
+        .mockResolvedValueOnce({ ...made('free', 3), duplicate: true });
+      vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: table('free', 3) });
+      render(<App />);
+      await chooseYatzy(user);
+      await user.click(screen.getByRole('radio', { name: 'Free' }));
+      await user.click(screen.getByRole('checkbox', { name: 'William' }));
+      await user.click(screen.getByRole('checkbox', { name: 'Harald' }));
+      await user.click(screen.getByRole('button', { name: 'Start Yatzy' }));
+      expect(await screen.findByText(/Couldn’t confirm whether the table was created/)).toBeInTheDocument();
+
+      // Away to Chess (and Fischer Random), then back: the form starts empty again.
+      await user.click(screen.getByRole('radio', { name: 'Chess' }));
+      expect(screen.queryByRole('checkbox', { name: 'William' })).not.toBeInTheDocument();
+      await user.click(screen.getByRole('radio', { name: 'Fischer Random (Chess960)' }));
+      await user.click(screen.getByRole('radio', { name: 'Yatzy' }));
+      expect(screen.getByRole('button', { name: 'Start Yatzy' })).toBeDisabled();
+      // A different table is an ordinary new start…
+      await user.click(screen.getByRole('checkbox', { name: 'William' }));
+      expect(screen.getByRole('button', { name: 'Start Yatzy' })).toBeEnabled();
+      expect(screen.queryByText(/Couldn’t confirm/)).not.toBeInTheDocument();
+      // …but the same mode and guests in the same order is the unconfirmed one: same request.
+      await user.click(screen.getByRole('radio', { name: 'Free' }));
+      await user.click(screen.getByRole('checkbox', { name: 'Harald' }));
+      expect(screen.getByText(/Couldn’t confirm whether the table was created/)).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Try again' }));
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(2));
+      expect(create.mock.calls[1]).toEqual(create.mock.calls[0]);
+      await waitFor(() => expect(window.location.hash).toBe(`#/game/${TABLE_ID}`));
+    });
+
     it('sends one request however often Start Yatzy is pressed, and explains a refusal', async () => {
       const user = userEvent.setup();
       let fail!: (e: unknown) => void;

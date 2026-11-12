@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import ChessHistory from '../components/ChessHistory';
 import InvitationShare from '../components/InvitationShare';
-import NewTable from '../components/NewTable';
+import NewTable, { type UncertainTable } from '../components/NewTable';
 import YatzyHistory from '../components/YatzyHistory';
 import { CHESS960_CASTLING, CHESS960_SUMMARY, GAME_TYPES, tableView, typeLabel, type GameType } from '../games/registry';
 import { describeTable, MODE_LABELS, othersAt, seated } from '../games/yatzy';
@@ -166,6 +166,8 @@ function NewGame({
   // An attempt whose outcome is unknown. Retrying the same target (same friend email or same
   // opponent) and type with its request ID finds the game if it was created; changing any is a new request.
   const [uncertain, setUncertain] = useState<{ requestId: string; target: string; type: string } | null>(null);
+  // The same for a Yatzy table: kept here so it survives choosing another game and coming back.
+  const [uncertainTable, setUncertainTable] = useState<UncertainTable | null>(null);
   const open = useRef(false);
 
   const loadOpponents = useCallback(async () => {
@@ -279,6 +281,8 @@ function NewGame({
           typePicker={typePicker}
           opponentsStatus={opponentsStatus}
           opponents={opponents}
+          uncertain={uncertainTable}
+          onUncertain={setUncertainTable}
           onCreated={onCreated}
           onIdentityRejected={onIdentityRejected}
         />

@@ -350,3 +350,107 @@ test('a full table of four fits a 320px phone, from the picker to the scorecard'
   await openLobby(guests[2].page);
   await expect(guests[2].page.getByRole('list', { name: 'Games in progress' })).toContainText('Yatzy · Forced · 4 players');
 });
+
+test('a 40-character unbroken name never widens a 320px phone: lobby turn, waiting table, finished results', async ({ openContext, api }, testInfo) => {
+  const run = `${Date.now()}-${testInfo.project.name}`;
+  const host = await friend(api, await openContext('arne'), 'Arne', run);
+  // The longest name allowed, with no space or hyphen to break at.
+  const LONG = `Wilbursjefesen${crypto.randomUUID().replaceAll('-', '')}`.slice(0, 40);
+  const entered = await api('POST', '/players', { data: { email: `long-${run}@example.test`, displayName: LONG }, expect: 201 });
+  const long: Friend = { name: LONG, id: entered.player.id, credential: entered.deviceCredential, page: host.page };
+  await introduce(api, host, [long], run);
+  const page = host.page;
+  await page.setViewportSize({ width: 320, height: 720 });
+  const fits = async (where: string) => expect(await page.evaluate(() => document.documentElement.scrollWidth), where).toBe(320);
+  const inside = async (where: string, ...elements: ReturnType<Page['locator']>[]) => {
+    for (const element of elements) {
+      await expect(element, where).toBeVisible();
+      const box = (await element.boundingBox())!;
+      expect(box.x, where).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width, where).toBeLessThanOrEqual(320);
+    }
+  };
+
+  // A table where it is the long-named player's turn.
+  const { game } = await api('POST', `/games${ALL}`, {
+    credential: host.credential,
+    data: { type: 'yatzy', mode: 'free', friendPlayerIds: [long.id] },
+    expect: 201,
+  });
+  let revision = 0;
+  for (const action of [{ type: 'throw', keep: [] }, { type: 'score', row: 'chance' }]) {
+    revision = (
+      await api('POST', `/games/${game.id}/actions${ALL}`, {
+        credential: host.credential,
+        data: { requestId: crypto.randomUUID(), expectedRevision: revision, action },
+        expect: 200,
+      })
+    ).game.revision;
+  }
+
+  // Lobby: the turn status and the picker with the name chosen.
+  await openLobby(page);
+  const link = page.locator(`a[href="#/game/${game.id}"]`);
+  await expect(link).toContainText(`${LONG}’s turn`);
+  await inside('lobby game link', link, link.locator('.game-link-status'));
+  await page.getByRole('radio', { name: 'Yatzy' }).check();
+  await page.getByRole('checkbox', { name: LONG, exact: true }).check();
+  await inside('turn order', page.getByRole('list', { name: 'Turn order' }));
+  await fits('lobby');
+
+  // The table while waiting for them to throw.
+  await openTable(page, `/#/game/${game.id}`);
+  await expect(page.getByRole('status')).toHaveText(`${LONG}’s turn`);
+  await inside('waiting table', page.getByRole('status'), page.getByText(`Waiting for ${LONG} to throw.`), page.getByRole('table'));
+  await fits('waiting table');
+
+  // Finished: the status, the standings and the lobby's result line.
+  await finishThroughApi(api, [host, long], game.id);
+  await expect(page.getByRole('status')).toHaveText(/^Finished\. /, SYNC);
+  const standings = page.getByRole('list', { name: 'Final standings' });
+  await inside('finished table', page.getByRole('status'), standings, ...(await standings.getByRole('listitem').all()), page.getByRole('table'));
+  await fits('finished table');
+  await openLobby(page);
+  const result = page.getByRole('list', { name: 'Finished Yatzy tables' }).getByRole('link');
+  await expect(result).toContainText(`With ${LONG}`);
+  await inside('lobby result', result);
+  await fits('lobby results');
+});
+
+test('a table whose creation reply is lost is found again after choosing another game and coming back: one table', async ({ openContext, api }, testInfo) => {
+  const run = `${Date.now()}-${testInfo.project.name}`;
+  const host = await friend(api, await openContext('arne'), 'Arne', run);
+  const guest = await friend(api, await openContext('harald'), 'Harald', run);
+  await introduce(api, host, [guest], run);
+  const page = host.page;
+  const tables = async () =>
+    (await api('GET', `/games${ALL}`, { credential: host.credential, expect: 200 })).games.filter((g: { type: string }) => g.type === 'yatzy');
+
+  await openLobby(page);
+  await page.getByRole('radio', { name: 'Yatzy' }).check();
+  await page.getByRole('radio', { name: 'Free' }).check();
+  await page.getByRole('checkbox', { name: guest.name, exact: true }).check();
+  await page.route('**/game-api/games?*', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    await route.fetch(); // the table is created on the server
+    await route.abort('connectionreset'); // its answer never arrives, nor do the automatic repeats
+  });
+  await page.getByRole('button', { name: 'Start Yatzy' }).click();
+  await expect(page.getByText(/Couldn’t confirm whether the table was created/)).toBeVisible();
+  await page.unroute('**/game-api/games?*');
+  expect(await tables()).toHaveLength(1);
+
+  // The player looks at Chess, then comes back and chooses the same table again.
+  await page.getByRole('radio', { name: 'Chess', exact: true }).check();
+  await expect(page.getByRole('checkbox', { name: guest.name, exact: true })).toHaveCount(0);
+  await page.getByRole('radio', { name: 'Yatzy' }).check();
+  await page.getByRole('radio', { name: 'Free' }).check();
+  await page.getByRole('checkbox', { name: guest.name, exact: true }).check();
+  await expect(page.getByText(/Couldn’t confirm whether the table was created/)).toBeVisible();
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await openTable(page);
+  const [only, ...more] = await tables();
+  expect(more).toHaveLength(0);
+  expect(page.url()).toContain(`/game/${only.id}`);
+  await expect(page.getByRole('status')).toHaveText('Your turn: throw the dice');
+});

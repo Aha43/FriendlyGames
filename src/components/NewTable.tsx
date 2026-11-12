@@ -8,6 +8,8 @@ import { newRequestId } from '../shared/requestId';
 import { navigate } from '../shared/route';
 
 const MAX_GUESTS = 3;
+const UNCONFIRMED =
+  'Couldn’t confirm whether the table was created: the game server didn’t answer. Trying again is safe; it won’t create a second table.';
 const SHORT_LIST = 6;
 
 interface NewTableProps {
@@ -17,11 +19,33 @@ interface NewTableProps {
   /** Loading and failure notes for the list of previous opponents. */
   opponentsStatus: ReactNode;
   opponents: PreviousOpponent[] | null;
+  /**
+   * A start whose outcome is unknown, kept by the lobby: this form is taken away when another
+   * game is chosen, and the request ID must survive that. The same mode and ordered roster
+   * retries with it and finds the table if it was created; any change is a new request.
+   */
+  uncertain: UncertainTable | null;
+  onUncertain: (attempt: UncertainTable | null) => void;
   onCreated: () => void;
   onIdentityRejected: () => void;
 }
 
-export default function NewTable({ identity, typePicker, opponentsStatus, opponents, onCreated, onIdentityRejected }: NewTableProps) {
+export interface UncertainTable {
+  requestId: string;
+  /** Mode and ordered guest IDs. */
+  intent: string;
+}
+
+export default function NewTable({
+  identity,
+  typePicker,
+  opponentsStatus,
+  opponents,
+  uncertain,
+  onUncertain,
+  onCreated,
+  onIdentityRejected,
+}: NewTableProps) {
   const [mode, setMode] = useState<'forced' | 'free'>('forced');
   // Guests in the order picked: that is the turn order after the host.
   const [guests, setGuests] = useState<string[]>([]);
@@ -29,9 +53,6 @@ export default function NewTable({ identity, typePicker, opponentsStatus, oppone
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
   const [error, setError] = useState<string | null>(null);
-  // An attempt whose outcome is unknown. The same mode and ordered roster retries with its
-  // request ID and finds the table if it was created; any change is a new request.
-  const [uncertain, setUncertain] = useState<{ requestId: string; intent: string } | null>(null);
 
   const known = opponents ?? [];
   // Only people still on the list can be seated (a refreshed list never leaves a stale ID chosen).
@@ -54,18 +75,16 @@ export default function NewTable({ identity, typePicker, opponentsStatus, oppone
     setError(null);
     try {
       const { game } = await gameApi.createTable(identity.credential, mode, roster, requestId);
-      setUncertain(null);
+      onUncertain(null);
       onCreated();
       navigate(`#/game/${game.id}`);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) return onIdentityRejected();
       if (e instanceof NetworkError || (e instanceof ApiError && e.status >= 500)) {
-        setUncertain({ requestId, intent });
-        setError(
-          'Couldn’t confirm whether the table was created: the game server didn’t answer. Trying again is safe; it won’t create a second table.',
-        );
+        onUncertain({ requestId, intent });
+        setError(UNCONFIRMED);
       } else {
-        setUncertain(null);
+        onUncertain(null);
         setError(creationError(e));
       }
     } finally {
@@ -156,7 +175,7 @@ export default function NewTable({ identity, typePicker, opponentsStatus, oppone
       )}
 
       <p className="form-error" role="alert">
-        {error}
+        {error ?? (retrying ? UNCONFIRMED : null)}
       </p>
       <button
         type="submit"
