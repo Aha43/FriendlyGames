@@ -119,3 +119,35 @@ play observation for acceptance. The release issue prepares version and
 changelog changes. After the owner accepts and merges, the owner runs
 `make release` and decides when to close the milestone. Record the published tag
 and actual deployment in the release follow-up.
+
+## Integrated result (#87, prepared 2026-11-12)
+
+Delivered in order: #83 (PR #88), #84 (PR #89), #85 (PR #90), #86 (PR #91). The backend went
+first: the owner deployed `31faa88` (migration and function) before #86 merged. The live site
+runs `8e4ac0a`, and the backend reports `31faa88`. Version 0.4.0 and its changelog section are
+prepared in the #87 release PR, with the evidence and limits there and in
+[deployment.md](deployment.md).
+
+What the integrated checks cover, all on disposable data (real-Supabase CI on `main@8e4ac0a`):
+
+- **Two and three players to the end, both modes:** whole games through the API (Forced with
+  two players, Free with three), and browser journeys on desktop and phone (three-player Free;
+  two-player Forced). The maximum roster of four is created and shown at 320px.
+- **Tokens:** banking 2/1/0, a refused fourth throw without tokens, and several paid throws on
+  one turn that spend the whole balance; retries never charge twice.
+- **Resume and lost replies:** a reload mid-turn shows the same dice, kept positions and throw
+  number; a lost throw, score and creation reply are retried into one saved outcome.
+- **Ranking:** equal points with different unused tokens gives one winner; equal on both gives
+  joint winners. Both are covered in the rules, the API (stored fixture tables, since dice
+  cannot be asked for a tie) and the finished page's explanation.
+- **Opponents:** every pair seated at a table can afterwards start chess, Fischer Random or a
+  table with each other, from a chess-only client too; people from another table cannot.
+- **Results apart:** finished tables are listed per table; chess tallies stay pairwise and are
+  unchanged by tables.
+- **Chess unchanged:** both chess types, invitations, rematches, direct starts, history and
+  local saves keep their backend tests and browser journeys. Chess-only and older clients
+  never see a table.
+
+Not covered by automation, and still open for acceptance: the owner's own play, in particular
+one real three-player table played to the final scorecard on the live site. Owner acceptance,
+`make release` and closing the milestone remain the owner's. #11 stays open.
