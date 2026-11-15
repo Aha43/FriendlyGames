@@ -7,7 +7,8 @@ start of the release. The owner confirmed the scope and deletion rule on
 | Order | Issue | Outcome |
 | --- | --- | --- |
 | 1 | [#93](https://github.com/Aha43/FriendlyGames/issues/93) | Any participant can delete a finished shared game for everyone. |
-| 2 | [#82](https://github.com/Aha43/FriendlyGames/issues/82) | Make it clear that playing on one device means taking turns on that device, with a browser-only save. |
+| 2 | [#100](https://github.com/Aha43/FriendlyGames/issues/100) | Fix the chess join/opening race from post-merge CI. |
+| 3 | [#82](https://github.com/Aha43/FriendlyGames/issues/82) | Make it clear that playing on one device means taking turns on that device, with a browser-only save. |
 
 ## Delete a finished shared game
 
@@ -60,6 +61,15 @@ available after the owner applies the migration and deploys the backend. Verify
 the new site against the old API, and the old site against the new API. Record
 the backup and the actual site and backend commits. Document rollback behavior
 before deploying. A code rollback does not restore deleted games.
+
+## Fix the chess join/opening race
+
+The post-merge backend CI for #93 saw a valid simultaneous join and White
+opening return `invalid_seats`. Fix #100 before #82. A join that commits first
+should yield `stale_revision` with the current active game and both seats. If
+the opening commits first, it should be visible when the guest joins. Verify
+the ordering through the real API on disposable Supabase and keep malformed
+roster rejection.
 
 ## Clarify playing on one device
 
