@@ -21,9 +21,12 @@ Authorize membership and finished status on the server in the same transaction
 as deletion. Waiting and active games are ineligible. Missing games and games
 the requester cannot see use the same not-found response. The database cascades
 game deletion to seats, invitations and action rows. Keep player accounts and
-other games intact. Check that a delayed retry of the original create request
-cannot silently recreate the deleted game. Preserve only the request identity
-needed to refuse such a retry if the existing schema cannot do so.
+other games intact. A create request whose creator and request ID belong to
+a deleted game returns HTTP 410 with code `game_deleted`. Apply this to
+email invites, direct starts and Yatzy tables. The client says the game was
+deleted and lets the player start a new game deliberately with a fresh request
+ID. Preserve only the request identity needed for that response. Keep
+`request_id_reused` for conflicting retries against existing games.
 
 The current finished-game trigger blocks updates. The rematch foreign key
 blocks deleting a game with a rematch. Preserve that rematch as an independent
