@@ -59,7 +59,7 @@ interface Fixtures {
   apiBaseUrl: string;
   apiLog: string[];
   openContext: (who: string, identity?: { playerId: string; displayName: string; credential: string }) => Promise<BrowserContext>;
-  api: (method: 'GET' | 'POST', path: string, options?: { credential?: string; data?: unknown; expect?: number }) => Promise<Json>;
+  api: (method: 'GET' | 'POST' | 'DELETE', path: string, options?: { credential?: string; data?: unknown; expect?: number }) => Promise<Json>;
 }
 
 export const test = base.extend<Fixtures>({

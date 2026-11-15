@@ -627,6 +627,8 @@ h2 {
   font-family: var(--serif);
   font-size: 1.25rem;
   font-weight: 600;
+  /* A 40-character name with nothing to break at must not widen the page. */
+  overflow-wrap: anywhere;
 }
 
 .game-status-checkmate { color: var(--green); }
@@ -722,6 +724,47 @@ h2 {
 }
 
 .confirm span { flex-basis: 100%; }
+
+/* ---------- deleting a finished game (#93) ---------- */
+
+.button-quiet {
+  border-color: transparent;
+  color: var(--ink-soft);
+  text-decoration: underline;
+}
+
+.button-danger {
+  background: #a3261a;
+  border-color: #a3261a;
+  color: #fff;
+}
+
+.delete-game-open { align-self: flex-start; margin-top: 0.4rem; }
+
+.delete-game {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1.5px solid #e3a195;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  min-width: 0;
+  margin-top: 0.6rem;
+  overflow-wrap: anywhere;
+}
+
+.delete-game p { margin: 0; }
+.delete-game-title { font-weight: 700; }
+.delete-game-title:focus-visible { outline: 3px solid #2f6fd6; outline-offset: 2px; }
+.delete-game-which { font-weight: 600; }
+.delete-game .button-row { margin-top: 0.25rem; flex-wrap: wrap; }
+.delete-game .text-button { padding: 0; font-size: inherit; }
+
+.flash {
+  background: #e3f1dc;
+  border: 1px solid #9cc48a;
+  overflow-wrap: anywhere;
+}
 
 /* ---------- navigation ---------- */
 

@@ -139,6 +139,7 @@ describe('migration rehearsals', () => {
 
   it('still exist where the migration run looks for them', () => {
     expect(testFiles(join(ROOT, 'tests/backend/migrations')).sort()).toEqual([
+      'tests/backend/migrations/delete-finished-games.test.ts',
       'tests/backend/migrations/player-credentials.test.ts',
       'tests/backend/migrations/unique-email.test.ts',
       'tests/backend/migrations/unique-names.test.ts',

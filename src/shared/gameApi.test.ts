@@ -117,6 +117,36 @@ describe('game types this client reads (#53)', () => {
   });
 });
 
+describe('deleting a finished game (#93)', () => {
+  it('asks who is affected with a read, and deletes with one DELETE that is never repeated', async () => {
+    fetchMock.mockImplementationOnce(async () => reply(200, { deletion: { gameId: 'g1', removesFromPlayWith: [] } }));
+    expect(await settle(gameApi.deletionPreview(CRED, 'g1'))).toEqual({ value: { deletion: { gameId: 'g1', removesFromPlayWith: [] } } });
+    const [previewUrl, previewInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new URL(previewUrl).pathname).toMatch(/\/games\/g1\/deletion$/);
+    expect(previewInit.method).toBe('GET');
+
+    fetchMock.mockReset();
+    fetchMock.mockImplementation(async () => reply(503, { error: { code: 'unavailable', message: 'x' } }));
+    const outcome = await settle(gameApi.deleteGame(CRED, 'g1', ['p1', 'p2']));
+    expect((outcome as { error: unknown }).error).toBeInstanceOf(ApiError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new URL(url).pathname).toMatch(/\/games\/g1$/);
+    expect(new URL(url).searchParams.get('warned')).toBe('p1,p2');
+    expect(new URL(url).searchParams.get('types')).toBe('chess,chess960,yatzy');
+    expect(init.method).toBe('DELETE');
+    expect(init.body).toBeUndefined();
+  });
+
+  it('hands over who is affected now when the server says that changed, and sends an empty list as such', async () => {
+    const deletion = { gameId: 'g1', removesFromPlayWith: [{ id: 'p2', displayName: 'Harald' }] };
+    fetchMock.mockImplementation(async () => reply(409, { error: { code: 'deletion_changed', message: 'x', deletion } }));
+    const outcome = (await settle(gameApi.deleteGame(CRED, 'g1', []))) as { error: ApiError };
+    expect(outcome.error).toMatchObject({ status: 409, code: 'deletion_changed', deletion });
+    expect(new URL(fetchMock.mock.calls[0][0] as string).searchParams.get('warned')).toBe('');
+  });
+});
+
 describe('a backend from before #53 (during rollout)', () => {
   // The web client publishes on merge; the owner deploys the backend afterwards.
   const legacy = (moves: string[]) => ({

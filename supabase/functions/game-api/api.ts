@@ -44,6 +44,8 @@ export interface GameView {
   chess?: { initialFen: string; moves: string[]; turn: Seat };
   /** The game started from this one with "Play again", if any. */
   rematchGameId: string | null;
+  /** Whether this player may delete the game now (#93): any participant, once it is finished. */
+  canDelete: boolean;
 }
 
 /** A game this client cannot read: its type was not asked for (`types`) or this server lacks it. */
@@ -92,7 +94,7 @@ function corsHeaders(request: Request, config: ApiConfig): Record<string, string
   const allowed = config.allowedOrigins === null ? '*' : origin && config.allowedOrigins.includes(origin) ? origin : null;
   return {
     ...(allowed ? { 'Access-Control-Allow-Origin': allowed } : {}),
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info, x-device-credential',
     Vary: 'Origin',
   };
@@ -122,7 +124,7 @@ async function route(request: Request, sql: Sql, config: ApiConfig): Promise<Res
     const path = url.pathname.replace(/^.*?\/game-api/, '') || '/';
     const types = clientTypes(url);
     const route = `${request.method} ${path.replace(/\/+$/, '') || '/'}`;
-    const gameMatch = path.match(/^\/games\/([^/]+)(\/actions|\/invitation|\/rematch)?\/?$/);
+    const gameMatch = path.match(/^\/games\/([^/]+)(\/actions|\/invitation|\/rematch|\/deletion)?\/?$/);
 
     if (route === 'GET /health') {
       await sql`select 1`;
@@ -150,6 +152,12 @@ async function route(request: Request, sql: Sql, config: ApiConfig): Promise<Res
     if (route === 'POST /invitations/redeem') return json(200, await redeemInvitation(sql, player, await readBody(request), types));
     if (gameMatch && !gameMatch[2] && request.method === 'GET') {
       return json(200, { game: await loadView(sql, player.id, gameMatch[1], types) });
+    }
+    if (gameMatch && !gameMatch[2] && request.method === 'DELETE') {
+      return json(200, await deleteGame(sql, player, gameMatch[1], types, warnedPlayers(url)));
+    }
+    if (gameMatch && gameMatch[2] === '/deletion' && request.method === 'GET') {
+      return json(200, { deletion: await previewDeletion(sql, player, gameMatch[1], types) });
     }
     if (gameMatch && gameMatch[2] === '/rematch' && request.method === 'POST') {
       const { status, body } = await startRematch(sql, player, gameMatch[1], types);
@@ -364,6 +372,9 @@ function toView(row: GameRow, adapter: GameTypeAdapter): GameView {
     moveCount: adapter.moveCount(row.payload),
     ...adapter.view(row.payload),
     rematchGameId: row.rematch_id,
+    // Any participant may delete a finished game (#93). Sent only by a backend that can, which
+    // is how a client knows to offer it.
+    canDelete: row.status === 'finished',
   };
 }
 
@@ -489,9 +500,11 @@ async function createGame(sql: Sql, player: Player, body: Record<string, unknown
 
   const direct = target.mode === 'player';
   const created = await sql.begin(async (tx) => {
+    // First of all: a retry for a deleted game is told so whatever else has changed since (#93).
+    await refuseDeletedCreation(tx, player.id, requestId);
     if (direct) {
       // Only someone the caller has actually sat at a game with (any type or version), never a
-      // client-supplied name or list. Seats are never removed, so this cannot become untrue later.
+      // client-supplied name or list. A seat only goes away when its finished game is deleted (#93).
       const [shared] =
         target.playerId === player.id
           ? []
@@ -500,7 +513,12 @@ async function createGame(sql: Sql, player: Player, body: Record<string, unknown
                 join game_participants o on o.game_id = me.game_id and o.player_id = ${target.playerId}
                where me.player_id = ${player.id}
                limit 1`;
-      if (!shared) throw NOT_AN_OPPONENT();
+      if (!shared) {
+        // The deletion of this request's own game may have committed since the check above,
+        // taking the last shared seat with it: that retry is told "deleted", not "no such opponent".
+        await refuseDeletedCreation(tx, player.id, requestId);
+        throw NOT_AN_OPPONENT();
+      }
     }
 
     // A request ID makes creation retryable: a second request with it finds the first game. A
@@ -511,6 +529,9 @@ async function createGame(sql: Sql, player: Player, body: Record<string, unknown
               ${tx.json(adapter.create() as never)}, ${player.id}, ${requestId})
       on conflict (created_by, create_request_id) do nothing
       returning id`;
+    // A deletion that committed while this insert waited on the same request ID: the new row is
+    // rolled back with this transaction.
+    if (game) await refuseDeletedCreation(tx, player.id, requestId);
     if (!game) {
       // The request's identity is its type, target mode and recipient, all read back from the rows
       // the first request wrote (no migration): an email game always keeps its invitation and the
@@ -524,6 +545,7 @@ async function createGame(sql: Sql, player: Player, body: Record<string, unknown
           from games g
           left join game_invitations i on i.game_id = g.id
          where g.created_by = ${player.id} and g.create_request_id = ${requestId}`;
+      if (!earlier) throw GAME_DELETED(); // deleted between the insert and this read
       const sameTarget = direct
         ? !earlier.has_invitation && earlier.black_id === target.playerId
         : earlier.has_invitation && earlier.invited_email === target.email;
@@ -553,7 +575,7 @@ async function createGame(sql: Sql, player: Player, body: Record<string, unknown
   return {
     status: created.duplicate ? 200 : 201,
     body: {
-      game: await loadView(sql, player.id, created.gameId, types),
+      game: await loadCreated(sql, player.id, created.gameId, types),
       invitation: created.token ? { token: created.token } : null,
       duplicate: created.duplicate,
     },
@@ -592,6 +614,7 @@ async function createTable(
   const roster = [player.id, ...guests]; // turn order: host, then guests as chosen
 
   const created = await sql.begin(async (tx) => {
+    await refuseDeletedCreation(tx, player.id, requestId);
     // Every guest must be someone the host has sat at a game with (any type). One answer for
     // yourself, an unknown ID and a stranger, whichever guest it is.
     if (guests.includes(player.id)) throw NOT_AN_OPPONENT();
@@ -600,7 +623,10 @@ async function createTable(
         from game_participants me
         join game_participants o on o.game_id = me.game_id
        where me.player_id = ${player.id} and o.player_id = any(${guests}::uuid[])`;
-    if (known.length !== guests.length) throw NOT_AN_OPPONENT();
+    if (known.length !== guests.length) {
+      await refuseDeletedCreation(tx, player.id, requestId); // as for a direct start
+      throw NOT_AN_OPPONENT();
+    }
 
     const [game] = await tx`
       insert into games (game_type, schema_version, status, payload, created_by, create_request_id)
@@ -608,6 +634,9 @@ async function createTable(
               ${tx.json(adapter.create(options) as never)}, ${player.id}, ${requestId})
       on conflict (created_by, create_request_id) do nothing
       returning id`;
+    // A deletion that committed while this insert waited on the same request ID: the new row is
+    // rolled back with this transaction.
+    if (game) await refuseDeletedCreation(tx, player.id, requestId);
     if (!game) {
       // The request's identity is its type, mode and ordered roster, read back from the first
       // request's rows. The same ID for anything else is refused before anything is modified.
@@ -616,6 +645,7 @@ async function createTable(
                (select array_agg(p.player_id order by p.seat) from game_participants p where p.game_id = g.id) as roster
           from games g
          where g.created_by = ${player.id} and g.create_request_id = ${requestId}`;
+      if (!earlier) throw GAME_DELETED();
       const sameRoster = Array.isArray(earlier.roster) && earlier.roster.join() === roster.join();
       if (earlier.game_type !== adapter.type || earlier.mode !== options.mode || !sameRoster) throw REQUEST_ID_REUSED();
       readable(earlier, types);
@@ -629,7 +659,7 @@ async function createTable(
 
   return {
     status: created.duplicate ? 200 : 201,
-    body: { game: await loadView(sql, player.id, created.gameId, types), invitation: null, duplicate: created.duplicate },
+    body: { game: await loadCreated(sql, player.id, created.gameId, types), invitation: null, duplicate: created.duplicate },
   };
 }
 
@@ -822,11 +852,14 @@ async function startRematch(sql: Sql, player: Player, gameId: string, types: str
   if (!UUID.test(gameId)) throw new ApiError(404, 'game_not_found', 'Game not found.');
 
   const started = await sql.begin(async (tx) => {
+    // The source is locked against deletion (#93) until the rematch exists: either this request
+    // finishes first and the rematch survives the deletion, or the source is already gone.
     const [source] = await tx`
       select g.status, g.game_type, g.schema_version, g.payload, g.created_by, ${ROSTER(tx)} as roster
         from games g
         join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
-       where g.id = ${gameId}`;
+       where g.id = ${gameId}
+         for share of g`;
     if (!source) throw new ApiError(404, 'game_not_found', 'Game not found.');
     if (readable(source, types).family !== 'chess') throw NOT_FOR_THIS_GAME('Play again');
     // Never continue a game whose seats do not fit it: the rematch would copy them.
@@ -856,6 +889,116 @@ async function startRematch(sql: Sql, player: Player, gameId: string, types: str
     status: started.duplicate ? 200 : 201,
     body: { game: await loadView(sql, player.id, started.gameId, types), duplicate: started.duplicate },
   };
+}
+
+/** The view of a game a creation request just made or found; gone already means deleted (#93). */
+async function loadCreated(sql: Sql, playerId: string, gameId: string, types: string[]): Promise<GameView> {
+  try {
+    return await loadView(sql, playerId, gameId, types);
+  } catch (e) {
+    if (e instanceof ApiError && e.code === 'game_not_found') throw GAME_DELETED();
+    throw e;
+  }
+}
+
+const GAME_DELETED = () => new ApiError(410, 'game_deleted', 'That game was deleted. Start a new one if you want to play again.');
+
+/**
+ * A creation request whose game was since deleted (#93) is answered 410: the client says so and
+ * the player starts again deliberately, with a new request ID. Without this, a late retry would
+ * find no game under its ID and quietly create the deleted game a second time.
+ */
+async function refuseDeletedCreation(tx: Db, playerId: string, requestId: string | null) {
+  if (requestId === null) return;
+  const [gone] = await tx`
+    select 1 from deleted_game_requests where created_by = ${playerId} and create_request_id = ${requestId}`;
+  if (gone) throw GAME_DELETED();
+}
+
+/** The finished game a participant may delete, locked for the deletion; otherwise the usual errors. */
+async function deletable(tx: Db, player: Player, gameId: string, types: string[], lock: boolean) {
+  if (!UUID.test(gameId)) throw new ApiError(404, 'game_not_found', 'Game not found.');
+  // One answer for a game that does not exist, was already deleted, or is not the requester's.
+  const [game] = await tx`
+    select g.id, g.game_type, g.schema_version, g.status, g.created_by, g.create_request_id
+      from games g
+      join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
+     where g.id = ${gameId}
+       ${lock ? tx`for update of g` : tx``}`;
+  if (!game) throw new ApiError(404, 'game_not_found', 'Game not found.');
+  readable(game, types);
+  if (game.status !== 'finished') {
+    throw new ApiError(409, 'not_finished', 'Only a finished game can be deleted.');
+  }
+  return game;
+}
+
+/**
+ * Co-players of this game who would leave the requester's "Play with" list if it were deleted:
+ * the picker's own rule (a shared seat at any game), with this game left out.
+ */
+async function lastSharedWith(tx: Db, playerId: string, gameId: string): Promise<Player[]> {
+  const rows = await tx<{ id: string; display_name: string }[]>`
+    select p.id, p.display_name
+      from game_participants o
+      join players p on p.id = o.player_id
+     where o.game_id = ${gameId} and o.player_id <> ${playerId}
+       and not exists (
+             select 1 from game_participants mine
+               join game_participants theirs on theirs.game_id = mine.game_id and theirs.player_id = o.player_id
+              where mine.player_id = ${playerId} and mine.game_id <> ${gameId})
+     order by o.seat`;
+  return rows.map((row) => ({ id: row.id, displayName: row.display_name }));
+}
+
+/** What deleting would do, for the confirmation: nothing is changed. */
+async function previewDeletion(sql: Sql, player: Player, gameId: string, types: string[]) {
+  const game = await deletable(sql, player, gameId, types, false);
+  return { gameId: game.id as string, removesFromPlayWith: await lastSharedWith(sql, player.id, gameId) };
+}
+
+/** The players the requester was warned about (`warned=<id>,<id>`): unknown values match nobody. */
+function warnedPlayers(url: URL): string[] {
+  return (url.searchParams.get('warned') ?? '').split(',').map((id) => id.trim().toLowerCase()).filter(Boolean);
+}
+
+/**
+ * Delete a finished game for everyone (#93). Membership and finished status are checked on the
+ * locked row in the same transaction. Seats, invitations and actions go with it; a rematch is
+ * detached and stays; players and every other game are untouched. Repeating the request finds
+ * nothing (404), so it can never delete twice.
+ *
+ * `warned` is who the requester was told would leave "Play with". If that is no longer exactly
+ * who would, nothing is deleted: `409 deletion_changed` carries the current list to confirm.
+ * Deletions that involve a common player run one at a time (their player rows are locked, in ID
+ * order), so two of them cannot each conclude that the other game still keeps the pair together.
+ */
+async function deleteGame(sql: Sql, player: Player, gameId: string, types: string[], warned: string[]) {
+  return await sql.begin(async (tx) => {
+    if (UUID.test(gameId)) {
+      await tx`
+        select 1 from players
+         where id in (select player_id from game_participants where game_id = ${gameId})
+         order by id
+           for no key update`;
+    }
+    const game = await deletable(tx, player, gameId, types, true);
+    const removesFromPlayWith = await lastSharedWith(tx, player.id, gameId);
+    const affected = removesFromPlayWith.map((p) => p.id).sort();
+    if (affected.join() !== [...new Set(warned)].sort().join()) {
+      throw new ApiError(409, 'deletion_changed', 'Who this affects has changed. Check and confirm again.', {
+        deletion: { gameId, removesFromPlayWith },
+      });
+    }
+    if (game.create_request_id) {
+      await tx`
+        insert into deleted_game_requests (created_by, create_request_id)
+        values (${game.created_by}, ${game.create_request_id})
+        on conflict do nothing`;
+    }
+    await tx`delete from games where id = ${gameId}`;
+    return { deleted: true, gameId, removesFromPlayWith };
+  });
 }
 
 /** The common parts of an action request; the action itself is read by the game's type. */

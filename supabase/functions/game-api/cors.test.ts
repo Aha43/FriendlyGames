@@ -26,4 +26,10 @@ describe('CORS', () => {
     const other = await preflight('https://evil.example', ['https://friendlygames.pages.dev']);
     expect(other.headers.get('access-control-allow-origin')).toBeNull();
   });
+
+  it('lets the site delete a game (#93) as well as read and post', async () => {
+    const response = await preflight('https://friendlygames.pages.dev', ['https://friendlygames.pages.dev']);
+    expect(response.status).toBe(204);
+    expect(response.headers.get('access-control-allow-methods')).toBe('GET, POST, DELETE, OPTIONS');
+  });
 });

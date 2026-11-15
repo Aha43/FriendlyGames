@@ -11,6 +11,7 @@ import { badgeFor } from '../shared/badges';
 import { describeGame, opponentName, other } from '../shared/describe';
 import { ApiError, gameApi, isTable, NetworkError, type AnyGame, type GameAction, type Seat, type SharedGame, type TableGame } from '../shared/gameApi';
 import { upTo, type BoardAction } from '../games/chessFamily';
+import DeleteGame from '../components/DeleteGame';
 import { chessFamilyView, GAME_TYPES, tableView, UNSUPPORTED_GAME_TEXT, type ChessFamilyView } from '../games/registry';
 import { forgetInvitation, invitationFor, rememberInvitation, type Identity } from '../shared/identity';
 import { newRequestId } from '../shared/requestId';
@@ -237,7 +238,7 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected, o
       <div className="page">
         <section className="card">
           <h2>Game not found</h2>
-          <p>This game doesn’t exist, or it isn’t one of yours.</p>
+          <p>This game doesn’t exist, was deleted, or isn’t one of yours.</p>
           <a className="button" href="#/">
             Your games
           </a>
@@ -388,6 +389,14 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected, o
                     ? `Play again, new start (you take ${me === 'white' ? 'Black' : 'White'})`
                     : `Play again (you take ${me === 'white' ? 'Black' : 'White'})`}
               </button>
+            )}
+            {game.canDelete && (
+              <DeleteGame
+                identity={identity}
+                gameId={game.id}
+                description={`${GAME_TYPES[view.type].label} game with ${opponent ?? 'your friend'}, finished ${finishedDate.format(new Date(game.updatedAt))}`}
+                onIdentityRejected={onIdentityRejected}
+              />
             )}
           </>
         ) : (
