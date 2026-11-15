@@ -1,10 +1,9 @@
 # Development workflow
 
 The [roadmap](roadmap.md) names version destinations. The proposed next route is
-[Sprint 7](sprint-07.md), v0.4.0 — Yatzy with friends. Review and merge its
-planning PR before implementation. Sprint 5 records the
-[deployed chess-family boundary](game-types.md), and Sprint 6 records the
-previous-opponent picker. Sprint 7 starts with a rules and save-format proof.
+[Sprint 8](sprint-08.md), the start of v0.5.0. Review and merge its planning PR
+before implementation. Sprint 5 records the [deployed chess-family boundary](game-types.md),
+Sprint 6 records the previous-opponent picker, and Sprint 7 records Yatzy.
 
 ## Planning and implementation
 
