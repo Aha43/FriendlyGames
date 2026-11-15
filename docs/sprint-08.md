@@ -37,8 +37,15 @@ request must leave a coherent result. The rematch can succeed before deletion
 and survive, or the source can be removed first and the rematch request refused.
 
 History and chess tallies reflect the remaining games. The previous-opponent
-picker also derives its eligibility from surviving shared seats. Deleting the
-last shared game can therefore remove that opponent from **Play with**.
+picker also derives its eligibility from surviving shared seats. When deleting
+this game would remove someone from the requesting player's **Play with** list,
+name each affected player in the confirmation and explain that they can be
+picked again once the two share another game. Use the same server-side
+eligibility rule as the picker, excluding the game being deleted. Omit this
+warning when every co-player remains eligible.
+
+Verify a group table where the warning names only the co-players who would
+drop out of the picker's list. Also check a game where no warning is needed.
 
 Use real-Supabase CI to exercise a participant other than the host, a finished
 game of each type, waiting and active refusal, outsider refusal, rematch
