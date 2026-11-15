@@ -46,7 +46,7 @@ castle, select your king and use a castle button: king and rook end on g/f (king
 - [Sprint 4 — Captured pieces at a glance](docs/sprint-04.md)
 - [Sprint 5 — Chess and Fischer Random](docs/sprint-05.md) (v0.2.0, released)
 - [Sprint 6 — Play again with friends](docs/sprint-06.md) (v0.3.0)
-- [Sprint 7 — Yatzy with friends](docs/sprint-07.md) (proposed v0.4.0)
+- [Sprint 7 — Yatzy with friends](docs/sprint-07.md) (v0.4.0)
 - [Game-type architecture plan](docs/game-types.md)
 - [Source publication](docs/source-publication.md)
 - [Changelog](CHANGELOG.md)

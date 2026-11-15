@@ -6,6 +6,11 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
+## v0.4.0 — Yatzy with friends (2026-11-12)
+
+Sprint 7. The release date is when this version was prepared; the `v0.4.0` tag marks the
+accepted commit, published with `make release`.
+
 ### Added
 
 - Yatzy with friends, for two to four players. Under *Start a game*, choose Yatzy, Forced or
@@ -16,24 +21,50 @@ versions live in `package.json`; actual deployments are recorded separately in
   before you commit. Works by keyboard and on a 320px phone with four players. A turn resumes
   on any device with the same dice, and a lost reply is retried without a second roll.
   Finished tables show the full scorecard, the places, and how a tie was settled, and are
-  listed under *Yatzy results*, apart from the chess tallies (#86).
+  listed under *Yatzy results*, apart from the chess tallies (#86, PR #91).
 - People who have shared a Yatzy table can start chess or Fischer Random with each other from
   *Play with* (#85, #86).
 
 ### Changed
 
 - The top bar reads "Chess & Yatzy".
+- While a new game is being created, the game choice is held until the server answers, so a
+  start can't be sent twice (#86).
 
 ### Development
 
-- Yatzy rules and saved-format proof for Sprint 7: shared scoring, Forced/Free, banked throws,
-  turn order for two to four players, ranking with the token tiebreak, and a proposed schema
-  change rehearsed over existing chess records ([decision 0002](docs/decisions/0002-yatzy-format.md)).
-  Nothing is enabled yet (#84).
+- Sprint 7 plan and the v0.4.0 milestone (#83, PR #88).
+- Yatzy rules and saved-format proof: shared scoring, Forced/Free, banked throws, turn order
+  for two to four players, ranking with the token tiebreak, and the schema change rehearsed
+  over existing chess records ([decision 0002](docs/decisions/0002-yatzy-format.md); #84,
+  PR #89).
 - Yatzy on the server: tables for two to four previous opponents in turn order, server-rolled
   dice, throws and scores with safe retries, banked throws, finished rankings and per-table
-  results kept apart from chess tallies. Additive migration
-  `20261111120000_yatzy_games.sql`; the app does not offer Yatzy yet (#85).
+  results kept apart from chess tallies. Seats are validated wherever a game is read, played,
+  counted or continued; a chess game needs both seats once active. Additive migration
+  `20261111120000_yatzy_games.sql` (#85, PR #90).
+- This release (#87).
+
+### Known limitations
+
+- Email entry is prototype access: email ownership isn't checked.
+- A Yatzy table stays in progress for everyone at it when someone stops playing: there is no
+  leave, abandon, resign or "play again" for tables in this version.
+- Everyone who has sat at a table with you can start a game with you directly, with no request
+  to accept and no notification (a deliberate prototype choice, now reaching co-players too).
+- Yatzy needs people you have already played: someone new joins through a chess invitation
+  first.
+- Other players see a throw on their next refresh (every few seconds), not as it happens.
+- Guests take their turns in the order they were picked; to change it, unpick and pick again.
+- Long names are shortened in the scorecard's column headers (the full name is in the standings).
+- The lobby says "1 moves" for a single move, and its "Chess history" card holds both chess
+  types.
+- Rollback: the site can return to the v0.3.0 build, which never asks for Yatzy; tables then
+  stay stored and hidden. The backend may go back to `1c0850a` (chess keeps working, tables
+  are unavailable and untouched), never before the Fischer Random dispatcher (#53). The Yatzy
+  migration and the unique-name index are forward-only.
+- The first real chess game with Harald is still being played, so the v0.1.0 acceptance (#11)
+  stays open.
 
 ## v0.3.0 — Play again with friends (2026-11-10)
 
