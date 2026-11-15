@@ -148,6 +148,17 @@ What the integrated checks cover, all on disposable data (real-Supabase CI on `m
   local saves keep their backend tests and browser journeys. Chess-only and older clients
   never see a table.
 
-Not covered by automation, and still open for acceptance: the owner's own play, in particular
-one real three-player table played to the final scorecard on the live site. Owner acceptance,
-`make release` and closing the milestone remain the owner's. #11 stays open.
+**Owner's play observation (reported 2026-11-15):** on the live site the owner played a
+two-player and a three-player table, the three-player one through to the final scorecard with
+the places shown, and found it worked very well. He played all the seats himself, using test
+players in separate browsers (Chrome, an incognito window and Safari), so three independent
+sessions but one person. That differs from the plan's "Arne and two friends"; whether it is
+enough for acceptance is the owner's decision. His ongoing chess game with Harald has had no
+problem since the deploy.
+
+From that play the owner raised three Yatzy improvements for after this release (not defects):
+naming the Forced goal row from the start of the turn, a short explanation of each row that
+also works on phones, and ending a Forced turn without a button press when no throw is left.
+They are handed to Codex for planning.
+
+Owner acceptance, `make release` and closing the milestone remain the owner's. #11 stays open.
