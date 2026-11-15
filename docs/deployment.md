@@ -102,6 +102,23 @@ automatically. Then `make deploy-backend` (which runs the same check again) appl
 migration. The site needs no particular order: old and new pages both work with either backend.
 Rollback: the index can be dropped without data loss; no names were rewritten.
 
+### Deleting finished games (#93): order and rollback
+
+The site can go out first: it shows *Delete game* only when the backend marks a game
+`canDelete`, and the backend before #93 never does. The old site ignores the new field.
+
+1. Merge the PR: the site deploys by itself, with no button yet.
+2. Run `make deploy-backend` from `main`. It takes the backup, applies
+   `20261115120000_delete_finished_games.sql` (no row changes), then deploys the function.
+   The function needs the migration, so never deploy it alone.
+3. Verify: `/health` reports the new commit; an ongoing game still opens; a finished game now
+   offers *Delete game…*. Delete only a game made for the purpose.
+
+Rollback: the function can return to `31faa88`; leave the migration in place (forward-only,
+harmless to that version). Deletion is then unavailable and the button disappears. **Deleted
+games are not restored by any rollback**; only a backup taken before the deletion holds them.
+While rolled back, a late creation retry for a deleted game is not refused.
+
 ### Email entry (#29): order and rollback
 
 The migration (`20261101120000_player_credentials.sql`) only adds: a `player_credentials`

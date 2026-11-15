@@ -202,6 +202,7 @@ function creationError(e: unknown): string {
     if (e.code === 'unsupported_game_type') return 'Yatzy isn’t available here yet. Reload the page to update.';
     if (e.code === 'unsupported_game') return e.message;
     if (e.code === 'opponent_not_found') return 'You can only seat people you’ve already played a game with.';
+    if (e.code === 'game_deleted') return 'That table was started and has since been deleted. Start again if you want a new one.';
   }
   return 'Couldn’t start that table. Please try again.';
 }

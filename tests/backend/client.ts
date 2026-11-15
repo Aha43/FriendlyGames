@@ -11,7 +11,7 @@ export interface ApiResponse<T = any> {
 }
 
 export async function call<T = any>(
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'DELETE',
   path: string,
   { credential, body }: { credential?: string; body?: unknown } = {},
 ): Promise<ApiResponse<T>> {

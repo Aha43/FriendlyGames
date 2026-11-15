@@ -31,6 +31,12 @@ and unused ones break a tie. Finished tables are kept under *Yatzy results*, apa
 chess tallies. Having shared a table, any two of its players can start a chess game with each
 other.
 
+**Deleting a finished game.** On a finished Chess, Fischer Random or Yatzy game, anyone who
+played it can choose *Delete game…*. The confirmation names the game and says it disappears for
+everyone, including from history and results, and can't be undone. If it is the last game you
+share with someone, it names them: they leave *Play with* until you share another game. A
+rematch of a deleted game stays. Games still waiting or being played can't be deleted.
+
 In **Fischer Random** the pieces behind the pawns start in one of 960 arrangements, drawn by the
 server when the game is created and the same for both sides; every piece moves as usual. To
 castle, select your king and use a castle button: king and rook end on g/f (kingside) or c/d

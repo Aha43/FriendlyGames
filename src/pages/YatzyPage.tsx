@@ -24,6 +24,7 @@ import {
   UPPER_BONUS_THRESHOLD,
   type Row,
 } from '../games/yatzy';
+import DeleteGame from '../components/DeleteGame';
 import { tableView, UNSUPPORTED_GAME_TEXT } from '../games/registry';
 import { ApiError, gameApi, isTable, NetworkError, type TableAction, type TableGame, type TableSeat } from '../shared/gameApi';
 import type { Identity } from '../shared/identity';
@@ -176,7 +177,7 @@ export default function YatzyPage({ identity, gameId, initial, onIdentityRejecte
       <div className="page">
         <section className="card">
           <h2>Game not found</h2>
-          <p>This game doesn’t exist, or it isn’t one of yours.</p>
+          <p>This game doesn’t exist, was deleted, or isn’t one of yours.</p>
           <a className="button" href="#/">
             Your games
           </a>
@@ -370,6 +371,14 @@ export default function YatzyPage({ identity, gameId, initial, onIdentityRejecte
         )}
 
         {finished && <p className="finished-date">Finished {finishedDate.format(new Date(game.updatedAt))}</p>}
+        {finished && game.canDelete && (
+          <DeleteGame
+            identity={identity}
+            gameId={game.id}
+            description={`Yatzy table with ${othersAt(game)}, finished ${finishedDate.format(new Date(game.updatedAt))}`}
+            onIdentityRejected={onIdentityRejected}
+          />
+        )}
 
         <details className="about-type">
           <summary>How this Yatzy works</summary>

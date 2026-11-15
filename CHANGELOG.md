@@ -6,6 +6,16 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
+### Added
+
+- Delete a finished game. On a finished Chess, Fischer Random or Yatzy game, any player who
+  took part can choose *Delete game…*. A confirmation names the game and says that it
+  disappears for everyone, including from history and results, and can't be undone. If it is
+  the last game you share with someone, it names them and says they leave *Play with* until
+  you share another game. A rematch of the deleted game stays as a game of its own. Games
+  still waiting or being played can't be deleted. The button appears once the backend
+  supports it (#93).
+
 ## v0.4.0 — Yatzy with friends (2026-11-12)
 
 Sprint 7. The release date is when this version was prepared; the `v0.4.0` tag marks the

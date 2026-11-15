@@ -919,6 +919,172 @@ describe('lobby', () => {
     });
   });
 
+  describe('deleting a finished game (#93)', () => {
+    const DONE = { status: 'finished', result: 'black', termination: 'resignation', updatedAt: '2026-11-12T11:00:00Z' } as const;
+    const chessDone = (overrides: Partial<SharedGame> = {}) => game({ ...DONE, canDelete: true, ...overrides });
+    const WHICH = 'Chess game with Harald, finished 12 November 2026';
+
+    async function openGame(shown: SharedGame | ReturnType<typeof table>) {
+      vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: shown } as Awaited<ReturnType<typeof gameApi.getGame>>);
+      vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+      window.location.hash = `#/game/${shown.id}`;
+      render(<App />);
+      return screen.findByRole('button', { name: 'Delete game…' });
+    }
+    const dialog = () => screen.getByRole('group', { name: 'Confirm deleting this game' });
+
+    it('is offered only on a finished game the backend says can be deleted', async () => {
+      vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+      // A backend from before #93 sends no `canDelete`: no button, nothing else changes.
+      vi.spyOn(gameApi, 'getGame').mockResolvedValue({ game: game({ ...DONE }) });
+      window.location.hash = `#/game/${GAME_ID}`;
+      const first = render(<App />);
+      expect(await screen.findByText('Finished 12 November 2026')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Delete game…' })).not.toBeInTheDocument();
+      first.unmount();
+
+      vi.mocked(gameApi.getGame).mockResolvedValue({ game: game({ canDelete: false }) });
+      const second = render(<App />);
+      await screen.findByRole('grid', { name: 'Chess board' });
+      expect(screen.queryByRole('button', { name: 'Delete game…' })).not.toBeInTheDocument();
+      second.unmount();
+
+      vi.mocked(gameApi.getGame).mockResolvedValue({ game: table('free', 2, completeGame('free', 2)) });
+      window.location.hash = `#/game/${TABLE_ID}`;
+      render(<App />);
+      expect(await screen.findByRole('table', { name: 'Final scorecard' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Delete game…' })).not.toBeInTheDocument();
+    });
+
+    it('asks first, naming the game and that everyone loses it; Keep it deletes nothing', async () => {
+      const user = userEvent.setup();
+      const preview = vi.spyOn(gameApi, 'deletionPreview').mockResolvedValue({ deletion: { gameId: GAME_ID, removesFromPlayWith: [] } });
+      const remove = vi.spyOn(gameApi, 'deleteGame');
+      await user.click(await openGame(chessDone()));
+
+      expect(within(dialog()).getByText('Delete this game?')).toHaveFocus();
+      expect(within(dialog()).getByText(WHICH)).toBeInTheDocument();
+      expect(within(dialog()).getByText(/disappears for everyone who played it.*can’t be undone/)).toBeInTheDocument();
+      expect(preview).toHaveBeenCalledWith(CREDENTIAL, GAME_ID);
+      expect(await within(dialog()).findByRole('button', { name: 'Delete game' })).toBeEnabled();
+      expect(within(dialog()).queryByText(/last game you share/)).not.toBeInTheDocument();
+
+      await user.click(within(dialog()).getByRole('button', { name: 'Keep it' }));
+      expect(screen.queryByRole('group', { name: 'Confirm deleting this game' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Delete game…' })).toBeInTheDocument();
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    it('deletes once on confirmation, however often it is pressed, and says so in the lobby', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(gameApi, 'deletionPreview').mockResolvedValue({ deletion: { gameId: GAME_ID, removesFromPlayWith: [] } });
+      let done!: (value: Awaited<ReturnType<typeof gameApi.deleteGame>>) => void;
+      const remove = vi.spyOn(gameApi, 'deleteGame').mockReturnValue(new Promise((resolve) => (done = resolve)));
+      await user.click(await openGame(chessDone()));
+      await user.dblClick(await within(dialog()).findByRole('button', { name: 'Delete game' }));
+      expect(within(dialog()).getByRole('button', { name: 'Deleting…' })).toBeDisabled();
+      expect(within(dialog()).getByRole('button', { name: 'Keep it' })).toBeDisabled();
+      expect(remove).toHaveBeenCalledTimes(1);
+      expect(remove).toHaveBeenCalledWith(CREDENTIAL, GAME_ID);
+
+      done({ deleted: true, gameId: GAME_ID, removesFromPlayWith: [] });
+      expect(await screen.findByRole('heading', { name: 'Your games' })).toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent(`Deleted: ${WHICH}.`);
+      expect(window.location.hash).toBe('#/');
+    });
+
+    it('names everyone who would leave Play with, before confirming', async () => {
+      const user = userEvent.setup();
+      const finished = table('free', 3, completeGame('free', 3), { canDelete: true });
+      vi.spyOn(gameApi, 'deletionPreview').mockResolvedValue({
+        deletion: { gameId: TABLE_ID, removesFromPlayWith: [finished.players.p2!, finished.players.p3!] },
+      });
+      await user.click(await openGame(finished));
+      expect(within(dialog()).getByText('Yatzy table with Harald and William, finished 12 November 2026')).toBeInTheDocument();
+      expect(
+        await within(dialog()).findByText(
+          'This is the last game you share with Harald and William. You won’t find them in Play with until you share another game.',
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it('does not let the game be deleted before the check has answered, and can check again', async () => {
+      const user = userEvent.setup();
+      const preview = vi
+        .spyOn(gameApi, 'deletionPreview')
+        .mockRejectedValueOnce(new NetworkError('offline'))
+        .mockResolvedValue({ deletion: { gameId: GAME_ID, removesFromPlayWith: [{ id: 'p-harald', displayName: 'Harald' }] } });
+      await user.click(await openGame(chessDone()));
+      expect(await within(dialog()).findByText(/Couldn’t check who this affects/)).toBeInTheDocument();
+      expect(within(dialog()).getByRole('button', { name: 'Delete game' })).toBeDisabled();
+      await user.click(within(dialog()).getByRole('button', { name: 'Check again' }));
+      expect(await within(dialog()).findByText(/last game you share with Harald\./)).toBeInTheDocument();
+      expect(within(dialog()).getByRole('button', { name: 'Delete game' })).toBeEnabled();
+      expect(preview).toHaveBeenCalledTimes(2);
+    });
+
+    it('treats “not found” after a lost answer as deleted, and keeps the game shown until then', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(gameApi, 'deletionPreview').mockResolvedValue({ deletion: { gameId: GAME_ID, removesFromPlayWith: [] } });
+      const remove = vi
+        .spyOn(gameApi, 'deleteGame')
+        .mockRejectedValueOnce(new NetworkError('offline'))
+        .mockRejectedValueOnce(new ApiError(404, 'game_not_found', 'x'));
+      await user.click(await openGame(chessDone()));
+      await user.click(await within(dialog()).findByRole('button', { name: 'Delete game' }));
+      expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Couldn’t confirm whether the game was deleted');
+      expect(screen.getByRole('grid', { name: 'Chess board' })).toBeInTheDocument();
+      await user.click(within(dialog()).getByRole('button', { name: 'Try again' }));
+      expect(await screen.findByRole('status')).toHaveTextContent(`Deleted: ${WHICH}.`);
+      expect(remove).toHaveBeenCalledTimes(2);
+    });
+
+    it('says so when someone else deleted it first, or it may not be deleted', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(gameApi, 'deletionPreview').mockResolvedValue({ deletion: { gameId: GAME_ID, removesFromPlayWith: [] } });
+      const remove = vi
+        .spyOn(gameApi, 'deleteGame')
+        .mockRejectedValueOnce(new ApiError(409, 'not_finished', 'Only a finished game can be deleted.'))
+        .mockRejectedValueOnce(new ApiError(404, 'game_not_found', 'x'));
+      await user.click(await openGame(chessDone()));
+      await user.click(await within(dialog()).findByRole('button', { name: 'Delete game' }));
+      expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Only a finished game can be deleted.');
+      await user.click(within(dialog()).getByRole('button', { name: 'Delete game' }));
+      expect(await screen.findByRole('status')).toHaveTextContent('That game was already deleted.');
+      expect(remove).toHaveBeenCalledTimes(2);
+    });
+
+    it('says this browser is no longer recognised when the server says so', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(gameApi, 'deletionPreview').mockResolvedValue({ deletion: { gameId: GAME_ID, removesFromPlayWith: [] } });
+      vi.spyOn(gameApi, 'deleteGame').mockRejectedValue(new ApiError(401, 'unauthorized', 'x'));
+      await user.click(await openGame(chessDone()));
+      await user.click(await within(dialog()).findByRole('button', { name: 'Delete game' }));
+      expect(await screen.findByRole('heading', { name: 'We don’t recognise this browser any more' })).toBeInTheDocument();
+    });
+
+    it('explains a start whose game was deleted before the retry arrived, and starts anew next time', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+      const create = vi
+        .spyOn(gameApi, 'createGame')
+        .mockRejectedValueOnce(new NetworkError('offline'))
+        .mockRejectedValueOnce(new ApiError(410, 'game_deleted', 'x'))
+        .mockRejectedValueOnce(new NetworkError('offline'));
+      render(<App />);
+      await user.type(await screen.findByLabelText('Friend’s email'), 'harald@example.test');
+      await user.click(screen.getByRole('button', { name: 'Create game' }));
+      await screen.findByText(/Couldn’t confirm whether the game was created/);
+      await user.click(screen.getByRole('button', { name: 'Try again' }));
+      expect(await screen.findByText('That game was started and has since been deleted. Start again if you want a new one.')).toHaveAttribute('role', 'alert');
+      await user.click(screen.getByRole('button', { name: 'Create game' }));
+      await screen.findByText(/Couldn’t confirm whether the game was created/);
+      const ids = create.mock.calls.map((call) => call[2]);
+      expect(ids[1]).toBe(ids[0]);
+      expect(ids[2]).not.toBe(ids[0]);
+    });
+  });
+
   it('joins from a pasted invitation link', async () => {
     const user = userEvent.setup();
     vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });

@@ -6,6 +6,7 @@ import YatzyHistory from '../components/YatzyHistory';
 import { CHESS960_CASTLING, CHESS960_SUMMARY, GAME_TYPES, tableView, typeLabel, type GameType } from '../games/registry';
 import { describeTable, MODE_LABELS, othersAt, seated } from '../games/yatzy';
 import { describeGame, opponentName } from '../shared/describe';
+import { takeFlash } from '../shared/flash';
 import {
   ApiError,
   gameApi,
@@ -31,6 +32,8 @@ export default function Lobby({ identity, onIdentityRejected }: LobbyProps) {
   const [games, setGames] = useState<AnyGame[] | null>(null);
   const [history, setHistory] = useState<HistoryEntry[] | null>(null);
   const [tables, setTables] = useState<TableResult[]>([]);
+  // A one-off message from the page the player just left, e.g. after deleting a game (#93).
+  const [flash] = useState(takeFlash);
   const [loadError, setLoadError] = useState<string | null>(null);
   // An answer that arrives after the lobby has closed is ignored (its timers are already cleared).
   const open = useRef(false);
@@ -79,6 +82,11 @@ export default function Lobby({ identity, onIdentityRejected }: LobbyProps) {
     <div className="page">
       <section className="card" aria-labelledby="games-title">
         <h2 id="games-title">Your games</h2>
+        {flash && (
+          <p className="banner flash" role="status">
+            {flash}
+          </p>
+        )}
         {loadError && <p className="banner banner-warning">{loadError}</p>}
         {games === null && !loadError && <p className="muted">Looking for your games…</p>}
         {games !== null && ongoing.length === 0 && <p className="muted">No games in progress. Start one below.</p>}
@@ -400,12 +408,16 @@ function NewGame({
   );
 }
 
+/** A retry reached the server after the game it made was deleted (#93). The next start is a new game. */
+const GAME_DELETED_TEXT = 'That game was started and has since been deleted. Start again if you want a new one.';
+
 function creationError(e: unknown, mode: 'player' | 'email'): string {
   if (e instanceof ApiError) {
     if (e.code === 'unsupported_game_type') return 'This game type isn’t available here. Reload the page to update.';
     if (e.code === 'unsupported_game') return e.message;
     if (e.code === 'opponent_not_found') return 'You have no earlier game with that player. Invite them by email instead.';
     if (e.code === 'request_id_reused') return 'Couldn’t start that game. Please try again.';
+    if (e.code === 'game_deleted') return GAME_DELETED_TEXT;
   }
   return mode === 'email' ? 'Please enter your friend’s email address.' : 'Couldn’t start that game. Please try again.';
 }

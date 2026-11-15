@@ -209,7 +209,57 @@ who never joined is not one. There is no contact list, friend request or search.
   game view carries `rematchGameId`.
 - Finished games are archived records: a database trigger
   (`keep_finished_games_unchanged`) rejects any update to a game whose status is
-  `finished`, so neither a bug nor a direct SQL update can rewrite history.
+  `finished`, so neither a bug nor a direct SQL update can rewrite history. The one exception
+  is detaching a rematch from a deleted source (see below).
+
+## Deleting a finished game (#93)
+
+Any participant may delete a **finished** game of any type. It is then gone for everyone.
+
+- `GET /games/:id/deletion` is the read-only check behind the confirmation. It returns
+  `removesFromPlayWith`: the co-players for whom this is the last game they share with the
+  requester. It uses the rule of the previous-opponent picker, leaving this game out. It is
+  empty when everyone stays eligible.
+- `DELETE /games/:id` deletes in one transaction. It locks the game, checks that the requester
+  has a seat and that the game is finished, and deletes the row. The database cascades to
+  seats, invitations and actions. Players and other games are untouched. History, tallies,
+  Yatzy results and `GET /opponents` are computed from what remains, so they follow at once.
+- Refusals change nothing:
+  - a waiting or active game: `409 not_finished`
+  - a missing game, a game the requester has no seat in, or a malformed ID:
+    `404 game_not_found`, the same answer for all three
+  - a game of a type the client did not ask for: `422 unsupported_game`
+- A repeated or concurrent delete finds nothing and gets `404 game_not_found`. The client
+  treats that as "deleted" only when its own earlier attempt went unanswered.
+- **Rematches survive.** `games.rematch_of` is `on delete set null`, so a rematch of a deleted
+  game becomes a game without a source, active or finished, with nothing else changed. The
+  finished-game trigger allows exactly that one change on a finished row: `rematch_of` going to
+  null with every other column equal. Deleting a finished rematch frees its source for *Play
+  again*. A rematch request locks its source (`for share`), so against a concurrent delete it
+  either creates the rematch first, which then survives, or gets `404`.
+- **Late creation retries.** Deleting a game records `(created_by, create_request_id)` in
+  `deleted_game_requests`, with a timestamp and nothing else. A `POST /games` from that creator
+  with that request ID gets `410 game_deleted` and creates nothing. This covers email
+  invitations, direct starts and Yatzy tables. The client explains it and uses a new ID for the
+  next start. `409 request_id_reused` is unchanged for existing games. The check runs
+  before anything else and again after the insert, so a retry racing the deletion either finds
+  the game (`200`, duplicate) or gets `410`. It never makes the game again.
+- Every game view carries `canDelete` (true for a finished game). The site shows *Delete game*
+  only when it is true, so a site built before the backend is deployed shows no button.
+
+Rollout and rollback:
+
+- `make deploy-backend` takes the backup, applies `20261115120000_delete_finished_games.sql`,
+  then deploys the function. The new function needs the migration: it reads
+  `deleted_game_requests`. Never deploy the function alone.
+- The migration is forward-only and changes no row.
+  `tests/backend/migrations/delete-finished-games.test.ts` shows existing games, seats,
+  invitations and actions unchanged by it.
+- The previous function works on the migrated schema, so the function can be rolled back to
+  `31faa88` (v0.4.0). Deletion is then unavailable and the site hides the button. Tombstones
+  are ignored by that function, so a late retry for a deleted game could create it again.
+- **A rollback does not restore deleted games.** Only the backup taken before a deletion holds
+  them.
 
 ## Actions, revisions and retries
 
@@ -371,6 +421,8 @@ endpoints accept the `types` query parameter described under Game types.
 | `POST /games` (Yatzy table, #85) | `{ type: "yatzy", mode: "forced"\|"free", friendPlayerIds: [1–3 IDs], requestId? }` | `201 { game, invitation: null, duplicate: false }`: an **active** table, host `p1`, guests `p2`… in the order given; retry `200 { …, duplicate: true }`; `404 opponent_not_found`; `400` for a malformed roster or mode |
 | `POST /games/:id/rematch` | | `201 { game, duplicate: false }`, or `200 { game, duplicate: true }` if it already exists |
 | `POST /games/:id/actions` | `{ requestId, expectedRevision, action }` | `200 { game, duplicate }` |
+| `GET /games/:id/deletion` (#93) | | `200 { deletion: { gameId, removesFromPlayWith: [{ id, displayName }] } }` (participant, finished game) |
+| `DELETE /games/:id` (#93) | | `200 { deleted: true, gameId, removesFromPlayWith }` (participant, finished game); `409 not_finished`; `404 game_not_found` once deleted |
 
 `action` is `{ "type": "move", "from": "e2", "to": "e4", "promotion"?: "q"|"r"|"b"|"n" }`,
 `{ "type": "castle", "side": "kingside"|"queenside" }` (Chess960 only) or `{ "type": "resign" }`
@@ -395,7 +447,8 @@ A **game** looks like:
   "turn": "white",
   "moveCount": 2,
   "chess": { "initialFen": "…", "moves": ["e2e4", "c7c5"], "turn": "white" },
-  "rematchGameId": null
+  "rematchGameId": null,
+  "canDelete": false
 }
 ```
 
@@ -411,6 +464,7 @@ Errors are `{ "error": { "code", "message", … } }`:
 | 403 | `not_creator` |
 | 404 | `not_found`, `player_not_found`, `game_not_found`, `invitation_not_found` |
 | 409 | `stale_revision` (includes `game`), `not_your_turn`, `not_started`, `not_finished`, `game_finished`, `invitation_used`, `already_participant`, `request_id_reused` |
+| 410 | `game_deleted` (a creation retry for a game that has been deleted, #93) |
 | 413 | `too_large` |
 | 422 | `illegal_move`, `illegal_castle`, `use_castle_action` (Chess960), `unsupported_game` (a game this server or client cannot read) |
 
@@ -456,6 +510,7 @@ Migrations live in `supabase/migrations/`.
 | `game_participants` | game, player, seat (`white`/`black`, or `p1`–`p4` at a table; unique per game and per player) |
 | `game_invitations` | token hash, seat, invited email, redemption |
 | `game_actions` | every accepted move, castle, resignation, throw and score with request ID and resulting revision |
+| `deleted_game_requests` | creator and creation request ID of each deleted game, with the deletion time (#93); nothing else about the game |
 
 All tables have row level security enabled without policies, and privileges are
 revoked from `anon` and `authenticated`. The Supabase REST and GraphQL APIs therefore

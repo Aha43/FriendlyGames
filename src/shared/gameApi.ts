@@ -39,6 +39,11 @@ export interface SharedGame {
   chess960?: { initialFen: string; moves: string[]; turn: Seat };
   /** The game started from this one with "Play again", if any. */
   rematchGameId: string | null;
+  /**
+   * Whether this player may delete the game now (#93): any participant, once it is finished.
+   * Absent from a backend that cannot delete, which is how the client knows not to offer it.
+   */
+  canDelete?: boolean;
 }
 
 /** A seat at a table (Yatzy): turn order, `p1` being the host. */
@@ -93,6 +98,8 @@ export interface TableGame {
   moveCount: number;
   yatzy: YatzyView;
   rematchGameId: null;
+  /** As for chess games: sent by a backend that can delete, true once the table is finished. */
+  canDelete?: boolean;
 }
 
 /** Any game the server sends this client. */
@@ -196,7 +203,7 @@ function repeatable(error: unknown, repeat: Repeat): boolean {
 }
 
 async function request<T>(
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'DELETE',
   path: string,
   credential?: string,
   body?: unknown,
@@ -214,7 +221,7 @@ async function request<T>(
   }
 }
 
-async function attemptRequest<T>(method: 'GET' | 'POST', path: string, credential?: string, body?: unknown): Promise<T> {
+async function attemptRequest<T>(method: 'GET' | 'POST' | 'DELETE', path: string, credential?: string, body?: unknown): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   let response: Response;
@@ -331,6 +338,28 @@ export const gameApi = {
       expectedRevision,
       action,
     }),
+  /**
+   * What deleting a finished game would do, for the confirmation (#93): the co-players who would
+   * leave this player's "Play with" list because it is the last game they share.
+   */
+  deletionPreview: (credential: string, id: string) =>
+    request<{ deletion: { gameId: string; removesFromPlayWith: PlayerSummary[] } }>(
+      'GET',
+      `/games/${encodeURIComponent(id)}/deletion`,
+      credential,
+    ),
+  /**
+   * Delete a finished game for everyone (#93). Never repeated automatically: a repeat after a
+   * lost reply would be told "not found", which the caller must be the one to interpret.
+   */
+  deleteGame: (credential: string, id: string) =>
+    request<{ deleted: true; gameId: string; removesFromPlayWith: PlayerSummary[] }>(
+      'DELETE',
+      `/games/${encodeURIComponent(id)}`,
+      credential,
+      undefined,
+      'never',
+    ),
   /** A new invitation link for the creator of a game nobody has joined; earlier links stop working. */
   renewInvitation: (credential: string, id: string) =>
     request<{ game: SharedGame; invitation: { token: string } }>(
