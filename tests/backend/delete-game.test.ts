@@ -12,7 +12,15 @@ afterAll(() => sql.end());
 const ALL = '?types=chess,chess960,yatzy';
 const CHESS = '?types=chess,chess960';
 
-const remove = (p: TestPlayer, gameId: string, query = ALL) => call('DELETE', `/games/${gameId}${query}`, { credential: p.credential });
+/** DELETE with exactly the players named: who the requester says they were warned about. */
+const removeWarned = (p: TestPlayer, gameId: string, warned: string[], query = ALL) =>
+  call('DELETE', `/games/${gameId}${query}${query.includes('?') ? '&' : '?'}warned=${warned.join(',')}`, { credential: p.credential });
+/** As the site does: ask who is affected, then delete acknowledging exactly them. */
+const remove = async (p: TestPlayer, gameId: string, query = ALL) => {
+  const asked = await call('GET', `/games/${gameId}/deletion${query}`, { credential: p.credential });
+  const warned = asked.status === 200 ? (asked.body.deletion.removesFromPlayWith as { id: string }[]).map((o) => o.id) : [];
+  return removeWarned(p, gameId, warned, query);
+};
 const preview = (p: TestPlayer, gameId: string, query = ALL) => call('GET', `/games/${gameId}/deletion${query}`, { credential: p.credential });
 const read = (p: TestPlayer, gameId: string) => call('GET', `/games/${gameId}${ALL}`, { credential: p.credential });
 const list = async (p: TestPlayer) => (await call('GET', `/games${ALL}`, { credential: p.credential })).body.games.map((g: { id: string }) => g.id) as string[];
@@ -209,7 +217,7 @@ describe('repeating a deletion', () => {
     const second = await finishedChess(arne, harald);
     const kept = await finishedChess(arne, harald);
     const keptBefore = await hashOf(kept);
-    const answers = await Promise.all([remove(arne, second), remove(harald, second), remove(arne, second), remove(harald, second)]);
+    const answers = await Promise.all([removeWarned(arne, second, []), removeWarned(harald, second, []), removeWarned(arne, second, []), removeWarned(harald, second, [])]);
     expect(answers.map((a) => a.status).sort()).toEqual([200, 404, 404, 404]);
     expect(await hashOf(kept)).toBe(keptBefore);
     expect((await history(arne)).history[0]).toMatchObject({ wins: 1, games: [{ id: kept }] });
@@ -264,9 +272,10 @@ describe('rematches', () => {
   it('Play again and Delete at the same moment end coherently: the rematch survives, or it was refused', async () => {
     const [arne, harald] = [await newPlayer('Arne'), await newPlayer('Harald')];
     const outcomes = new Set<string>();
+    await startGame(arne, harald); // they share another game throughout, so nobody leaves Play with
     for (let round = 0; round < 8; round++) {
       const source = await finishedChess(arne, harald);
-      const [played, deleted] = round % 2 ? await Promise.all([rematch(harald, source), remove(arne, source)]) : (await Promise.all([remove(arne, source), rematch(harald, source)])).reverse();
+      const [played, deleted] = round % 2 ? await Promise.all([rematch(harald, source), removeWarned(arne, source, [])]) : (await Promise.all([removeWarned(arne, source, []), rematch(harald, source)])).reverse();
       expect(deleted.status).toBe(200);
       expect([201, 404]).toContain(played.status);
       outcomes.add(String(played.status));
@@ -373,7 +382,7 @@ describe('a creation retried after its game was deleted', () => {
       const gameId = started.body.game.id as string;
       await act(guest, gameId, started.body.game.revision, { type: 'resign' });
       const retry = () => call('POST', `/games${ALL}`, { credential: host.credential, body: request });
-      const [a, gone, b, c] = await Promise.all([retry(), remove(guest, gameId), retry(), retry()]);
+      const [a, gone, b, c] = await Promise.all([retry(), removeWarned(guest, gameId, []), retry(), retry()]);
       expect(gone.status).toBe(200);
       for (const answer of [a, b, c]) {
         expect([200, 410]).toContain(answer.status);
@@ -381,6 +390,39 @@ describe('a creation retried after its game was deleted', () => {
         else expect(answer.body.error.code).toBe('game_deleted');
       }
       expect((await retry()).status).toBe(410);
+      expect(await sql`select id from games where created_by = ${host.id} and create_request_id = ${request.requestId}`).toHaveLength(0);
+    }
+  });
+
+  it('a retry racing the deletion of the pair’s last shared game is never told opponent_not_found (review of 4994add)', async () => {
+    const [host, guest] = [await newPlayer('Host'), await newPlayer('Guest')];
+    for (let round = 0; round < 8; round++) {
+      // Once `first` is deleted, the only game the host and guest share is the one this request made.
+      const first = await finishedChess(host, guest);
+      const request =
+        round % 2 === 0
+          ? { friendPlayerId: guest.id, requestId: randomUUID() }
+          : { type: 'yatzy', mode: 'free', friendPlayerIds: [guest.id], requestId: randomUUID() };
+      const started = await call('POST', `/games${ALL}`, { credential: host.credential, body: request });
+      expect(started.status).toBe(201);
+      const gameId = started.body.game.id as string;
+      if (round % 2 === 0) await act(guest, gameId, started.body.game.revision, { type: 'resign' });
+      else {
+        // A table cannot be thrown to its end quickly: store the finished record, as the API leaves it.
+        const full = completeGame('free', 2);
+        await sql`update games set status = 'finished', result = 'scored', termination = 'scorecards-complete',
+                         revision = ${full.log.length}, payload = ${sql.json({ mode: full.mode, players: full.players, log: full.log } as never)}
+                   where id = ${gameId}`;
+      }
+      expect((await remove(guest, first)).status).toBe(200);
+
+      const retry = () => call('POST', `/games${ALL}`, { credential: host.credential, body: request });
+      const [a, gone, b, c] = await Promise.all([retry(), removeWarned(guest, gameId, [host.id]), retry(), retry()]);
+      expect(gone.status).toBe(200);
+      for (const answer of [a, b, c, await retry()]) {
+        expect([200, 410]).toContain(answer.status);
+        if (answer.status === 410) expect(answer.body.error.code).toBe('game_deleted');
+      }
       expect(await sql`select id from games where created_by = ${host.id} and create_request_id = ${request.requestId}`).toHaveLength(0);
     }
   });
@@ -431,6 +473,68 @@ describe('the last shared game', () => {
     expect(direct.body.error.code).toBe('opponent_not_found');
     await startGame(arne, harald);
     expect(await opponents(arne)).toEqual([harald.id]);
+  });
+
+  it('deletes nothing when who it affects has changed since the warning; the answer carries the current list (review of 4994add)', async () => {
+    const [arne, harald] = [await newPlayer('Arne'), await newPlayer('Harald')];
+    const one = await finishedChess(arne, harald);
+    const two = await finishedChess(arne, harald);
+    // Arne's confirmation for `one` shows no warning. Meanwhile Harald deletes `two`.
+    expect((await preview(arne, one)).body.deletion.removesFromPlayWith).toEqual([]);
+    expect((await remove(harald, two)).status).toBe(200);
+    const before = await hashOf(one);
+
+    const stale = await removeWarned(arne, one, []);
+    expect(stale.status).toBe(409);
+    expect(stale.body.error).toEqual({
+      code: 'deletion_changed',
+      message: 'Who this affects has changed. Check and confirm again.',
+      deletion: { gameId: one, removesFromPlayWith: [{ id: harald.id, displayName: harald.name }] },
+    });
+    expect(await hashOf(one)).toBe(before);
+    expect(await opponents(arne)).toEqual([harald.id]);
+    expect((await sql`select count(*)::int as n from deleted_game_requests where created_by = ${arne.id}`)[0].n).toBe(0);
+    // No `warned` at all, an unknown ID, or someone else: the same refusal.
+    for (const attempt of [
+      await call('DELETE', `/games/${one}${ALL}`, { credential: arne.credential }),
+      await removeWarned(arne, one, [randomUUID()]),
+      await removeWarned(arne, one, [harald.id, randomUUID()]),
+      await removeWarned(arne, one, ['not-an-id']),
+    ]) {
+      expect(attempt.status).toBe(409);
+      expect(attempt.body.error.code).toBe('deletion_changed');
+    }
+    expect(await hashOf(one)).toBe(before);
+
+    // The warning can also become unnecessary: a new shared game appears after it was shown.
+    await startGame(arne, harald);
+    const relieved = await removeWarned(arne, one, [harald.id]);
+    expect(relieved.status).toBe(409);
+    expect(relieved.body.error.deletion.removesFromPlayWith).toEqual([]);
+    expect(await hashOf(one)).toBe(before);
+
+    // Confirming what is true now deletes it.
+    expect((await removeWarned(arne, one, [])).status).toBe(200);
+  });
+
+  it('two players deleting their last two shared games at the same moment: one is warned, never neither', async () => {
+    const [arne, harald] = [await newPlayer('Arne'), await newPlayer('Harald')];
+    for (let round = 0; round < 8; round++) {
+      const one = await finishedChess(arne, harald);
+      const two = await finishedChess(arne, harald);
+      // Both confirmations were shown without a warning.
+      const [a, b] = await Promise.all([removeWarned(arne, one, []), removeWarned(harald, two, [])]);
+      expect([a.status, b.status].sort()).toEqual([200, 409]);
+      const refused = a.status === 409 ? a : b;
+      expect(refused.body.error.code).toBe('deletion_changed');
+      expect(refused.body.error.deletion.removesFromPlayWith).toHaveLength(1);
+      expect(await opponents(arne)).toEqual([harald.id]);
+      const [who, game] = a.status === 409 ? [arne, one] : [harald, two];
+      const other = who === arne ? harald : arne;
+      // Told and confirmed (letter case and repeats in the list do not matter), the second goes too.
+      expect((await removeWarned(who, game, [other.id.toUpperCase(), other.id])).status).toBe(200);
+      expect(await opponents(arne)).toEqual([]);
+    }
   });
 
   it('names nobody when every co-player is still shared through another game, of any status or type', async () => {

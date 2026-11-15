@@ -67,19 +67,27 @@ export default function DeleteGame({ identity, gameId, description, onIdentityRe
   }
 
   async function confirm() {
-    if (sending.current) return;
+    if (sending.current || check.state !== 'ready') return;
     sending.current = true;
     setBusy(true);
     setError(null);
     try {
-      await gameApi.deleteGame(identity.credential, gameId);
-      gone(`Deleted: ${description}.`);
+      await gameApi.deleteGame(identity.credential, gameId, check.removes.map((p) => p.id));
+      // The player may have gone elsewhere while this was on its way: leave them there.
+      if (open.current) gone(`Deleted: ${description}.`);
     } catch (e) {
       if (!open.current) return;
       if (e instanceof ApiError && e.status === 401) return onIdentityRejected();
       if (e instanceof ApiError && e.status === 404) {
         // Nothing there any more: this request's earlier attempt, or someone else, deleted it.
         return gone(unconfirmed ? `Deleted: ${description}.` : 'That game was already deleted.');
+      }
+      if (e instanceof ApiError && e.code === 'deletion_changed' && e.deletion) {
+        // Nothing was deleted: who it affects changed since the confirmation was shown.
+        setUnconfirmed(false);
+        setCheck({ state: 'ready', removes: e.deletion.removesFromPlayWith });
+        setError('Nothing was deleted: who this affects changed while you were deciding. Check below, then confirm again.');
+        return;
       }
       if (e instanceof NetworkError || (e instanceof ApiError && e.status >= 500)) {
         setUnconfirmed(true);

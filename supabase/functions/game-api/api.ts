@@ -154,7 +154,7 @@ async function route(request: Request, sql: Sql, config: ApiConfig): Promise<Res
       return json(200, { game: await loadView(sql, player.id, gameMatch[1], types) });
     }
     if (gameMatch && !gameMatch[2] && request.method === 'DELETE') {
-      return json(200, await deleteGame(sql, player, gameMatch[1], types));
+      return json(200, await deleteGame(sql, player, gameMatch[1], types, warnedPlayers(url)));
     }
     if (gameMatch && gameMatch[2] === '/deletion' && request.method === 'GET') {
       return json(200, { deletion: await previewDeletion(sql, player, gameMatch[1], types) });
@@ -513,7 +513,12 @@ async function createGame(sql: Sql, player: Player, body: Record<string, unknown
                 join game_participants o on o.game_id = me.game_id and o.player_id = ${target.playerId}
                where me.player_id = ${player.id}
                limit 1`;
-      if (!shared) throw NOT_AN_OPPONENT();
+      if (!shared) {
+        // The deletion of this request's own game may have committed since the check above,
+        // taking the last shared seat with it: that retry is told "deleted", not "no such opponent".
+        await refuseDeletedCreation(tx, player.id, requestId);
+        throw NOT_AN_OPPONENT();
+      }
     }
 
     // A request ID makes creation retryable: a second request with it finds the first game. A
@@ -618,7 +623,10 @@ async function createTable(
         from game_participants me
         join game_participants o on o.game_id = me.game_id
        where me.player_id = ${player.id} and o.player_id = any(${guests}::uuid[])`;
-    if (known.length !== guests.length) throw NOT_AN_OPPONENT();
+    if (known.length !== guests.length) {
+      await refuseDeletedCreation(tx, player.id, requestId); // as for a direct start
+      throw NOT_AN_OPPONENT();
+    }
 
     const [game] = await tx`
       insert into games (game_type, schema_version, status, payload, created_by, create_request_id)
@@ -949,16 +957,39 @@ async function previewDeletion(sql: Sql, player: Player, gameId: string, types: 
   return { gameId: game.id as string, removesFromPlayWith: await lastSharedWith(sql, player.id, gameId) };
 }
 
+/** The players the requester was warned about (`warned=<id>,<id>`): unknown values match nobody. */
+function warnedPlayers(url: URL): string[] {
+  return (url.searchParams.get('warned') ?? '').split(',').map((id) => id.trim().toLowerCase()).filter(Boolean);
+}
+
 /**
  * Delete a finished game for everyone (#93). Membership and finished status are checked on the
  * locked row in the same transaction. Seats, invitations and actions go with it; a rematch is
  * detached and stays; players and every other game are untouched. Repeating the request finds
  * nothing (404), so it can never delete twice.
+ *
+ * `warned` is who the requester was told would leave "Play with". If that is no longer exactly
+ * who would, nothing is deleted: `409 deletion_changed` carries the current list to confirm.
+ * Deletions that involve a common player run one at a time (their player rows are locked, in ID
+ * order), so two of them cannot each conclude that the other game still keeps the pair together.
  */
-async function deleteGame(sql: Sql, player: Player, gameId: string, types: string[]) {
+async function deleteGame(sql: Sql, player: Player, gameId: string, types: string[], warned: string[]) {
   return await sql.begin(async (tx) => {
+    if (UUID.test(gameId)) {
+      await tx`
+        select 1 from players
+         where id in (select player_id from game_participants where game_id = ${gameId})
+         order by id
+           for no key update`;
+    }
     const game = await deletable(tx, player, gameId, types, true);
     const removesFromPlayWith = await lastSharedWith(tx, player.id, gameId);
+    const affected = removesFromPlayWith.map((p) => p.id).sort();
+    if (affected.join() !== [...new Set(warned)].sort().join()) {
+      throw new ApiError(409, 'deletion_changed', 'Who this affects has changed. Check and confirm again.', {
+        deletion: { gameId, removesFromPlayWith },
+      });
+    }
     if (game.create_request_id) {
       await tx`
         insert into deleted_game_requests (created_by, create_request_id)

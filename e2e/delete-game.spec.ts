@@ -217,6 +217,39 @@ test('a Yatzy table deleted by a guest: gone from everyone’s results, naming o
   await expect(anna.page.getByRole('heading', { name: 'Game not found' })).toBeVisible();
 });
 
+test('the warning is never skipped: the pair’s other game is deleted while the confirmation is open', async ({ openContext, api }, testInfo) => {
+  test.slow();
+  const run = `${Date.now()}-${testInfo.project.name}`;
+  const arne = await friend(api, await openContext('arne'), 'Arne', run);
+  const harald = await friend(api, await openContext('harald'), 'Harald', run);
+  const one = await chessGame(api, arne, harald, 'chess');
+  const two = await chessGame(api, arne, harald, 'chess');
+
+  // Arne's confirmation for the first game shows no warning: they share a second one.
+  await openTable(arne.page, `/#/game/${one}`);
+  await arne.page.getByRole('button', { name: 'Delete game…' }).click();
+  const ask = confirmation(arne.page);
+  await expect(ask.getByRole('button', { name: 'Delete game' })).toBeEnabled();
+  await expect(ask.getByText(/last game you share/)).toHaveCount(0);
+
+  // Harald deletes the second game in his own browser.
+  await openTable(harald.page, `/#/game/${two}`);
+  await harald.page.getByRole('button', { name: 'Delete game…' }).click();
+  await confirmation(harald.page).getByRole('button', { name: 'Delete game' }).click();
+  await expect(harald.page.getByRole('status')).toHaveText(/^Deleted: /);
+
+  // Arne confirms: nothing is deleted, and he is told who it now affects.
+  await ask.getByRole('button', { name: 'Delete game' }).click();
+  await expect(ask.getByRole('alert')).toContainText('Nothing was deleted: who this affects changed while you were deciding.');
+  await expect(ask.getByText(`This is the last game you share with ${harald.name}. You won’t find them in Play with until you share another game.`)).toBeVisible();
+  await api('GET', `/games/${one}${ALL}`, { credential: harald.credential, expect: 200 });
+
+  // Confirming again, now warned, deletes it.
+  await ask.getByRole('button', { name: 'Delete game' }).click();
+  await expect(arne.page.getByRole('status')).toHaveText(/^Deleted: /);
+  await api('GET', `/games/${one}${ALL}`, { credential: harald.credential, expect: 404 });
+});
+
 test('a start whose answer was lost is not made again once that game has been played and deleted', async ({ openContext, api }, testInfo) => {
   test.slow();
   const run = `${Date.now()}-${testInfo.project.name}`;

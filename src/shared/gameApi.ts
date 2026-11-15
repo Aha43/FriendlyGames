@@ -158,6 +158,8 @@ export class ApiError extends Error {
     readonly code: string,
     message: string,
     readonly game?: AnyGame,
+    /** With `deletion_changed` (#93): who deleting the game affects now. */
+    readonly deletion?: { gameId: string; removesFromPlayWith: PlayerSummary[] },
   ) {
     super(message);
   }
@@ -248,9 +250,10 @@ async function attemptRequest<T>(method: 'GET' | 'POST' | 'DELETE', path: string
     // fall through with null
   }
   if (!response.ok) {
-    const error = (data as { error?: { code?: string; message?: string; game?: AnyGame } } | null)?.error;
+    const error = (data as { error?: { code?: string; message?: string; game?: AnyGame; deletion?: ApiError['deletion'] } } | null)?.error;
     const game = error?.game ? withCommonFields(error.game) : undefined;
-    throw new ApiError(response.status, error?.code ?? 'unknown', error?.message ?? 'Request failed.', game);
+    const deletion = Array.isArray(error?.deletion?.removesFromPlayWith) ? error.deletion : undefined;
+    throw new ApiError(response.status, error?.code ?? 'unknown', error?.message ?? 'Request failed.', game, deletion);
   }
   if (data && typeof data === 'object') {
     const body = data as { game?: AnyGame; games?: AnyGame[] };
@@ -349,13 +352,15 @@ export const gameApi = {
       credential,
     ),
   /**
-   * Delete a finished game for everyone (#93). Never repeated automatically: a repeat after a
-   * lost reply would be told "not found", which the caller must be the one to interpret.
+   * Delete a finished game for everyone (#93). `warned` is who the confirmation said would leave
+   * "Play with"; if that is no longer who would, nothing is deleted (`409 deletion_changed`, with
+   * the current list). Never repeated automatically: a repeat after a lost reply would be told
+   * "not found", which the caller must be the one to interpret.
    */
-  deleteGame: (credential: string, id: string) =>
+  deleteGame: (credential: string, id: string, warned: string[]) =>
     request<{ deleted: true; gameId: string; removesFromPlayWith: PlayerSummary[] }>(
       'DELETE',
-      `/games/${encodeURIComponent(id)}`,
+      `/games/${encodeURIComponent(id)}?warned=${warned.map(encodeURIComponent).join(',')}`,
       credential,
       undefined,
       'never',

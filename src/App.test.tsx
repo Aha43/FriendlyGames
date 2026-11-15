@@ -985,7 +985,7 @@ describe('lobby', () => {
       expect(within(dialog()).getByRole('button', { name: 'Deleting…' })).toBeDisabled();
       expect(within(dialog()).getByRole('button', { name: 'Keep it' })).toBeDisabled();
       expect(remove).toHaveBeenCalledTimes(1);
-      expect(remove).toHaveBeenCalledWith(CREDENTIAL, GAME_ID);
+      expect(remove).toHaveBeenCalledWith(CREDENTIAL, GAME_ID, []);
 
       done({ deleted: true, gameId: GAME_ID, removesFromPlayWith: [] });
       expect(await screen.findByRole('heading', { name: 'Your games' })).toBeInTheDocument();
@@ -1006,6 +1006,49 @@ describe('lobby', () => {
           'This is the last game you share with Harald and William. You won’t find them in Play with until you share another game.',
         ),
       ).toBeInTheDocument();
+    });
+
+    it('deletes nothing when who it affects changed meanwhile: shows the new warning and asks again (review of 4994add)', async () => {
+      const user = userEvent.setup();
+      const HARALD = { id: 'p-harald', displayName: 'Harald' };
+      vi.spyOn(gameApi, 'deletionPreview').mockResolvedValue({ deletion: { gameId: GAME_ID, removesFromPlayWith: [] } });
+      const remove = vi
+        .spyOn(gameApi, 'deleteGame')
+        .mockRejectedValueOnce(new ApiError(409, 'deletion_changed', 'x', undefined, { gameId: GAME_ID, removesFromPlayWith: [HARALD] }))
+        .mockResolvedValueOnce({ deleted: true, gameId: GAME_ID, removesFromPlayWith: [HARALD] });
+      await user.click(await openGame(chessDone()));
+      await user.click(await within(dialog()).findByRole('button', { name: 'Delete game' }));
+
+      expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Nothing was deleted: who this affects changed while you were deciding.');
+      expect(within(dialog()).getByText(/This is the last game you share with Harald\./)).toBeInTheDocument();
+      expect(screen.getByRole('grid', { name: 'Chess board' })).toBeInTheDocument();
+      expect(remove).toHaveBeenCalledTimes(1);
+      expect(remove).toHaveBeenLastCalledWith(CREDENTIAL, GAME_ID, []);
+
+      await user.click(within(dialog()).getByRole('button', { name: 'Delete game' }));
+      expect(await screen.findByRole('status')).toHaveTextContent(`Deleted: ${WHICH}.`);
+      expect(remove).toHaveBeenLastCalledWith(CREDENTIAL, GAME_ID, ['p-harald']);
+    });
+
+    it('leaves the player where they went when the answer arrives after they left the game (review of 4994add)', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(gameApi, 'deletionPreview').mockResolvedValue({ deletion: { gameId: GAME_ID, removesFromPlayWith: [] } });
+      let done!: (value: Awaited<ReturnType<typeof gameApi.deleteGame>>) => void;
+      vi.spyOn(gameApi, 'deleteGame').mockReturnValue(new Promise((resolve) => (done = resolve)));
+      await user.click(await openGame(chessDone()));
+      await user.click(await within(dialog()).findByRole('button', { name: 'Delete game' }));
+      await user.click(screen.getByRole('link', { name: 'Local game' }));
+      await waitFor(() => expect(window.location.hash).toBe('#/local'));
+
+      done({ deleted: true, gameId: GAME_ID, removesFromPlayWith: [] });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(window.location.hash).toBe('#/local');
+      expect(screen.queryByRole('heading', { name: 'Your games' })).not.toBeInTheDocument();
+
+      // Back in the lobby later, no stale message is waiting.
+      window.location.hash = '#/';
+      expect(await screen.findByRole('heading', { name: 'Your games' })).toBeInTheDocument();
+      expect(screen.queryByText(/^Deleted:/)).not.toBeInTheDocument();
     });
 
     it('does not let the game be deleted before the check has answered, and can check again', async () => {

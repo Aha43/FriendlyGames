@@ -220,8 +220,14 @@ Any participant may delete a **finished** game of any type. It is then gone for 
   `removesFromPlayWith`: the co-players for whom this is the last game they share with the
   requester. It uses the rule of the previous-opponent picker, leaving this game out. It is
   empty when everyone stays eligible.
-- `DELETE /games/:id` deletes in one transaction. It locks the game, checks that the requester
-  has a seat and that the game is finished, and deletes the row. The database cascades to
+- `DELETE /games/:id?warned=<id>,<id>` deletes in one transaction. `warned` lists the players
+  the confirmation said would leave *Play with* (empty for nobody). The server works the list
+  out again on the locked rows. If it is not exactly the `warned` set, nothing is deleted:
+  `409 deletion_changed` carries the current `deletion`, which the site shows before asking
+  again. Deletions that involve a common player run one at a time (their player rows are
+  locked in ID order), so two of them cannot each rely on the other's game. It
+  also locks the game, checks that the requester has a seat and that the game is finished, and
+  deletes the row. The database cascades to
   seats, invitations and actions. Players and other games are untouched. History, tallies,
   Yatzy results and `GET /opponents` are computed from what remains, so they follow at once.
 - Refusals change nothing:
@@ -242,8 +248,10 @@ Any participant may delete a **finished** game of any type. It is then gone for 
   with that request ID gets `410 game_deleted` and creates nothing. This covers email
   invitations, direct starts and Yatzy tables. The client explains it and uses a new ID for the
   next start. `409 request_id_reused` is unchanged for existing games. The check runs
-  before anything else and again after the insert, so a retry racing the deletion either finds
-  the game (`200`, duplicate) or gets `410`. It never makes the game again.
+  before anything else, again before answering `opponent_not_found`, and again after the
+  insert. So a retry racing the deletion either finds the game (`200`, duplicate) or gets
+  `410`, also when the deleted game was the last one the players shared. It never makes the
+  game again.
 - Every game view carries `canDelete` (true for a finished game). The site shows *Delete game*
   only when it is true, so a site built before the backend is deployed shows no button.
 
@@ -422,7 +430,7 @@ endpoints accept the `types` query parameter described under Game types.
 | `POST /games/:id/rematch` | | `201 { game, duplicate: false }`, or `200 { game, duplicate: true }` if it already exists |
 | `POST /games/:id/actions` | `{ requestId, expectedRevision, action }` | `200 { game, duplicate }` |
 | `GET /games/:id/deletion` (#93) | | `200 { deletion: { gameId, removesFromPlayWith: [{ id, displayName }] } }` (participant, finished game) |
-| `DELETE /games/:id` (#93) | | `200 { deleted: true, gameId, removesFromPlayWith }` (participant, finished game); `409 not_finished`; `404 game_not_found` once deleted |
+| `DELETE /games/:id?warned=…` (#93) | | `200 { deleted: true, gameId, removesFromPlayWith }` (participant, finished game, `warned` matching who is affected); `409 deletion_changed` with `deletion` otherwise; `409 not_finished`; `404 game_not_found` once deleted |
 
 `action` is `{ "type": "move", "from": "e2", "to": "e4", "promotion"?: "q"|"r"|"b"|"n" }`,
 `{ "type": "castle", "side": "kingside"|"queenside" }` (Chess960 only) or `{ "type": "resign" }`
@@ -463,7 +471,7 @@ Errors are `{ "error": { "code", "message", … } }`:
 | 401 | `unauthenticated` (missing or unknown credential) |
 | 403 | `not_creator` |
 | 404 | `not_found`, `player_not_found`, `game_not_found`, `invitation_not_found` |
-| 409 | `stale_revision` (includes `game`), `not_your_turn`, `not_started`, `not_finished`, `game_finished`, `invitation_used`, `already_participant`, `request_id_reused` |
+| 409 | `stale_revision` (includes `game`), `not_your_turn`, `not_started`, `not_finished`, `deletion_changed` (includes `deletion`), `game_finished`, `invitation_used`, `already_participant`, `request_id_reused` |
 | 410 | `game_deleted` (a creation retry for a game that has been deleted, #93) |
 | 413 | `too_large` |
 | 422 | `illegal_move`, `illegal_castle`, `use_castle_action` (Chess960), `unsupported_game` (a game this server or client cannot read) |
