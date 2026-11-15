@@ -128,6 +128,119 @@ describe('opening while waiting for the friend', () => {
     expect((await stored(gameId)).actions).toHaveLength(1);
   });
 
+  // #100: the two requests in a set order. The test holds the game row's lock, lets the first
+  // request queue for it, then the second behind it, and lets go: Postgres hands a row lock to
+  // its waiters in the order they arrived. Both requests have then started before either commits.
+  describe('a join and an opening that overlap, in a controlled order (#100)', () => {
+    /** Waits until `count` transactions queue behind `holder`: on its lock, or behind one that is. */
+    async function queued(holder: number, count: number) {
+      for (let attempt = 0; attempt < 400; attempt++) {
+        const [{ n }] = await sql`
+          select count(*)::int as n from pg_stat_activity a
+           where pg_blocking_pids(a.pid) && array(
+                   select ${holder}::int
+                   union
+                   select b.pid from pg_stat_activity b where ${holder}::int = any(pg_blocking_pids(b.pid)))`;
+        if (n >= count) return;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      throw new Error(`Expected ${count} request(s) queued for the game row`);
+    }
+
+    /** Sends `first`, then `second`, each queued on the game row before the other may proceed. */
+    async function inOrder<A, B>(gameId: string, first: () => Promise<A>, second: () => Promise<B>): Promise<[A, B]> {
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      let locked!: (pid: number) => void;
+      const isLocked = new Promise<number>((resolve) => (locked = resolve));
+      const holder = sql.begin(async (tx) => {
+        const [{ pid }] = await tx`select pg_backend_pid() as pid from games where id = ${gameId} for update`;
+        locked(pid as number);
+        await held;
+      });
+      const pid = await isLocked;
+      try {
+        const a = first();
+        await queued(pid, 1);
+        const b = second();
+        await queued(pid, 2);
+        release();
+        await holder;
+        return [await a, await b];
+      } finally {
+        release();
+        await holder.catch(() => undefined);
+      }
+    }
+
+    it('join first: White’s opening is stale, with both seats, and can be made again', async () => {
+      for (let round = 0; round < 3; round++) {
+        const { arne, harald, gameId, token } = await waitingGame();
+        const requestId = randomUUID();
+        const [joined, opening] = await inOrder(gameId, () => join(harald, token), () => move(arne, gameId, 0, 'e2e4', requestId));
+
+        expect(joined.status).toBe(200);
+        expect(joined.body.game).toMatchObject({ status: 'active', revision: 1, yourSeat: 'black', chess: { moves: [] } });
+        expect(opening.status).toBe(409);
+        expect(opening.body.error.code).toBe('stale_revision');
+        expect(opening.body.error.game).toMatchObject({
+          status: 'active',
+          revision: 1,
+          yourSeat: 'white',
+          players: { white: { id: arne.id }, black: { id: harald.id } },
+          chess: { initialFen: STANDARD, moves: [], turn: 'white' },
+        });
+        // Nothing of the refused opening was saved; the join is whole.
+        expect(await stored(gameId)).toMatchObject({ status: 'active', revision: 1, payload: { moves: [] }, actions: [], seats: ['black', 'white'], redeemed: true });
+
+        // The stale client reads the revision it was given and makes the first move, once.
+        const again = await move(arne, gameId, opening.body.error.game.revision, 'e2e4', requestId);
+        expect(again.status).toBe(200);
+        expect(again.body).toMatchObject({ duplicate: false, game: { status: 'active', revision: 2, chess: { moves: ['e2e4'], turn: 'black' } } });
+        expect((await stored(gameId)).actions).toEqual([expect.objectContaining({ kind: 'move', move: 'e2e4', revision: 2 })]);
+        expect((await move(harald, gameId, 2, 'e7e5')).status).toBe(200);
+      }
+    });
+
+    it('opening first: the guest joins a game that already holds White’s move', async () => {
+      for (let round = 0; round < 3; round++) {
+        const { arne, harald, gameId, token } = await waitingGame();
+        const [opening, joined] = await inOrder(gameId, () => move(arne, gameId, 0, 'e2e4'), () => join(harald, token));
+
+        expect(opening.status).toBe(200);
+        expect(opening.body.game).toMatchObject({ status: 'waiting', revision: 1, chess: { moves: ['e2e4'] } });
+        expect(joined.status).toBe(200);
+        expect(joined.body.game).toMatchObject({
+          status: 'active',
+          revision: 2,
+          yourSeat: 'black',
+          players: { white: { id: arne.id }, black: { id: harald.id } },
+          chess: { initialFen: STANDARD, moves: ['e2e4'], turn: 'black' },
+        });
+        expect(await stored(gameId)).toMatchObject({
+          status: 'active',
+          revision: 2,
+          payload: { moves: ['e2e4'] },
+          actions: [{ kind: 'move', move: 'e2e4', revision: 1 }],
+          seats: ['black', 'white'],
+          redeemed: true,
+        });
+        expect((await move(harald, gameId, 2, 'e7e5')).status).toBe(200);
+      }
+    });
+
+    it('still refuses a game whose seats really do not fit it', async () => {
+      const { arne, harald, gameId, token } = await waitingGame();
+      await join(harald, token);
+      // An active chess game with one seat: not something a join can leave behind.
+      await sql`delete from game_participants where game_id = ${gameId} and seat = 'black'`;
+      const refused = await move(arne, gameId, 1, 'e2e4');
+      expect(refused.status).toBe(409);
+      expect(refused.body.error.code).toBe('invalid_seats');
+      expect(await stored(gameId)).toMatchObject({ revision: 1, payload: { moves: [] }, actions: [] });
+    });
+  });
+
   it('keeps a joining friend and a simultaneous opening consistent', async () => {
     for (let round = 0; round < 5; round++) {
       const { arne, harald, gameId, token } = await waitingGame();

@@ -16,6 +16,13 @@ versions live in `package.json`; actual deployments are recorded separately in
   still waiting or being played can't be deleted. The button appears once the backend
   supports it (#93).
 
+### Fixed
+
+- When a friend accepted an invitation at the very moment White made the opening move, the
+  move could be refused with an error about the game's seats. White is now told the game has
+  changed and can make the move again; or, if the move was saved first, the friend finds it
+  on joining (#100).
+
 ## v0.4.0 — Yatzy with friends (2026-11-12)
 
 Sprint 7. The release date is when this version was prepared; the `v0.4.0` tag marks the
