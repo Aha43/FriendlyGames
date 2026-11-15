@@ -275,7 +275,8 @@ Each game has a `revision` that increases by one with every change (join, move,
 resignation). An action names the revision it was based on and a client-generated
 `requestId`. In one transaction the server:
 
-1. locks the game row (actions on a game are serialised),
+1. locks the game row (actions on a game are serialised), then reads the game and its seats in
+   a new statement, so it sees what the lock's last holder committed (#100),
 2. if this player already used `requestId` on this game: returns the current game with
    `duplicate: true` when it was the same action, or `409 request_id_reused` otherwise,
 3. rejects a stale `expectedRevision` with `409 stale_revision` and the current game,
@@ -289,6 +290,10 @@ resignation). An action names the revision it was based on and a client-generate
 
 So two actions at the same revision yield exactly one accepted update, and a retried
 request after a timeout never plays a move twice.
+
+A join that overlaps White's opening (#100) is settled by the same lock. If the join commits
+first, the opening gets `stale_revision` with the active game and both seats, and can be made
+again at that revision. If the opening commits first, the guest joins a game that holds it.
 
 Outcomes are derived from the moves: checkmate, stalemate, insufficient material,
 threefold repetition and the fifty-move rule end the game automatically. Resignation

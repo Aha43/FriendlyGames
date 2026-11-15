@@ -1028,13 +1028,22 @@ async function submitAction(sql: Sql, player: Player, gameId: string, body: Reco
 
   return await sql.begin(async (tx) => {
     // The row lock serialises actions on one game; the revision check rejects stale clients.
+    // The lock is taken on its own, and the game read afterwards (#100). Read in the locking
+    // statement, a request that waited for a concurrent join saw the game row as the join left it
+    // (active) but the seats as they were when it started waiting (White alone), and refused a
+    // sound game as `invalid_seats`. A new statement sees everything the lock's last holder committed.
+    const [mine] = await tx`
+      select 1 from games g
+        join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
+       where g.id = ${gameId}
+         for update of g`;
+    if (!mine) throw new ApiError(404, 'game_not_found', 'Game not found.');
     const [game] = await tx`
       select g.game_type, g.schema_version, g.status, g.revision, g.payload, g.created_by, me.seat,
              ${ROSTER(tx)} as roster
         from games g
         join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
-       where g.id = ${gameId}
-         for update of g`;
+       where g.id = ${gameId}`;
     if (!game) throw new ApiError(404, 'game_not_found', 'Game not found.');
     const adapter = playable(game, types);
 
