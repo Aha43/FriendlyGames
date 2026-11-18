@@ -25,6 +25,26 @@ beforeEach(() => {
 });
 
 describe('local play', () => {
+  it('says what playing on one device means, for both game types (#82)', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const says = () => {
+      expect(screen.getByRole('heading', { level: 2, name: 'Playing on one device' })).toBeInTheDocument();
+      expect(screen.getByText(/You take turns on this device\. The game is saved only in this browser/)).toBeInTheDocument();
+    };
+    says();
+    // The page is reached from "Play on one device" and leads back to the shared games.
+    const main = screen.getByRole('navigation', { name: 'Main' });
+    expect(within(main).getByRole('link', { name: 'Your games' })).toHaveAttribute('href', '#/');
+    expect(within(main).queryByRole('link', { name: 'Play on one device' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/local game/i)).not.toBeInTheDocument();
+
+    await user.click(within(screen.getByRole('navigation', { name: 'Game type' })).getByRole('link', { name: 'Fischer Random' }));
+    expect(await screen.findByRole('region', { name: 'Fischer Random: White vs Black' })).toBeInTheDocument();
+    says();
+    expect(window.location.hash).toBe('#/local/chess960');
+  });
+
   it('sets the table with both players, the starting position and whose turn it is', () => {
     render(<App />);
     expect(screen.getByRole('heading', { level: 1, name: 'FriendlyGames' })).toBeInTheDocument();

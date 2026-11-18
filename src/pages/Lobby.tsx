@@ -100,7 +100,8 @@ export default function Lobby({ identity, onIdentityRejected }: LobbyProps) {
       <JoinByLink />
 
       <p className="page-footnote">
-        Playing on one device? <a href="#/local">Play a local game</a> (stays in this browser).
+        Sitting together? <a href="#/local">Play on one device</a>: you take turns on this device, and the game is saved only in
+        this browser.
       </p>
     </div>
   );

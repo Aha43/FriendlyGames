@@ -48,6 +48,40 @@ test('play a local game, refresh, and start over', async ({ page }) => {
   await expect(captures('White')).toHaveText(/None yet/);
 });
 
+test('“Play on one device” leads to the local game and says what it is, without widening the page (#82)', async ({ page }) => {
+  await page.goto('/');
+  const viewport = page.viewportSize()!;
+  const fits = async () => expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+  const main = page.getByRole('navigation', { name: 'Main' });
+  const link = main.getByRole('link', { name: 'Play on one device' });
+  await expect(link).toBeVisible();
+  await expect(page.getByText(/local game/i)).toHaveCount(0);
+  const box = (await link.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+  await fits();
+
+  await link.click();
+  await expect(page).toHaveURL(/#\/local$/);
+  await expect(page.getByRole('heading', { name: 'Playing on one device' })).toBeVisible();
+  await expect(page.getByText('You take turns on this device. The game is saved only in this browser', { exact: false })).toBeVisible();
+  await expect(page.getByRole('status')).toHaveText('White to move');
+  await fits();
+
+  // The other local game type says the same, and its own save is where it was.
+  await move(page, 'e2', 'e4');
+  await page.getByRole('navigation', { name: 'Game type' }).getByRole('link', { name: 'Fischer Random' }).click();
+  await expect(page).toHaveURL(/#\/local\/chess960$/);
+  await expect(page.getByRole('heading', { name: 'Playing on one device' })).toBeVisible();
+  await fits();
+  await page.getByRole('navigation', { name: 'Game type' }).getByRole('link', { name: 'Chess', exact: true }).click();
+  await expect(page.getByRole('status')).toHaveText('Black to move');
+
+  await main.getByRole('link', { name: 'Your games' }).click();
+  await expect(page).toHaveURL(/#\/$/);
+  await expect(main.getByRole('link', { name: 'Play on one device' })).toBeVisible();
+});
+
 test('promotion dialog holds keyboard focus and hands it back to the board', async ({ page }) => {
   await page.goto('/#/local');
   await page.evaluate(() =>

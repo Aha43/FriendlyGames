@@ -13,7 +13,8 @@ comfortable board. Finished games become shared history.
 Two friends can play chess or Fischer Random (Chess960) from their own devices at a table in
 an autumn park: name-and-email onboarding, manually shared invitation links, server-checked moves, and a
 shared history of finished games with a win/draw tally, replay and "play again".
-Local play on one device remains available separately, with its own saved game for each type.
+*Play on one device* (top bar and lobby) is separate: you take turns on one device, and the game
+is saved only in that browser, with its own saved game for each type.
 
 **Playing again** needs no new invitation: under *Start a game*, *Play with* lists everyone you
 have sat at a game with, by name, with how many games you share and when the last one was active.

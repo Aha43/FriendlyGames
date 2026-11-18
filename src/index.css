@@ -106,6 +106,9 @@ h2 {
   max-width: 72rem;
   width: 100%;
   margin: 0 auto;
+  /* On a narrow phone the links take a second line rather than squeezing the player's name (#82). */
+  flex-wrap: wrap;
+  row-gap: 0.15rem;
 }
 
 .topbar h1 {
@@ -780,9 +783,10 @@ h2 {
   gap: 0.9rem;
   font-size: 0.9rem;
   min-width: 0;
+  max-width: 100%;
 }
 
-.topbar-nav a { color: var(--wood-dark); font-weight: 600; }
+.topbar-nav a { color: var(--wood-dark); font-weight: 600; white-space: nowrap; }
 
 .topbar-player {
   color: var(--ink-soft);
@@ -1287,6 +1291,11 @@ h2 {
 .opponent-picker .show-all { align-self: flex-start; }
 
 /* Local play: chess or Fischer Random, each with its own saved game. */
+/* What "one device" means, above the local game (#82). */
+.one-device { margin-bottom: 0.7rem; font-size: 0.9rem; color: var(--ink-soft); }
+.one-device h2 { font-size: 1.05rem; color: var(--ink); margin: 0 0 0.2rem; }
+.one-device p { margin: 0; }
+
 .type-switch {
   display: flex;
   gap: 0.25rem;
