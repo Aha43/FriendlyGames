@@ -6,6 +6,11 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
+## v0.5.0 — Finished game cleanup (2026-11-20)
+
+Sprint 8. The release date is when this version was prepared; the `v0.5.0` tag marks the
+accepted commit, published with `make release`.
+
 ### Added
 
 - Delete a finished game. On a finished Chess, Fischer Random or Yatzy game, any player who
@@ -30,6 +35,14 @@ versions live in `package.json`; actual deployments are recorded separately in
   move could be refused with an error about the game's seats. White is now told the game has
   changed and can make the move again; or, if the move was saved first, the friend finds it
   on joining (#100).
+
+### Known limitations
+
+- A deleted game cannot be brought back from the site. Any player who took part can delete
+  it, for everyone; there is no private archive copy yet.
+- An invitation nobody has accepted stays waiting; the inviter cannot withdraw it yet.
+- A Yatzy table someone stops playing still stays in progress (as in v0.4.0), so it cannot be
+  deleted either.
 
 ## v0.4.0 — Yatzy with friends (2026-11-12)
 

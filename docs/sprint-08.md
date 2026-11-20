@@ -82,3 +82,59 @@ Keeping an archive for other participants and resigning from multiplayer games
 come later. Pending chess invitations remain waiting. Direct Yatzy invitations
 (#94), the Yatzy scorecard improvements and other ideas are outside this sprint.
 A separate owner decision sets v0.5.0 release acceptance and publication.
+
+## Integrated result (#106, prepared 2026-11-20)
+
+Delivered in order: #93 (PR #99), #100 (PR #102), #82 (PR #105). The plan itself came in
+PRs #98 and #101. The live site runs `ecbadbf` and the backend reports `8d4e13c`; nothing
+under `supabase/` changed between those two commits, so the live backend is the released
+backend. Version 0.5.0 and its changelog section are prepared in the #106 release PR, with
+the evidence and limits there and in [deployment.md](deployment.md).
+
+What the integrated checks cover, all on disposable data (real-Supabase CI on
+`main@ecbadbf`: check 413, backend 150, migration rehearsal 10, browser journeys 58 on
+desktop and phone):
+
+- **Deleting, each type:** a finished Chess game, a Fischer Random game and a three-player
+  Yatzy table, each deleted by a participant who did not start it; gone for the others after
+  a refresh, and from history, results and *Play with*.
+- **Refusals:** waiting and active games of every type, outsiders, unknown and malformed IDs,
+  a client that did not ask for the type. Nothing changes.
+- **Once only:** a repeated delete and four at once give exactly one deletion; a lost reply
+  recovers without a second effect; an answer that arrives after the player left the page
+  does not pull them back.
+- **Rematches:** an active and a finished rematch survive unchanged apart from the detached
+  link; deleting a finished rematch frees *Play again*; a rematch racing the deletion ends
+  coherent either way.
+- **The *Play with* warning:** a pair, nobody, and a group table naming only some. If who is
+  affected changes before confirmation, nothing is deleted and the new warning is shown; two
+  players deleting their last two shared games at once cannot both pass unwarned.
+- **Late creation retries:** `410 game_deleted` for email invitations, direct starts and
+  tables, also when the retry races the deletion or the deleted game was the last shared one.
+- **Join and opening (#100):** both controlled orders, White's retry, and a really missing
+  seat still refused.
+- **One device (#82):** the label in the top bar and lobby, the explanation for both local
+  game types, local saves kept, no sideways scroll at phone width.
+- **Unchanged:** Chess, Fischer Random and Yatzy play, invitations, direct starts, history,
+  and the migration rehearsal over existing rows.
+
+**Rollout as it happened:** the backend went live with #93 on 2026-11-15 (`4e4d88c`, with the
+migration and a backup) and with #100 on 2026-11-18 (`8d4e13c`, function only, with a
+backup). The site followed each merge by itself. Rows for each are in
+[deployment.md](deployment.md).
+
+**Owner's observations:** on 2026-11-15 the owner deleted a finished three-player Yatzy table
+and a finished chess game against a test player on the live site; both worked well. On
+2026-11-20 he saw the #82 wording in the Cloudflare preview on his phone and accepted it.
+(The preview cannot reach the backend, by design, so only the wording and one-device play
+were shown there.)
+
+**Not verified:** whether either live confirmation showed the *Play with* warning; that an
+ongoing game on the live site still opens and takes a move after the #93 and #100 deploys
+(the owner's signed-in check is pending); and the #82 wording on the live site by the owner
+(I read it there in a browser at `ecbadbf`). No production-writing smoke test was run. Local
+runs in the implementation workspace used a stand-in database; CI on real Supabase is the
+authoritative result.
+
+Owner acceptance, `make release` and closing the milestone remain the owner's. #11 stays open.
+
