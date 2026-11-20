@@ -16,6 +16,14 @@ versions live in `package.json`; actual deployments are recorded separately in
   still waiting or being played can't be deleted. The button appears once the backend
   supports it (#93).
 
+### Changed
+
+- "Local game" is now **Play on one device**, in the top bar and the lobby. The page says
+  what it is: you take turns on this device, and the game is saved only in this browser, so it
+  isn't one of your games with friends. Nothing else about it changes; saved games on a device
+  are still there. On a narrow phone the top-bar link moves to its own line so your name stays
+  readable (#82).
+
 ### Fixed
 
 - When a friend accepted an invitation at the very moment White made the opening move, the

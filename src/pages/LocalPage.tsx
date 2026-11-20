@@ -9,15 +9,22 @@ const PLAYERS = { w: 'White', b: 'Black' };
 
 export default function LocalPage({ type = 'chess' }: { type?: 'chess' | 'chess960' }) {
   const entry = GAME_TYPES[type];
-  const typeSwitch = (
-    <nav className="type-switch" aria-label="Local game type">
+  // What this page is, for players who know only games shared with a friend (#82).
+  const panelTop = (
+    <>
+      <div className="one-device">
+        <h2>Playing on one device</h2>
+        <p>You take turns on this device. The game is saved only in this browser: it isn’t one of your games with friends, and nobody can open it from another device.</p>
+      </div>
+      <nav className="type-switch" aria-label="Game type">
       <a href="#/local" aria-current={type === 'chess' ? 'page' : undefined}>
         {GAME_TYPES.chess.label}
       </a>
       <a href="#/local/chess960" aria-current={type === 'chess960' ? 'page' : undefined}>
         {GAME_TYPES.chess960.label}
       </a>
-    </nav>
+      </nav>
+    </>
   );
   return (
     <>
@@ -25,7 +32,7 @@ export default function LocalPage({ type = 'chess' }: { type?: 'chess' | 'chess9
         players={PLAYERS}
         rules={entry.rules}
         label={entry.label}
-        panelTop={typeSwitch}
+        panelTop={panelTop}
         panelEnd={type === 'chess960' ? <AboutChess960 /> : null}
       />
       <SharedHistory />

@@ -1037,7 +1037,7 @@ describe('lobby', () => {
       vi.spyOn(gameApi, 'deleteGame').mockReturnValue(new Promise((resolve) => (done = resolve)));
       await user.click(await openGame(chessDone()));
       await user.click(await within(dialog()).findByRole('button', { name: 'Delete game' }));
-      await user.click(screen.getByRole('link', { name: 'Local game' }));
+      await user.click(screen.getByRole('link', { name: 'Play on one device' }));
       await waitFor(() => expect(window.location.hash).toBe('#/local'));
 
       done({ deleted: true, gameId: GAME_ID, removesFromPlayWith: [] });
@@ -1176,6 +1176,23 @@ describe('identity', () => {
     await user.click(screen.getByRole('button', { name: 'Enter my email' }));
     expect(screen.getByRole('heading', { name: 'Welcome to the park' })).toBeInTheDocument();
     expect(localStorage.getItem('friendlygames.identity')).toBeNull();
+  });
+
+  it('offers “Play on one device” in the top bar and the lobby, leading to the same page as before (#82)', async () => {
+    signIn();
+    vi.spyOn(gameApi, 'listGames').mockResolvedValue({ games: [] });
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Your games' });
+    const top = within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', { name: 'Play on one device' });
+    expect(top).toHaveAttribute('href', '#/local');
+    const note = screen.getByText(/Sitting together\?/);
+    expect(note).toHaveTextContent('Sitting together? Play on one device: you take turns on this device, and the game is saved only in this browser.');
+    expect(within(note).getByRole('link', { name: 'Play on one device' })).toHaveAttribute('href', '#/local');
+    expect(screen.queryByText(/local game/i)).not.toBeInTheDocument();
+
+    await userEvent.setup().click(top);
+    expect(await screen.findByRole('heading', { level: 2, name: 'Playing on one device' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Chess: White vs Black' })).toBeInTheDocument();
   });
 
   it('keeps local play available without an identity', () => {

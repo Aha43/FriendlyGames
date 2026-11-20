@@ -75,7 +75,7 @@ export default function App() {
         </h1>
         <span className="topbar-game">Chess &amp; Yatzy</span>
         <nav className="topbar-nav" aria-label="Main">
-          {route.page === 'local' ? <a href="#/">Your games</a> : <a href="#/local">Local game</a>}
+          {route.page === 'local' ? <a href="#/">Your games</a> : <a href="#/local">Play on one device</a>}
           {identity && route.page !== 'local' && <span className="topbar-player">{identity.displayName}</span>}
         </nav>
       </header>
