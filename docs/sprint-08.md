@@ -136,5 +136,9 @@ ongoing game on the live site still opens and takes a move after the #93 and #10
 runs in the implementation workspace used a stand-in database; CI on real Supabase is the
 authoritative result.
 
-Owner acceptance, `make release` and closing the milestone remain the owner's. #11 stays open.
+**Released (2026-11-20):** the owner reported that an ongoing game and the one-device wording
+looked right on the live site, accepted v0.5.0, and ran `make release`: tag `v0.5.0` at
+`81e0b98`, published 17:37 UTC. The details are in [deployment.md](deployment.md). The live
+*Play with* warning remains unverified by hand. Closing the milestone is the owner's. #11
+stays open.
 
