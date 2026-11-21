@@ -8,7 +8,7 @@
 
 Read README.md, docs/product-brief.md, docs/roadmap.md, docs/development.md and
 the active issue/sprint before implementation. The proposed next route is
-Sprint 8 in docs/sprint-08.md after its planning PR is merged. docs/game-types.md
+Sprint 9 in docs/sprint-09.md after its planning PR is merged. docs/game-types.md
 records the deployed chess-family boundary. Sprint 7 records the Yatzy rules and
 save-format proof.
 

@@ -17,6 +17,7 @@ One issue still means one branch and one focused PR.
 | [v0.3.0 — Play again with friends](https://github.com/Aha43/FriendlyGames/milestone/7) | Game creation with previous opponents by name, without another email invitation. | Released through owner-run `make release`; [Sprint 6](sprint-06.md), tag `v0.3.0` at `e5e169d`, and actual deployments recorded separately. |
 | [v0.4.0 — Yatzy with friends](https://github.com/Aha43/FriendlyGames/milestone/8) | Five-dice Yatzy with banked throws and tables for two to four players. | Released through owner-run `make release`; [Sprint 7](sprint-07.md), tag `v0.4.0` at `883313b`, and actual deployments recorded separately. |
 | [v0.5.0 — Finished game cleanup](https://github.com/Aha43/FriendlyGames/milestone/9) | Finished shared-game deletion, the chess join/opening fix and clearer one-device play wording. | Released through owner-run `make release`; [Sprint 8](sprint-08.md), tag `v0.5.0` at `81e0b98`, and actual deployments recorded separately. |
+| [v0.6.0 — Invite friends before choosing a game](https://github.com/Aha43/FriendlyGames/milestone/10) | Connect friends, open on Your games, show player details and pending recipient emails. | Proposed [Sprint 9](sprint-09.md), awaiting Claude review and owner merge. |
 
 `package.json` is the source version; read it rather than maintaining a second
 current-version value here. It is not proof of a tag/release or first-game acceptance. Actual
