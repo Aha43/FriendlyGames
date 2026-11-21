@@ -1,0 +1,11 @@
+{
+  "name": "FriendlyGames",
+  "short_name": "FriendlyGames",
+  "description": "Chess, Fischer Random and Yatzy with friends.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "browser",
+  "background_color": "#efd9b0",
+  "theme_color": "#5b3a1e",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

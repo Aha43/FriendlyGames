@@ -20,6 +20,12 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ### Changed
 
+- Opening the app from an iPhone or iPad Home Screen icon now starts on *Your games*, also for
+  an icon that was added while a game was open (it used to open that same old game every
+  time). Links to a game or an invitation, reloading, and coming back to a game from the
+  background are unchanged. A new Home Screen icon on any phone starts on *Your games*. An
+  existing Android shortcut made on a game page has to be removed and added again from *Your
+  games* (#112, [launch paths](docs/launch-paths.md)).
 - Game invitations by email work as before. A friend invitation has its own kind of link, and
   pasting either under *Got an invitation?* opens the right page (#111).
 
