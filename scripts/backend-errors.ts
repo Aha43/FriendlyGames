@@ -5,6 +5,7 @@
 // 1. every `game-api: unexpected error` line. The function writes those itself and they hold only
 //    safe parts: an ID, the route pattern, the error's class, code and reduced message.
 // 2. other runtime lines that look like trouble (errors, limits, restarts), reduced the same way.
+// With `docker logs -t` each line keeps its time, to set beside the test client's own line.
 //
 // `--expect-controlled`: the backend tests make one failure on purpose
 // (tests/backend/migrations/diagnostics.test.ts). Its line must be there, which proves on every run that
@@ -25,8 +26,15 @@ const COLOUR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
 
 /** Colour codes and container timestamps off; what could be data out. For lines the function did not write. */
 export function reduce(line: string): string {
+  const time = timeOf(line);
+  return (
+    time +
+    reduceText(line.replace(COLOUR, '').slice(time ? line.replace(COLOUR, '').indexOf(' ') + 1 : 0))
+  );
+}
+
+function reduceText(line: string): string {
   return line
-    .replace(COLOUR, '')
     .replace(/"[^"]*"/g, '"…"')
     .replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, '…')
     .replace(/\S+@\S+/g, '…')
@@ -36,9 +44,15 @@ export function reduce(line: string): string {
     .trim();
 }
 
-/** A function-written line, cut back to the part the function wrote (the runtime may prefix it). */
+/** The time `docker logs -t` puts first on each line, to the millisecond; empty without one. */
+function timeOf(line: string): string {
+  const time = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?)\d*Z /.exec(line.replace(COLOUR, ''));
+  return time ? `${time[1]}Z ` : '';
+}
+
+/** A function-written line, cut back to its time and the part the function wrote (the runtime may prefix it). */
 function unexpectedPart(line: string): string {
-  return line.slice(line.indexOf(UNEXPECTED)).replace(COLOUR, '').slice(0, 400).trim();
+  return timeOf(line) + line.slice(line.indexOf(UNEXPECTED)).replace(COLOUR, '').slice(0, 400).trim();
 }
 
 export interface Findings {

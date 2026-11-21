@@ -35,8 +35,8 @@ describe('an unexpected server failure', () => {
       expect(failed.body).toEqual({ error: { code: 'internal', message: 'Something went wrong.', errorId: expect.stringMatching(/^[0-9a-f]{8}$/) } });
       // The test client names the request safely, with the ID that finds the server's log line.
       expect(reported).toHaveBeenCalledTimes(1);
-      expect(reported.mock.calls[0][0]).toBe(
-        `[backend test] unexpected status: POST /friend-invitations → 500 code=internal errorId=${failed.body.error.errorId} handler=yes`,
+      expect(reported.mock.calls[0][0]).toContain(
+        `[backend test] unexpected status: POST /friend-invitations → 500 code=internal errorId=${failed.body.error.errorId} handler=yes at=`,
       );
       for (const secret of [victim.credential, victim.email, victim.id]) expect(String(reported.mock.calls[0][0])).not.toContain(secret);
       // Nothing was saved, and nobody else is affected.

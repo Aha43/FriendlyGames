@@ -90,7 +90,7 @@ test-backend:
 # error. CI's browser job passes BACKEND_ERRORS_FLAGS=--report-only.
 BACKEND_ERRORS_FLAGS ?= --expect-controlled
 backend-errors:
-	@docker logs supabase_edge_runtime_friendlygames 2>&1 | node scripts/backend-errors.ts $(BACKEND_ERRORS_FLAGS)
+	@docker logs -t supabase_edge_runtime_friendlygames 2>&1 | node scripts/backend-errors.ts $(BACKEND_ERRORS_FLAGS)
 
 e2e:
 	npm run e2e

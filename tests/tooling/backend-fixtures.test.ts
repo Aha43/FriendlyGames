@@ -117,7 +117,7 @@ describe('a server failure seen by the test client (#116)', () => {
     const { call } = await freshClient();
     const answer = await call('DELETE', `/games/${GAME}?types=chess&warned=${GAME}`, { credential: SECRET, body: { token: SECRET } });
     expect(answer.status).toBe(500); // the test's own assertion still sees it and fails
-    expect(reported.mock.calls).toEqual([['[backend test] unexpected status: DELETE /games/:id → 500 code=internal errorId=1a2b3c4d handler=yes']]);
+    expect(reported.mock.calls).toEqual([[expect.stringMatching(/^\[backend test\] unexpected status: DELETE \/games\/:id → 500 code=internal errorId=1a2b3c4d handler=yes at=\d{4}-\d\d-\d\dT[\d:.]+Z$/)]]);
   });
 
   it('says when the answer did not come from the game API’s own error handling', async () => {
@@ -125,11 +125,12 @@ describe('a server failure seen by the test client (#116)', () => {
     const reported = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { call } = await freshClient();
     await call('GET', `/games/${GAME}/invitation`, { credential: SECRET });
-    expect(reported.mock.calls).toEqual([['[backend test] unexpected status: GET /games/:id/invitation → 503 code=- errorId=- handler=no']]);
+    expect(String(reported.mock.calls[0][0])).toContain('[backend test] unexpected status: GET /games/:id/invitation → 503 code=- errorId=- handler=no at=');
+    expect(reported).toHaveBeenCalledTimes(1);
     // An errorId or code that is not in the expected form is not echoed.
     const { unexpectedStatusLine } = await freshClient();
-    expect(unexpectedStatusLine('POST', '/players', 500, { error: { code: `x ${SECRET}`, errorId: SECRET } })).toBe(
-      '[backend test] unexpected status: POST /players → 500 code=- errorId=- handler=no',
+    expect(unexpectedStatusLine('POST', '/players', 500, { error: { code: `x ${SECRET}`, errorId: SECRET } }, new Date('2026-11-21T19:20:30.123Z'))).toBe(
+      '[backend test] unexpected status: POST /players → 500 code=- errorId=- handler=no at=2026-11-21T19:20:30.123Z',
     );
   });
 
@@ -139,7 +140,7 @@ describe('a server failure seen by the test client (#116)', () => {
     const { call } = await freshClient();
     const failure = await call('POST', `/games/${GAME}/actions`, { credential: SECRET }).catch((e: Error) => e);
     expect((failure as Error).message).toBe('POST /games/:id/actions answered HTTP 502 without a JSON body');
-    expect(reported.mock.calls).toEqual([['[backend test] unexpected status: POST /games/:id/actions → 502 code=- errorId=- handler=no']]);
+    expect(String(reported.mock.calls[0][0])).toContain('[backend test] unexpected status: POST /games/:id/actions → 502 code=- errorId=- handler=no at=');
 
     reported.mockClear();
     fakeApi(() => ({ status: 409, body: { error: { code: 'stale_revision', message: 'x' } } }));

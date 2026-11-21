@@ -52,13 +52,14 @@ export function routeOf(path: string): string {
  * One line for a 5xx answer: method, route pattern, status, the API's error code and the
  * `errorId` that finds the server's own log line. Nothing else from the request or the answer,
  * which can hold credentials, tokens and emails. `handler=no` means the answer did not come from
- * the game API's own error handling (no `errorId`): the runtime in front of it answered.
+ * the game API's own error handling (no `errorId`): the runtime in front of it answered. `at` is
+ * when the answer arrived, to set beside the times in the runtime's log.
  */
-export function unexpectedStatusLine(method: string, path: string, status: number, body: unknown): string {
+export function unexpectedStatusLine(method: string, path: string, status: number, body: unknown, at = new Date()): string {
   const error = (body as { error?: { code?: unknown; errorId?: unknown } } | undefined)?.error;
   const safe = (value: unknown, pattern: RegExp) => (typeof value === 'string' && pattern.test(value) ? value : '-');
   const errorId = safe(error?.errorId, /^[0-9a-f]{8}$/);
-  return `[backend test] unexpected status: ${method} ${routeOf(path)} → ${status} code=${safe(error?.code, /^[a-z0-9_]{1,64}$/)} errorId=${errorId} handler=${errorId === '-' ? 'no' : 'yes'}`;
+  return `[backend test] unexpected status: ${method} ${routeOf(path)} → ${status} code=${safe(error?.code, /^[a-z0-9_]{1,64}$/)} errorId=${errorId} handler=${errorId === '-' ? 'no' : 'yes'} at=${at.toISOString()}`;
 }
 
 export interface TestPlayer {

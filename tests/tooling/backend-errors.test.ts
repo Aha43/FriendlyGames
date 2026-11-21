@@ -88,13 +88,26 @@ describe('make backend-errors', () => {
     expect(reduce(`x ${'a'.repeat(500)}`).length).toBeLessThanOrEqual(240);
   });
 
+  it('keeps each line’s time when the log has them, so a failure can be set beside a runtime event', () => {
+    const log = [
+      '2026-11-21T19:20:30.123456789Z CPU time soft limit reached: isolate: 3f2b8c1e-5d47-4a6b-9c0d-1e2f3a4b5c6d',
+      `2026-11-21T19:20:30.200000000Z [Error] ${deadlock}`,
+      '2026-11-21T19:20:31.000000000Z serving the request with supabase/functions/game-api',
+      `2026-11-21T19:20:40.5Z ${controlled}`,
+    ].join('\n');
+    const found = examine(log);
+    expect(found.runtime).toEqual(['2026-11-21T19:20:30.123Z CPU time soft limit reached: isolate: …']);
+    expect(found.unexplained).toEqual([`2026-11-21T19:20:30.200Z ${deadlock}`]);
+    expect(found.controlled).toEqual([`2026-11-21T19:20:40.5Z ${controlled}`]);
+  });
+
   it('is wired into CI after the backend tests, whatever their result, and only reports after the browser journeys', () => {
     const ci = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
     expect(ci).toMatch(/- run: make test-backend\n(?: +#.*\n)+ +- if: \$\{\{ !cancelled\(\) \}\}\n +run: make backend-errors\n/);
     expect(ci).toMatch(/- run: make e2e\n(?: +#.*\n)+ +- if: \$\{\{ !cancelled\(\) \}\}\n +run: make backend-errors BACKEND_ERRORS_FLAGS=--report-only\n/);
     expect(ci).not.toMatch(/tail -100/);
     const makefile = readFileSync(join(ROOT, 'Makefile'), 'utf8');
-    expect(makefile).toMatch(/backend-errors:\n\t@docker logs supabase_edge_runtime_friendlygames 2>&1 \| node scripts\/backend-errors\.ts \$\(BACKEND_ERRORS_FLAGS\)\n/);
+    expect(makefile).toMatch(/backend-errors:\n\t@docker logs -t supabase_edge_runtime_friendlygames 2>&1 \| node scripts\/backend-errors\.ts \$\(BACKEND_ERRORS_FLAGS\)\n/);
     // The deliberate failure the check expects is the one the backend suite makes.
     expect(readFileSync(join(ROOT, 'tests/backend/migrations/diagnostics.test.ts'), 'utf8')).toContain(`const CONTROLLED = '${CONTROLLED}';`);
   });
