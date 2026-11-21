@@ -135,6 +135,12 @@ async function route(request: Request, sql: Sql, config: ApiConfig): Promise<Res
       return json(status, body);
     }
 
+    if (route === 'POST /friend-invitations/preview') {
+      // Works before onboarding: the link itself is what lets its holder see who invites them.
+      const viewer = request.headers.has('x-device-credential') ? await authenticate(sql, request) : null;
+      return json(200, { invitation: await previewFriendInvitation(sql, viewer, await readBody(request)) });
+    }
+
     const player = await authenticate(sql, request);
     if (route === 'GET /me') return json(200, { player: await loadMe(sql, player.id) });
     if (route === 'GET /games') return json(200, { games: await loadViews(sql, player.id, types) });
@@ -144,7 +150,19 @@ async function route(request: Request, sql: Sql, config: ApiConfig): Promise<Res
       const asksForTables = types.some((type) => creatableAdapter(type)?.family === 'table');
       return json(200, asksForTables ? { history, tables: await loadTables(sql, player.id, types) } : { history });
     }
-    if (route === 'GET /opponents') return json(200, { opponents: await loadOpponents(sql, player.id) });
+    if (route === 'GET /opponents') {
+      // Friends connected by invitation who share no game are listed only for clients that ask
+      // (`friends=1`): a client from before #110 expects every entry to have a last shared game.
+      return json(200, { opponents: await loadOpponents(sql, player.id, url.searchParams.get('friends') === '1') });
+    }
+    if (route === 'GET /friend-invitations') return json(200, await listFriendInvitations(sql, player));
+    if (route === 'POST /friend-invitations') {
+      const { status, body } = await createFriendInvitation(sql, player, await readBody(request));
+      return json(status, body);
+    }
+    if (route === 'POST /friend-invitations/accept') return json(200, await acceptFriendInvitation(sql, player, await readBody(request)));
+    const friendMatch = path.match(/^\/friend-invitations\/([^/]+)\/replacement\/?$/);
+    if (friendMatch && request.method === 'POST') return json(200, await replaceFriendInvitation(sql, player, friendMatch[1]));
     if (route === 'POST /games') {
       const { status, body } = await createGame(sql, player, await readBody(request), types);
       return json(status, body);
@@ -162,6 +180,9 @@ async function route(request: Request, sql: Sql, config: ApiConfig): Promise<Res
     if (gameMatch && gameMatch[2] === '/rematch' && request.method === 'POST') {
       const { status, body } = await startRematch(sql, player, gameMatch[1], types);
       return json(status, body);
+    }
+    if (gameMatch && gameMatch[2] === '/invitation' && request.method === 'GET') {
+      return json(200, { invitation: await pendingInvitation(sql, player, gameMatch[1], types) });
     }
     if (gameMatch && gameMatch[2] === '/invitation' && request.method === 'POST') {
       return json(200, await regenerateInvitation(sql, player, gameMatch[1], types));
@@ -444,7 +465,7 @@ async function loadView(sql: Db, playerId: string, gameId: string, types: string
  * was created, joined or had an action (a move, castle or resignation) — not proof a move was played.
  * No emails, credentials or tokens; nobody else's relationships.
  */
-async function loadOpponents(sql: Db, playerId: string) {
+async function loadOpponents(sql: Db, playerId: string, withFriends: boolean) {
   const rows = await sql<{ id: string; display_name: string; shared_games: number; last_updated: Date }[]>`
     select o.player_id as id, pl.display_name,
            count(distinct me.game_id)::int as shared_games,
@@ -457,12 +478,54 @@ async function loadOpponents(sql: Db, playerId: string) {
      group by o.player_id, pl.display_name
      order by max(g.updated_at) desc, pl.display_name, o.player_id
      limit 500`;
-  return rows.map((r) => ({
+  const played = rows.map((r) => ({
     id: r.id,
     displayName: r.display_name,
     sharedGames: r.shared_games,
-    lastSharedGameUpdatedAt: r.last_updated.toISOString(),
+    lastSharedGameUpdatedAt: r.last_updated.toISOString() as string | null,
   }));
+  // Exactly the list and format every client has had since #72.
+  if (!withFriends) return played;
+
+  // For clients that ask (#110): `connectedAt` on everyone connected by an accepted friend
+  // invitation, and those among them who share no game yet, with no invented date. Most recent
+  // first, by the last shared game or, without one, by when they connected.
+  const friends = await sql<{ id: string; display_name: string; connected_at: Date }[]>`
+    select p.id, p.display_name, c.created_at as connected_at
+      from player_connections c
+      join players p on p.id = case when c.player_low = ${playerId} then c.player_high else c.player_low end
+     where c.player_low = ${playerId} or c.player_high = ${playerId}
+     limit 500`;
+  const connectedAt = new Map(friends.map((f) => [f.id, f.connected_at.toISOString()]));
+  const listed = new Set(played.map((o) => o.id));
+  const all = [
+    ...played.map((o) => ({ ...o, connectedAt: connectedAt.get(o.id) ?? null })),
+    ...friends
+      .filter((f) => !listed.has(f.id))
+      .map((f) => ({ id: f.id, displayName: f.display_name, sharedGames: 0, lastSharedGameUpdatedAt: null, connectedAt: f.connected_at.toISOString() })),
+  ];
+  const recency = (o: (typeof all)[number]) => o.lastSharedGameUpdatedAt ?? o.connectedAt ?? '';
+  return all
+    .sort((a, b) => recency(b).localeCompare(recency(a)) || a.displayName.localeCompare(b.displayName) || a.id.localeCompare(b.id))
+    .slice(0, 500);
+}
+
+/**
+ * Whether `playerId` may start a game with each of `others` (#72, #110): they have sat at a game
+ * together, of any type, or are connected by an accepted friend invitation. Returns those who pass.
+ */
+async function eligibleOpponents(tx: Db, playerId: string, others: string[]): Promise<Set<string>> {
+  const rows = await tx<{ id: string }[]>`
+    select distinct o.player_id as id
+      from game_participants me
+      join game_participants o on o.game_id = me.game_id
+     where me.player_id = ${playerId} and o.player_id = any(${others}::uuid[]) and o.player_id <> ${playerId}
+    union
+    select case when c.player_low = ${playerId} then c.player_high else c.player_low end as id
+      from player_connections c
+     where (c.player_low = ${playerId} and c.player_high = any(${others}::uuid[]))
+        or (c.player_high = ${playerId} and c.player_low = any(${others}::uuid[]))`;
+  return new Set(rows.map((r) => r.id));
 }
 
 /** Who a new game is for: an email to invite (the original path) or a previous opponent (#72). */
@@ -505,14 +568,9 @@ async function createGame(sql: Sql, player: Player, body: Record<string, unknown
     if (direct) {
       // Only someone the caller has actually sat at a game with (any type or version), never a
       // client-supplied name or list. A seat only goes away when its finished game is deleted (#93).
-      const [shared] =
-        target.playerId === player.id
-          ? []
-          : await tx`
-              select 1 from game_participants me
-                join game_participants o on o.game_id = me.game_id and o.player_id = ${target.playerId}
-               where me.player_id = ${player.id}
-               limit 1`;
+      // Only someone the caller has sat at a game with or is connected to (#110), never a
+      // client-supplied name or list.
+      const shared = (await eligibleOpponents(tx, player.id, [target.playerId])).has(target.playerId);
       if (!shared) {
         // The deletion of this request's own game may have committed since the check above,
         // taking the last shared seat with it: that retry is told "deleted", not "no such opponent".
@@ -618,12 +676,8 @@ async function createTable(
     // Every guest must be someone the host has sat at a game with (any type). One answer for
     // yourself, an unknown ID and a stranger, whichever guest it is.
     if (guests.includes(player.id)) throw NOT_AN_OPPONENT();
-    const known = await tx<{ id: string }[]>`
-      select distinct o.player_id as id
-        from game_participants me
-        join game_participants o on o.game_id = me.game_id
-       where me.player_id = ${player.id} and o.player_id = any(${guests}::uuid[])`;
-    if (known.length !== guests.length) {
+    const known = await eligibleOpponents(tx, player.id, guests);
+    if (known.size !== guests.length) {
       await refuseDeletedCreation(tx, player.id, requestId); // as for a direct start
       throw NOT_AN_OPPONENT();
     }
@@ -676,6 +730,187 @@ async function reissueInvitation(tx: TransactionSql, gameId: string): Promise<st
     update game_invitations set token_hash = decode(${await hashHex(token)}, 'hex'), created_at = now()
      where game_id = ${gameId}`;
   return token;
+}
+
+/**
+ * The recipient email of the creator's own pending game invitation (#110, for #113). It is what
+ * the creator typed when inviting, so it is shown to nobody else: not the invited player, not a
+ * holder of the link, and never as part of a game view. Only while nobody has joined.
+ */
+async function pendingInvitation(sql: Sql, player: Player, gameId: string, types: string[]) {
+  if (!UUID.test(gameId)) throw new ApiError(404, 'game_not_found', 'Game not found.');
+  const [game] = await sql`
+    select g.created_by, g.game_type, g.schema_version, i.invited_email, i.created_at, i.redeemed_by
+      from games g
+      join game_participants me on me.game_id = g.id and me.player_id = ${player.id}
+      left join game_invitations i on i.game_id = g.id
+     where g.id = ${gameId}`;
+  if (!game) throw new ApiError(404, 'game_not_found', 'Game not found.');
+  readable(game, types);
+  if (game.created_by !== player.id) {
+    throw new ApiError(403, 'not_creator', 'Only the player who created the game can see who was invited.');
+  }
+  if (!game.invited_email || game.redeemed_by) {
+    throw new ApiError(409, 'invitation_used', 'This game has no pending invitation.');
+  }
+  return { gameId, invitedEmail: game.invited_email as string, createdAt: (game.created_at as Date).toISOString() };
+}
+
+// ---------- friend invitations and connections (#110) ----------
+
+/** A friend link works for this long. Started games never expire; this is only for links nobody accepted. */
+const FRIEND_INVITATION_DAYS = 30;
+/** Unused, unexpired links one player may have at a time. Accepted and expired ones do not count. */
+const FRIEND_INVITATION_LIMIT = 20;
+
+const FRIEND_INVITATION_UNAVAILABLE = () =>
+  new ApiError(404, 'friend_invitation_unavailable', 'This invitation is not available. Ask your friend for a new link.');
+
+interface FriendInvitationRow {
+  id: string;
+  created_at: Date;
+  expires_at: Date;
+}
+
+const pendingFriendInvitation = (row: FriendInvitationRow) => ({
+  id: row.id,
+  createdAt: row.created_at.toISOString(),
+  expiresAt: row.expires_at.toISOString(),
+});
+
+/** The caller's own pending links: no tokens (only hashes are stored), no recipients (a link has none). */
+async function listFriendInvitations(sql: Sql, player: Player) {
+  const rows = await sql<FriendInvitationRow[]>`
+    select id, created_at, expires_at from friend_invitations
+     where created_by = ${player.id} and accepted_at is null and expires_at > now()
+     order by created_at, id`;
+  return { invitations: rows.map(pendingFriendInvitation), limit: FRIEND_INVITATION_LIMIT, validDays: FRIEND_INVITATION_DAYS };
+}
+
+/**
+ * A new single-use friend link. The request ID makes it retryable: a retry finds the same
+ * invitation and, as its first link may never have arrived, gives it a new one (the lost link stops
+ * working; the expiry stays). It never takes a second slot. Creations by one player run one at a
+ * time (their player row is locked), so the cap holds when several arrive at once.
+ */
+async function createFriendInvitation(sql: Sql, player: Player, body: Record<string, unknown>) {
+  const requestId = body.requestId;
+  if (typeof requestId !== 'string' || !UUID.test(requestId)) throw new ApiError(400, 'bad_request', '"requestId" must be a UUID.');
+  const token = newSecret();
+  const tokenHash = await hashHex(token);
+  return await sql.begin(async (tx) => {
+    await tx`select 1 from players where id = ${player.id} for no key update`;
+    const [earlier] = await tx<(FriendInvitationRow & { accepted_at: Date | null; expired: boolean })[]>`
+      select id, created_at, expires_at, accepted_at, expires_at <= now() as expired
+        from friend_invitations
+       where created_by = ${player.id} and create_request_id = ${requestId}
+         for update`;
+    if (earlier) {
+      // The request already did its work once. Accepted: there is no link to hand out any more.
+      if (earlier.accepted_at) throw new ApiError(409, 'friend_invitation_accepted', 'This invitation has already been accepted.');
+      if (earlier.expired) throw new ApiError(410, 'friend_invitation_expired', 'This invitation has expired. Create a new one.');
+      await tx`update friend_invitations set token_hash = decode(${tokenHash}, 'hex') where id = ${earlier.id}`;
+      return { status: 200, body: { invitation: { ...pendingFriendInvitation(earlier), token }, duplicate: true } };
+    }
+    const [{ pending }] = await tx<{ pending: number }[]>`
+      select count(*)::int as pending from friend_invitations
+       where created_by = ${player.id} and accepted_at is null and expires_at > now()`;
+    if (pending >= FRIEND_INVITATION_LIMIT) {
+      throw new ApiError(
+        409,
+        'friend_invitation_limit',
+        `You have ${FRIEND_INVITATION_LIMIT} invitations waiting. Replace one of them to get a new link.`,
+        { limit: FRIEND_INVITATION_LIMIT },
+      );
+    }
+    const [row] = await tx<FriendInvitationRow[]>`
+      insert into friend_invitations (created_by, create_request_id, token_hash, expires_at)
+      values (${player.id}, ${requestId}, decode(${tokenHash}, 'hex'), now() + make_interval(days => ${FRIEND_INVITATION_DAYS}))
+      returning id, created_at, expires_at`;
+    return { status: 201, body: { invitation: { ...pendingFriendInvitation(row), token }, duplicate: false } };
+  });
+}
+
+/**
+ * Replace one of the caller's pending links: the same invitation and slot (also at the cap), a new
+ * link, and a fresh lifetime. The old link stops working at once. Repeating it after a lost answer
+ * simply replaces again. It locks the invitation, as accepting does: whichever comes first wins.
+ */
+async function replaceFriendInvitation(sql: Sql, player: Player, invitationId: string) {
+  const NOT_FOUND = () => new ApiError(404, 'friend_invitation_not_found', 'That invitation is not one of your pending invitations.');
+  if (!UUID.test(invitationId)) throw NOT_FOUND();
+  const token = newSecret();
+  const tokenHash = await hashHex(token);
+  return await sql.begin(async (tx) => {
+    const [found] = await tx<{ accepted_at: Date | null; expired: boolean }[]>`
+      select accepted_at, expires_at <= now() as expired from friend_invitations
+       where id = ${invitationId} and created_by = ${player.id}
+         for update`;
+    // One answer for another player's invitation, an unknown ID and an expired one.
+    if (!found || (found.expired && !found.accepted_at)) throw NOT_FOUND();
+    if (found.accepted_at) throw new ApiError(409, 'friend_invitation_accepted', 'This invitation has already been accepted.');
+    const [row] = await tx<FriendInvitationRow[]>`
+      update friend_invitations
+         set token_hash = decode(${tokenHash}, 'hex'), expires_at = now() + make_interval(days => ${FRIEND_INVITATION_DAYS})
+       where id = ${invitationId}
+      returning id, created_at, expires_at`;
+    return { invitation: { ...pendingFriendInvitation(row), token } };
+  });
+}
+
+function friendToken(body: Record<string, unknown>): string {
+  const token = body.token;
+  if (typeof token !== 'string' || !SECRET.test(token)) throw FRIEND_INVITATION_UNAVAILABLE();
+  return token;
+}
+
+/**
+ * Who is inviting, for the holder of a link, before they accept or even have a player: the
+ * inviter's display name and nothing else. A link that is unknown, expired, replaced or accepted
+ * by someone else gets one answer that does not say which. A signed-in viewer also learns whether
+ * the link is their own or one they have already accepted, so a reload shows the right thing.
+ */
+async function previewFriendInvitation(sql: Sql, viewer: Player | null, body: Record<string, unknown>) {
+  const [row] = await sql<{ created_by: string; display_name: string; accepted_by: string | null; expired: boolean }[]>`
+    select i.created_by, p.display_name, i.accepted_by, i.expires_at <= now() as expired
+      from friend_invitations i join players p on p.id = i.created_by
+     where i.token_hash = decode(${await hashHex(friendToken(body))}, 'hex')`;
+  if (!row) throw FRIEND_INVITATION_UNAVAILABLE();
+  const inviter = { displayName: row.display_name };
+  if (viewer && row.accepted_by === viewer.id) return { inviter, state: 'accepted' as const };
+  if (row.accepted_by || row.expired) throw FRIEND_INVITATION_UNAVAILABLE();
+  return { inviter, state: viewer?.id === row.created_by ? ('own' as const) : ('open' as const) };
+}
+
+/**
+ * Accept a friend link: the caller and the inviter are connected from now on, in both directions,
+ * and no game is made. The invitation row is locked, so of two players accepting at once exactly
+ * one gets it, and a replacement either came first (this link is dead) or comes after (refused as
+ * accepted). The same player accepting again gets the same connection.
+ */
+async function acceptFriendInvitation(sql: Sql, player: Player, body: Record<string, unknown>) {
+  const tokenHash = await hashHex(friendToken(body));
+  return await sql.begin(async (tx) => {
+    const [invitation] = await tx<{ id: string; created_by: string; display_name: string; accepted_by: string | null; expired: boolean }[]>`
+      select i.id, i.created_by, p.display_name, i.accepted_by, i.expires_at <= now() as expired
+        from friend_invitations i join players p on p.id = i.created_by
+       where i.token_hash = decode(${tokenHash}, 'hex')
+         for update of i`;
+    if (!invitation) throw FRIEND_INVITATION_UNAVAILABLE();
+    const friend = { id: invitation.created_by, displayName: invitation.display_name };
+    if (invitation.accepted_by === player.id) return { friend, duplicate: true };
+    if (invitation.accepted_by || invitation.expired) throw FRIEND_INVITATION_UNAVAILABLE();
+    if (invitation.created_by === player.id) {
+      throw new ApiError(409, 'own_friend_invitation', 'This is your own invitation. Send the link to a friend.');
+    }
+    await tx`update friend_invitations set accepted_at = now(), accepted_by = ${player.id} where id = ${invitation.id}`;
+    // Already connected (an earlier invitation, either way round): the link is used up all the same.
+    await tx`
+      insert into player_connections (player_low, player_high)
+      values (least(${player.id}::uuid, ${friend.id}::uuid), greatest(${player.id}::uuid, ${friend.id}::uuid))
+      on conflict do nothing`;
+    return { friend, duplicate: false };
+  });
 }
 
 /** A new invitation link for the creator of a game nobody has joined yet. */
@@ -935,7 +1170,8 @@ async function deletable(tx: Db, player: Player, gameId: string, types: string[]
 
 /**
  * Co-players of this game who would leave the requester's "Play with" list if it were deleted:
- * the picker's own rule (a shared seat at any game), with this game left out.
+ * the picker's own rule (a shared seat at any game, or a friend connection, #110), with this
+ * game left out. A connected friend never leaves.
  */
 async function lastSharedWith(tx: Db, playerId: string, gameId: string): Promise<Player[]> {
   const rows = await tx<{ id: string; display_name: string }[]>`
@@ -947,6 +1183,9 @@ async function lastSharedWith(tx: Db, playerId: string, gameId: string): Promise
              select 1 from game_participants mine
                join game_participants theirs on theirs.game_id = mine.game_id and theirs.player_id = o.player_id
               where mine.player_id = ${playerId} and mine.game_id <> ${gameId})
+       and not exists (
+             select 1 from player_connections c
+              where c.player_low = least(${playerId}::uuid, o.player_id) and c.player_high = greatest(${playerId}::uuid, o.player_id))
      order by o.seat`;
   return rows.map((row) => ({ id: row.id, displayName: row.display_name }));
 }

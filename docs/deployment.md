@@ -102,6 +102,22 @@ automatically. Then `make deploy-backend` (which runs the same check again) appl
 migration. The site needs no particular order: old and new pages both work with either backend.
 Rollback: the index can be dropped without data loss; no names were rewritten.
 
+### Friend connections (#110): order and rollback
+
+Backend first. The site that offers friend invitations (#111) must not merge before this
+backend is live, because it calls endpoints the old function does not have.
+
+1. Merge the #110 PR: the site rebuilds unchanged (no site code in it).
+2. Run `make deploy-backend` from `main`: backup, migration
+   `20261121120000_friend_connections.sql` (two new tables, no row changes), then the function.
+   The function needs the migration, so never deploy it alone.
+3. Verify: `/health` reports the new commit; your games and *Play with* look as before (the
+   current site does not ask for invitation-only friends, so its list is unchanged).
+
+Rollback: the function can return to `8d4e13c`; leave the migration in place. Friends
+connected only by invitation then leave *Play with* until rolled forward. Their connections,
+pending links and any games they started are kept.
+
 ### Deleting finished games (#93): order and rollback
 
 The site can go out first: it shows *Delete game* only when the backend marks a game
