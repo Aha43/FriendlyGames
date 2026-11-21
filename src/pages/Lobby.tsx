@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import ChessHistory from '../components/ChessHistory';
 import InvitationShare from '../components/InvitationShare';
+import InviteFriend from '../components/InviteFriend';
 import NewTable, { type UncertainTable } from '../components/NewTable';
 import YatzyHistory from '../components/YatzyHistory';
 import { CHESS960_CASTLING, CHESS960_SUMMARY, GAME_TYPES, tableView, typeLabel, type GameType } from '../games/registry';
@@ -17,7 +18,7 @@ import {
   type PreviousOpponent,
   type TableResult,
 } from '../shared/gameApi';
-import { forgetInvitation, rememberInvitation, tokenFromInvitation, type Identity } from '../shared/identity';
+import { forgetInvitation, rememberInvitation, routeFromInvitation, type Identity } from '../shared/identity';
 import { navigate } from '../shared/route';
 import { newRequestId } from '../shared/requestId';
 
@@ -97,6 +98,7 @@ export default function Lobby({ identity, onIdentityRejected }: LobbyProps) {
       <YatzyHistory tables={tables} />
 
       <NewGame identity={identity} onCreated={refresh} onIdentityRejected={onIdentityRejected} />
+      <InviteFriend identity={identity} onIdentityRejected={onIdentityRejected} />
       <JoinByLink />
 
       <p className="page-footnote">
@@ -151,6 +153,12 @@ type Target = { kind: 'player'; playerId: string } | { kind: 'email' };
 /** Previous opponents shown before "Show all": the most recent ones, keeping the list compact. */
 const SHORT_LIST = 6;
 const sharedDate = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+/** "3 games together · Last shared game 12 Nov 2026", or for a friend connected by invitation (#111): "No games together yet". */
+function sharedSummary(o: PreviousOpponent): string {
+  if (o.sharedGames === 0 || !o.lastSharedGameUpdatedAt) return 'No games together yet';
+  return `${o.sharedGames} ${o.sharedGames === 1 ? 'game' : 'games'} together · Last shared game ${sharedDate.format(new Date(o.lastSharedGameUpdatedAt))}`;
+}
 
 function NewGame({
   identity,
@@ -273,10 +281,10 @@ function NewGame({
   );
   const opponentsStatus = (
     <>
-      {opponents === null && !opponentsFailed && <p className="muted">Looking for people you’ve played with…</p>}
+      {opponents === null && !opponentsFailed && <p className="muted">Looking for people you can play with…</p>}
       {opponentsFailed && (
         <p className="banner banner-warning opponents-failed">
-          Couldn’t load the people you’ve played with.{known || type === 'yatzy' ? '' : ' You can still invite someone by email.'}{' '}
+          Couldn’t load the people you can play with.{known || type === 'yatzy' ? '' : ' You can still invite someone by email.'}{' '}
           <button type="button" className="text-button" onClick={loadOpponents}>
             Load the list again
           </button>
@@ -349,8 +357,7 @@ function NewGame({
                       {o.displayName}
                     </span>
                     <span id={`opponent-${o.id}-meta`} className="opponent-meta">
-                      {o.sharedGames} {o.sharedGames === 1 ? 'game' : 'games'} together · Last shared game{' '}
-                      {sharedDate.format(new Date(o.lastSharedGameUpdatedAt))}
+                      {sharedSummary(o)}
                     </span>
                   </span>
                 </label>
@@ -389,7 +396,7 @@ function NewGame({
           )}
           {mode === null && (
             <p id="new-game-hint" className="fine-print-inline">
-              Choose someone you’ve played with, or invite someone new.
+              Choose someone to play with, or invite someone new.
             </p>
           )}
           <p className="form-error" role="alert">
@@ -429,10 +436,11 @@ function JoinByLink() {
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    const token = tokenFromInvitation(text);
-    if (!token) return setError('That doesn’t look like an invitation link.');
+    // A game invitation leads to the table, a friend invitation (#111) to its own page.
+    const route = routeFromInvitation(text);
+    if (!route) return setError('That doesn’t look like an invitation link.');
     setText('');
-    navigate(`#/join/${token}`);
+    navigate(route);
   }
 
   return (

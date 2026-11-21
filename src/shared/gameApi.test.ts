@@ -147,6 +147,66 @@ describe('deleting a finished game (#93)', () => {
   });
 });
 
+describe('friend invitations (#111)', () => {
+  const TOKEN = 'F'.repeat(43);
+  const sent = (n = 0) => {
+    const [url, init] = fetchMock.mock.calls[n] as [string, RequestInit];
+    return { url: new URL(url), init, headers: init.headers as Record<string, string> };
+  };
+
+  it('asks the picker for friends without a shared game too', async () => {
+    fetchMock.mockImplementation(async () => reply(200, { opponents: [] }));
+    await settle(gameApi.listOpponents(CRED));
+    expect(sent().url.pathname).toMatch(/\/opponents$/);
+    expect(sent().url.searchParams.get('friends')).toBe('1');
+    expect(sent().url.searchParams.get('types')).toBe('chess,chess960,yatzy');
+  });
+
+  it('never puts a friend link’s token in an address: preview and accept send it in the body', async () => {
+    fetchMock.mockImplementation(async () => reply(200, { invitation: { inviter: { displayName: 'Harald' }, state: 'open' }, friend: {} }));
+    await settle(gameApi.previewFriendInvitation(TOKEN));
+    await settle(gameApi.previewFriendInvitation(TOKEN, CRED));
+    await settle(gameApi.acceptFriendInvitation(CRED, TOKEN));
+    for (const n of [0, 1, 2]) {
+      expect(sent(n).url.href).not.toContain(TOKEN);
+      expect(sent(n).init.method).toBe('POST');
+      expect(JSON.parse(String(sent(n).init.body))).toEqual({ token: TOKEN });
+    }
+    expect(sent(0).url.pathname).toMatch(/\/friend-invitations\/preview$/);
+    // A visitor without a player sends no credential; a player sends theirs.
+    expect(sent(0).headers['X-Device-Credential']).toBeUndefined();
+    expect(sent(1).headers['X-Device-Credential']).toBe(CRED);
+    expect(sent(2).url.pathname).toMatch(/\/friend-invitations\/accept$/);
+  });
+
+  it('creates with a request ID, lists, and replaces one invitation by its ID', async () => {
+    fetchMock.mockImplementation(async () => reply(200, { invitation: {}, invitations: [] }));
+    await settle(gameApi.createFriendInvitation(CRED, 'r1'));
+    await settle(gameApi.listFriendInvitations(CRED));
+    await settle(gameApi.replaceFriendInvitation(CRED, 'i/1'));
+    expect([sent(0).init.method, sent(0).url.pathname.replace(/^.*game-api/, '')]).toEqual(['POST', '/friend-invitations']);
+    expect(JSON.parse(String(sent(0).init.body))).toEqual({ requestId: 'r1' });
+    expect([sent(1).init.method, sent(1).url.pathname.replace(/^.*game-api/, '')]).toEqual(['GET', '/friend-invitations']);
+    expect([sent(2).init.method, sent(2).url.pathname.replace(/^.*game-api/, '')]).toEqual(['POST', '/friend-invitations/i%2F1/replacement']);
+    expect(sent(2).init.body).toBeUndefined();
+  });
+
+  it('repeats a creation, a replacement and an acceptance after a momentary failure: each is safe to repeat', async () => {
+    const calls: (() => Promise<unknown>)[] = [
+      () => gameApi.createFriendInvitation(CRED, 'r1'),
+      () => gameApi.replaceFriendInvitation(CRED, 'i1'),
+      () => gameApi.acceptFriendInvitation(CRED, TOKEN),
+    ];
+    for (const call of calls) {
+      fetchMock.mockReset();
+      fetchMock.mockImplementationOnce(async () => reply(503, { error: { code: 'unavailable', message: 'x' } })).mockImplementation(async () => reply(200, { ok: true }));
+      expect(await settle<unknown>(call())).toEqual({ value: { ok: true } });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect((fetchMock.mock.calls[1] as [string, RequestInit])[1].body).toBe((fetchMock.mock.calls[0] as [string, RequestInit])[1].body);
+    }
+  });
+});
+
 describe('a backend from before #53 (during rollout)', () => {
   // The web client publishes on merge; the owner deploys the backend afterwards.
   const legacy = (moves: string[]) => ({

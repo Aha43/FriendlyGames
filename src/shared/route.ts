@@ -4,7 +4,9 @@ export type Route =
   | { page: 'home' }
   | { page: 'local'; type: 'chess' | 'chess960' }
   | { page: 'game'; gameId: string }
-  | { page: 'join'; token: string };
+  | { page: 'join'; token: string }
+  /** A friend invitation link (#111): connects two players, creates no game. */
+  | { page: 'friend'; token: string };
 
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#/, '');
@@ -12,6 +14,8 @@ export function parseRoute(hash: string): Route {
   if (game) return { page: 'game', gameId: game[1] };
   const join = path.match(/^\/join\/([A-Za-z0-9_-]{43})$/);
   if (join) return { page: 'join', token: join[1] };
+  const friend = path.match(/^\/friend\/([A-Za-z0-9_-]{43})$/);
+  if (friend) return { page: 'friend', token: friend[1] };
   if (path === '/local') return { page: 'local', type: 'chess' };
   if (path === '/local/chess960') return { page: 'local', type: 'chess960' };
   return { page: 'home' };

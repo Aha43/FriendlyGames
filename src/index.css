@@ -728,6 +728,53 @@ h2 {
 
 .confirm span { flex-basis: 100%; }
 
+/* ---------- inviting a friend (#111) ---------- */
+
+.invite-friend h3 { font-size: 1rem; margin: 1.1rem 0 0.25rem; }
+.invite-friend > .button { align-self: flex-start; }
+
+.fresh-link {
+  border: 1.5px solid #9cc48a;
+  background: #eef6e9;
+  border-radius: 12px;
+  padding: 0.75rem;
+  margin: 0 0 0.75rem;
+  min-width: 0;
+}
+
+.fresh-link .invite { margin-top: 0; }
+
+.pending-invitations {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.pending-invitations li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--paper-edge);
+  border-radius: 10px;
+  font-size: 0.9rem;
+  min-width: 0;
+}
+
+.pending-dates { display: grid; min-width: 0; }
+.pending-created { font-weight: 600; }
+.pending-expires, .pending-shown { color: var(--ink-soft); font-size: 0.85rem; }
+
+.replace-link { flex-basis: 100%; display: grid; gap: 0.4rem; }
+.replace-link p { margin: 0; }
+.replace-question:focus-visible { outline: 3px solid #2f6fd6; outline-offset: 2px; }
+
+.friend-invite { width: min(100%, 34rem); overflow-wrap: anywhere; }
+
 /* ---------- deleting a finished game (#93) ---------- */
 
 .button-quiet {
