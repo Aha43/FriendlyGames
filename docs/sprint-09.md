@@ -42,6 +42,37 @@ procedure and document rollback for newly connected players. Verify acceptance,
 lost replies and races through the real API, and a two-browser journey connecting
 people who have never shared a game and then starting the chosen game.
 
+## Agreed invitation lifecycle and compatibility
+
+Friend links expire 30 days after creation. Each creator may have at most 20
+unused, unexpired invitations. Expired and accepted invitations do not count.
+Enforce the cap atomically, including concurrent creation. Started games have
+no inactivity expiry. An accepted connection lasts independently of game history.
+
+In #110 provide a creator-only list of pending friend invitations with stable
+invitation ID, creation time and expiry, and an explicit replacement endpoint.
+Replacement cancels the selected old token and issues a new link for that
+invitation with a fresh 30-day lifetime. It uses the existing slot at the cap.
+Creation never silently cancels another invitation. Listing cannot return token
+plaintext because only hashes are stored. #111 exposes this list and replacement
+action and explains that the old link stops working. Handle lost create and
+replacement replies with recoverable retries, without duplicate invitations or
+extra cap slots. Race replacement against acceptance so either the original
+acceptance wins or the replacement wins, with no second person connected through
+the same invitation. Reissuing a link invalidates the previous token.
+
+Older clients receive today's opponents and response format. New clients
+explicitly opt into invitation-only connections and show “No games together yet”
+where appropriate. All clients may start a game with an accepted connection.
+Shared games remain the other eligibility source, without automatically
+creating durable connections. The deletion warning applies when that remaining
+eligibility would be lost.
+
+#110 also supplies the read-only inviter-name preview and a creator-only endpoint
+for the recipient email on pending chess invitations. #113 builds that email UI
+and player details. Cover recipient access refusal and existing pending records
+in the backend tests. Keep the endpoint out of general game views.
+
 ## Open on Your games
 
 Normal root entry opens Your games or the existing onboarding. Explicit game and
@@ -83,5 +114,4 @@ milestone. The historical first-game issue #11 remains separate.
 
 Direct Yatzy table invitations (#94), Yatzy scorecard polish, invitation
 withdrawal, multiplayer resignation, personal archives and table talk are later
-work. A reusable group invitation link and email sending are outside the proposed
-minimum. Claude should review that link choice with the owner before coding.
+work. A reusable group invitation link and email sending are outside this scope.
