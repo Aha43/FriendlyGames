@@ -2,6 +2,7 @@
 // position and outcome from the stored record with the rules of the game's type (gameTypes.ts).
 import type { Sql, TransactionSql } from 'postgres';
 import type { Termination } from '../_shared/chess/game.ts';
+import { newErrorId, unexpectedErrorLine } from './diagnostics.ts';
 import {
   adapterFor,
   clientTypes,
@@ -117,11 +118,20 @@ export async function handleRequest(request: Request, sql: Sql, config: ApiConfi
   return response;
 }
 
+/** The request's path below the function, for routing and for the error log. Never throws. */
+function pathOf(request: Request): string {
+  try {
+    return new URL(request.url).pathname.replace(/^.*?\/game-api/, '') || '/';
+  } catch {
+    return '/';
+  }
+}
+
 async function route(request: Request, sql: Sql, config: ApiConfig): Promise<Response> {
 
   try {
     const url = new URL(request.url);
-    const path = url.pathname.replace(/^.*?\/game-api/, '') || '/';
+    const path = pathOf(request);
     const types = clientTypes(url);
     const route = `${request.method} ${path.replace(/\/+$/, '') || '/'}`;
     const gameMatch = path.match(/^\/games\/([^/]+)(\/actions|\/invitation|\/rematch|\/deletion)?\/?$/);
@@ -196,8 +206,11 @@ async function route(request: Request, sql: Sql, config: ApiConfig): Promise<Res
       return json(error.status, { error: { code: error.code, message: error.message, ...error.details } });
     }
     // Never log request bodies or headers: they carry device credentials and invitation tokens.
-    console.error('game-api: unexpected error:', error instanceof Error ? error.message : 'unknown');
-    return json(500, { error: { code: 'internal', message: 'Something went wrong.' } });
+    // One line with the request's route pattern and the error's safe parts (#116); `errorId` in the
+    // answer ties the two together, and shows that this handler, not the runtime, answered.
+    const errorId = newErrorId();
+    console.error(unexpectedErrorLine(errorId, request.method, pathOf(request), error));
+    return json(500, { error: { code: 'internal', message: 'Something went wrong.', errorId } });
   }
 }
 

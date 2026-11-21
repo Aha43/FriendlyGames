@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 MAKEFLAGS += --no-print-directory
-.PHONY: help setup doctor up down dev phone check test-backend e2e verify build preview version \
+.PHONY: help setup doctor up down dev phone check test-backend backend-errors e2e verify build preview version \
         backup prod-status prod-name-check deploy-backend prod-e2e release
 
 # Public addresses (no secrets). The API address comes from the linked project unless set.
@@ -26,6 +26,7 @@ help:
 	@echo "Checks (local only, never production):"
 	@echo "  check           Lint, types, unit/component tests and build"
 	@echo "  test-backend    Backend integration tests (needs 'make up')"
+	@echo "  backend-errors  After test-backend: failures the local backend logged during the whole run"
 	@echo "  e2e             Browser journeys, desktop and phone (needs 'make up')"
 	@echo "  verify          check, test-backend and e2e in order; stops at the first failure"
 	@echo "  build / preview Production build / serve it locally"
@@ -83,6 +84,13 @@ check:
 
 test-backend:
 	npm run test:backend
+
+# What the local backend's runtime logged about failures, over the whole run (#116). After
+# test-backend it expects that suite's one deliberate failure and fails on any other unexpected
+# error. CI's browser job passes BACKEND_ERRORS_FLAGS=--report-only.
+BACKEND_ERRORS_FLAGS ?= --expect-controlled
+backend-errors:
+	@docker logs -t supabase_edge_runtime_friendlygames 2>&1 | node scripts/backend-errors.ts $(BACKEND_ERRORS_FLAGS)
 
 e2e:
 	npm run e2e

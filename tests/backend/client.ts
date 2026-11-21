@@ -23,7 +23,43 @@ export async function call<T = any>(
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { status: response.status, body: await response.json() };
+  // A server failure the API did not mean to give (#116): say which request, safely. The
+  // assertion that follows still fails; this only makes the failure traceable to the server log.
+  const text = await response.text();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = undefined;
+  }
+  if (response.status >= 500) console.error(unexpectedStatusLine(method, path, response.status, parsed));
+  if (parsed === undefined) throw new Error(`${method} ${routeOf(path)} answered HTTP ${response.status} without a JSON body`);
+  return { status: response.status, body: parsed as T };
+}
+
+const ROUTE_WORDS = new Set([
+  'health', 'players', 'me', 'games', 'history', 'opponents', 'invitations', 'redeem', 'actions', 'invitation',
+  'rematch', 'deletion', 'friend-invitations', 'preview', 'accept', 'replacement',
+]); // prettier-ignore
+
+/** The path with every ID replaced and no query string: `/games/:id/actions`. */
+export function routeOf(path: string): string {
+  const segments = path.split('?')[0].split('/').filter(Boolean).slice(0, 6);
+  return `/${segments.map((segment) => (ROUTE_WORDS.has(segment) ? segment : ':id')).join('/')}`;
+}
+
+/**
+ * One line for a 5xx answer: method, route pattern, status, the API's error code and the
+ * `errorId` that finds the server's own log line. Nothing else from the request or the answer,
+ * which can hold credentials, tokens and emails. `handler=no` means the answer did not come from
+ * the game API's own error handling (no `errorId`): the runtime in front of it answered. `at` is
+ * when the answer arrived, to set beside the times in the runtime's log.
+ */
+export function unexpectedStatusLine(method: string, path: string, status: number, body: unknown, at = new Date()): string {
+  const error = (body as { error?: { code?: unknown; errorId?: unknown } } | undefined)?.error;
+  const safe = (value: unknown, pattern: RegExp) => (typeof value === 'string' && pattern.test(value) ? value : '-');
+  const errorId = safe(error?.errorId, /^[0-9a-f]{8}$/);
+  return `[backend test] unexpected status: ${method} ${routeOf(path)} → ${status} code=${safe(error?.code, /^[a-z0-9_]{1,64}$/)} errorId=${errorId} handler=${errorId === '-' ? 'no' : 'yes'} at=${at.toISOString()}`;
 }
 
 export interface TestPlayer {

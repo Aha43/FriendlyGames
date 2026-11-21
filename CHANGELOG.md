@@ -8,6 +8,10 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ### Development
 
+- Backend failures are traceable in CI: the function logs one safe line per unexpected error
+  and puts its ID in the `500` answer; `make backend-errors` reads the whole runtime log after
+  the backend tests and fails on any unexpected error other than the one a test makes on
+  purpose (#120, first step of #116).
 - Backend for inviting a friend before choosing a game: single-use friend links that expire
   after 30 days (at most 20 unused per player), a pending list with replacement, lasting
   connections that count for *Play with*, direct starts, tables and the deletion warning, and

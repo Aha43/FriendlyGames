@@ -108,6 +108,47 @@ describe('setup failures', () => {
   });
 });
 
+describe('a server failure seen by the test client (#116)', () => {
+  const GAME = '3f2b8c1e-5d47-4a6b-9c0d-1e2f3a4b5c6d';
+
+  it('is reported with the method, route pattern, status, code and errorId, and still returned to the test', async () => {
+    fakeApi(() => ({ status: 500, body: { error: { code: 'internal', message: 'Something went wrong.', errorId: '1a2b3c4d', note: SECRET } } }));
+    const reported = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { call } = await freshClient();
+    const answer = await call('DELETE', `/games/${GAME}?types=chess&warned=${GAME}`, { credential: SECRET, body: { token: SECRET } });
+    expect(answer.status).toBe(500); // the test's own assertion still sees it and fails
+    expect(reported.mock.calls).toEqual([[expect.stringMatching(/^\[backend test\] unexpected status: DELETE \/games\/:id → 500 code=internal errorId=1a2b3c4d handler=yes at=\d{4}-\d\d-\d\dT[\d:.]+Z$/)]]);
+  });
+
+  it('says when the answer did not come from the game API’s own error handling', async () => {
+    fakeApi(() => ({ status: 503, body: { code: 'BOOT_ERROR', message: `worker failed ${SECRET}` } }));
+    const reported = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { call } = await freshClient();
+    await call('GET', `/games/${GAME}/invitation`, { credential: SECRET });
+    expect(String(reported.mock.calls[0][0])).toContain('[backend test] unexpected status: GET /games/:id/invitation → 503 code=- errorId=- handler=no at=');
+    expect(reported).toHaveBeenCalledTimes(1);
+    // An errorId or code that is not in the expected form is not echoed.
+    const { unexpectedStatusLine } = await freshClient();
+    expect(unexpectedStatusLine('POST', '/players', 500, { error: { code: `x ${SECRET}`, errorId: SECRET } }, new Date('2026-11-21T19:20:30.123Z'))).toBe(
+      '[backend test] unexpected status: POST /players → 500 code=- errorId=- handler=no at=2026-11-21T19:20:30.123Z',
+    );
+  });
+
+  it('fails with a safe message when the answer is not JSON at all, and says nothing for ordinary answers', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(`<html>Bad gateway ${SECRET}</html>`, { status: 502 })));
+    const reported = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { call } = await freshClient();
+    const failure = await call('POST', `/games/${GAME}/actions`, { credential: SECRET }).catch((e: Error) => e);
+    expect((failure as Error).message).toBe('POST /games/:id/actions answered HTTP 502 without a JSON body');
+    expect(String(reported.mock.calls[0][0])).toContain('[backend test] unexpected status: POST /games/:id/actions → 502 code=- errorId=- handler=no at=');
+
+    reported.mockClear();
+    fakeApi(() => ({ status: 409, body: { error: { code: 'stale_revision', message: 'x' } } }));
+    expect((await (await freshClient()).call('GET', '/me')).status).toBe(409);
+    expect(reported).not.toHaveBeenCalled();
+  });
+});
+
 describe('migration rehearsals', () => {
   const DDL = /\b(drop|alter|create)\s+(table|(unique\s+)?index|function|trigger|type|schema|view|policy)\b|\.unsafe\(\s*migration\b/i;
 
@@ -140,6 +181,7 @@ describe('migration rehearsals', () => {
   it('still exist where the migration run looks for them', () => {
     expect(testFiles(join(ROOT, 'tests/backend/migrations')).sort()).toEqual([
       'tests/backend/migrations/delete-finished-games.test.ts',
+      'tests/backend/migrations/diagnostics.test.ts',
       'tests/backend/migrations/friend-connections.test.ts',
       'tests/backend/migrations/player-credentials.test.ts',
       'tests/backend/migrations/unique-email.test.ts',
