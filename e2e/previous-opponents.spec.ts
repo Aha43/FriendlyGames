@@ -29,7 +29,7 @@ test('play again by name: both game types, no email, a lost reply retried into o
   // First game the usual way: Arne invites Harald by email and Harald joins. Nobody to pick yet.
   await arne.goto('/');
   await onboard(arne, ARNE, `arne-${run}@example.test`);
-  await expect(arne.getByText('Looking for people you’ve played with…')).toBeHidden();
+  await expect(arne.getByText('Looking for people you can play with…')).toBeHidden();
   await expect(arne.getByRole('group', { name: 'Play with' })).toHaveCount(0);
   await arne.getByLabel('Friend’s email').fill(`harald-${run}@example.test`);
   await arne.getByRole('button', { name: 'Create game' }).click();

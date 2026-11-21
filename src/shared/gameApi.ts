@@ -141,8 +141,24 @@ export interface PreviousOpponent {
   displayName: string;
   /** Games the two share, of any type (including types this client cannot show). */
   sharedGames: number;
-  /** The latest time any shared game was created, joined or had an action. */
-  lastSharedGameUpdatedAt: string;
+  /** The latest time any shared game was created, joined or had an action; null without a shared game. */
+  lastSharedGameUpdatedAt: string | null;
+  /** When the two connected through an accepted friend invitation (#110); null if they have not. */
+  connectedAt?: string | null;
+}
+
+/** One of the player's own friend invitations that nobody has accepted yet (#110). Its link is never listed. */
+export interface PendingFriendInvitation {
+  id: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** What the holder of a friend link is shown before accepting: who invites, and where the link stands for them. */
+export interface FriendInvitationPreview {
+  inviter: { displayName: string };
+  /** `open`: can be accepted. `own`: the viewer made it. `accepted`: the viewer already accepted it. */
+  state: 'open' | 'own' | 'accepted';
 }
 
 export type GameAction =
@@ -311,7 +327,33 @@ export const gameApi = {
       type,
     }),
   /** Everyone the player has sat at a game with, most recent shared activity first (#72). */
-  listOpponents: (credential: string) => request<{ opponents: PreviousOpponent[] }>('GET', '/opponents', credential),
+  /**
+   * Also friends connected by an accepted invitation who share no game yet (#110): this client
+   * asks for them with `friends=1` and shows "No games together yet" for them.
+   */
+  listOpponents: (credential: string) => request<{ opponents: PreviousOpponent[] }>('GET', '/opponents?friends=1', credential),
+  /**
+   * A new friend link (#110): for one friend, no game and no email. Retrying with the same
+   * requestId finds the same invitation and gets a new link for it (the first may never have
+   * arrived, and links are stored hashed), so it never makes a second invitation.
+   */
+  createFriendInvitation: (credential: string, requestId: string) =>
+    request<{ invitation: PendingFriendInvitation & { token: string }; duplicate: boolean }>('POST', '/friend-invitations', credential, { requestId }),
+  /** The player's own pending friend invitations, oldest first, with the cap and lifetime. */
+  listFriendInvitations: (credential: string) =>
+    request<{ invitations: PendingFriendInvitation[]; limit: number; validDays: number }>('GET', '/friend-invitations', credential),
+  /**
+   * A new link and a fresh lifetime for one pending invitation, in the same slot; its old link
+   * stops working. Repeating it only replaces again, so it is safe after a lost answer.
+   */
+  replaceFriendInvitation: (credential: string, id: string) =>
+    request<{ invitation: PendingFriendInvitation & { token: string } }>('POST', `/friend-invitations/${encodeURIComponent(id)}/replacement`, credential),
+  /** Who is inviting, for the holder of a friend link; works before the holder has a player. The token goes in the body, not the address. */
+  previewFriendInvitation: (token: string, credential?: string) =>
+    request<{ invitation: FriendInvitationPreview }>('POST', '/friend-invitations/preview', credential, { token }),
+  /** Accept a friend link: the two are connected, no game is made. The same player accepting again gets the same answer. */
+  acceptFriendInvitation: (credential: string, token: string) =>
+    request<{ friend: PlayerSummary; duplicate: boolean }>('POST', '/friend-invitations/accept', credential, { token }),
   /**
    * A game with a previous opponent, by player ID (#72): active at once, creator White, opponent
    * Black, no invitation. Retrying with the same requestId (same opponent and type) finds the same game.

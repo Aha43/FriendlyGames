@@ -3,7 +3,8 @@ import { gameApi, NetworkError, ApiError } from '../shared/gameApi';
 import { saveIdentity, type Identity } from '../shared/identity';
 
 interface OnboardingProps {
-  invited: boolean;
+  /** What brought the player here: a game invitation, a friend invitation (#111), or nothing in particular. */
+  invited: boolean | 'friend';
   onDone: (identity: Identity) => void;
 }
 
@@ -72,11 +73,13 @@ export default function Onboarding({ invited, onDone }: OnboardingProps) {
 
   return (
     <section className="card onboarding" aria-labelledby="onboarding-title">
-      <h2 id="onboarding-title">{invited ? 'You’re invited to a game' : 'Welcome to the park'}</h2>
+      <h2 id="onboarding-title">{invited === 'friend' ? 'First, who are you?' : invited ? 'You’re invited to a game' : 'Welcome to the park'}</h2>
       <p>
-        {invited
-          ? 'Enter your email. Then you’ll go straight to the table.'
-          : 'Enter your email to open your games, or to start playing chess with a friend.'}
+        {invited === 'friend'
+          ? 'Enter your email. Then you can accept the invitation.'
+          : invited
+            ? 'Enter your email. Then you’ll go straight to the table.'
+            : 'Enter your email to open your games, or to start playing chess with a friend.'}
       </p>
 
       <form onSubmit={submit} className="form">

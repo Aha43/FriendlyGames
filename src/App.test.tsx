@@ -46,6 +46,8 @@ beforeEach(() => {
   consoleCalls.length = 0;
   // Nobody played yet unless a test says otherwise (#73).
   vi.spyOn(gameApi, 'listOpponents').mockResolvedValue({ opponents: [] });
+  // No friend invitations waiting unless a test says otherwise (#111).
+  vi.spyOn(gameApi, 'listFriendInvitations').mockResolvedValue({ invitations: [], limit: 20, validDays: 30 });
   for (const method of ['log', 'info', 'warn', 'error', 'debug'] as const) {
     vi.spyOn(console, method).mockImplementation((...args) => void consoleCalls.push(args));
   }
@@ -504,11 +506,11 @@ describe('lobby', () => {
         .mockReturnValueOnce(new Promise((_, reject) => (fail = reject)))
         .mockResolvedValueOnce({ opponents: [HARALD] });
       render(<App />);
-      expect(await screen.findByText('Looking for people you’ve played with…')).toBeInTheDocument();
+      expect(await screen.findByText('Looking for people you can play with…')).toBeInTheDocument();
       expect(screen.getByLabelText('Friend’s email')).toBeInTheDocument();
 
       fail(new NetworkError('offline'));
-      expect(await screen.findByText(/Couldn’t load the people you’ve played with\. You can still invite someone by email\./)).toBeInTheDocument();
+      expect(await screen.findByText(/Couldn’t load the people you can play with\. You can still invite someone by email\./)).toBeInTheDocument();
       expect(screen.queryByText(/Looking for people/)).not.toBeInTheDocument();
       expect(screen.getByLabelText('Friend’s email')).toBeInTheDocument();
 
@@ -853,13 +855,13 @@ describe('lobby', () => {
       const first = render(<App />);
       await waitFor(() => expect(screen.queryByText(/Looking for people/)).not.toBeInTheDocument());
       await user.click(screen.getByRole('radio', { name: 'Yatzy' }));
-      expect(screen.getByText(/Nobody to seat yet\. Yatzy is for people you’ve already played/)).toBeInTheDocument();
+      expect(screen.getByText(/Nobody to seat yet\. Yatzy is for your friends: use/)).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Start Yatzy' })).toBeDisabled();
       first.unmount();
 
       render(<App />);
       await user.click(await screen.findByRole('radio', { name: 'Yatzy' }));
-      expect(await screen.findByText(/Couldn’t load the people you’ve played with\./)).toBeInTheDocument();
+      expect(await screen.findByText(/Couldn’t load the people you can play with\./)).toBeInTheDocument();
       expect(screen.queryByText(/Nobody to seat yet/)).not.toBeInTheDocument();
       expect(screen.queryByText(/invite someone by email/)).not.toBeInTheDocument();
     });

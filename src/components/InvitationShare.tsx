@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { invitationLink } from '../shared/identity';
 
 interface InvitationShareProps {
@@ -10,7 +10,16 @@ interface InvitationShareProps {
 
 /** The invitation link, to send by hand. Anyone holding it can take the empty seat once. */
 export default function InvitationShare({ token, friend, gameLabel = 'Chess' }: InvitationShareProps) {
-  const link = invitationLink(token);
+  return (
+    <LinkShare link={invitationLink(token)} shareTitle={`${gameLabel} in the park`}>
+      Send this {gameLabel} invitation to {friend ?? 'your friend'} yourself, by message or email. Whoever opens it first takes the
+      empty seat, so share it only with them.
+    </LinkShare>
+  );
+}
+
+/** A link to send by hand: shown in a field to select, with Copy, and Share where the device offers it. */
+export function LinkShare({ link, shareTitle, children }: { link: string; shareTitle: string; children: ReactNode }) {
   const [copied, setCopied] = useState<'yes' | 'failed' | null>(null);
   const canShare = typeof navigator.share === 'function';
 
@@ -25,10 +34,7 @@ export default function InvitationShare({ token, friend, gameLabel = 'Chess' }: 
 
   return (
     <div className="invite">
-      <p>
-        Send this {gameLabel} invitation to {friend ?? 'your friend'} yourself, by message or email. Whoever opens it first takes the
-        empty seat, so share it only with them.
-      </p>
+      <p>{children}</p>
       <label className="invite-link">
         <span className="visually-hidden">Invitation link</span>
         <input readOnly value={link} onFocus={(e) => e.currentTarget.select()} />
@@ -38,16 +44,16 @@ export default function InvitationShare({ token, friend, gameLabel = 'Chess' }: 
           {copied === 'yes' ? 'Copied!' : 'Copy link'}
         </button>
         {canShare && (
-          <button
-            type="button"
-            className="button"
-            onClick={() => navigator.share({ title: `${gameLabel} in the park`, url: link }).catch(() => {})}
-          >
+          <button type="button" className="button" onClick={() => navigator.share({ title: shareTitle, url: link }).catch(() => {})}>
             Share…
           </button>
         )}
       </div>
-      {copied === 'failed' && <p className="form-error">Couldn’t copy. Select the link and copy it by hand.</p>}
+      {copied === 'failed' && (
+        <p className="form-error" role="alert">
+          Couldn’t copy. Select the link and copy it by hand.
+        </p>
+      )}
     </div>
   );
 }

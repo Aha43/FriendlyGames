@@ -68,6 +68,20 @@ export function invitationLink(token: string): string {
   return `${origin}${pathname}#/join/${token}`;
 }
 
+/** The link for a friend invitation (#111): its own address, so it is never taken for a game invitation. */
+export function friendInvitationLink(token: string): string {
+  const { origin, pathname } = window.location;
+  return `${origin}${pathname}#/friend/${token}`;
+}
+
+/** Where a pasted invitation leads: a friend link to the friend page, a game link or a bare token to the game. */
+export function routeFromInvitation(text: string): string | null {
+  const friend = text.trim().match(/#\/friend\/([A-Za-z0-9_-]{43})\s*$/);
+  if (friend) return `#/friend/${friend[1]}`;
+  const token = tokenFromInvitation(text);
+  return token ? `#/join/${token}` : null;
+}
+
 /** Accepts a full invitation link or a bare token. */
 export function tokenFromInvitation(text: string): string | null {
   const match = text.trim().match(/(?:#\/join\/)?([A-Za-z0-9_-]{43})\s*$/);

@@ -123,8 +123,8 @@ export default function NewTable({
       {opponentsStatus}
       {opponents !== null && known.length === 0 && (
         <p className="muted">
-          Nobody to seat yet. Yatzy is for people you’ve already played: invite someone to a chess game first, and once
-          they’ve joined you can seat them here.
+          Nobody to seat yet. Yatzy is for your friends: use <strong>Invite a friend</strong> below, and once they’ve
+          accepted you can seat them here.
         </p>
       )}
       {known.length > 0 && (

@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import ParkBackdrop from './components/ParkBackdrop';
 import { PIECE_SET_CREDIT, PIECE_SET_LICENSE_URL } from './components/pieceSet';
+import FriendInvitePage from './pages/FriendInvitePage';
 import JoinPage from './pages/JoinPage';
 import LocalPage from './pages/LocalPage';
 import Lobby from './pages/Lobby';
@@ -55,6 +56,9 @@ export default function App() {
         </section>
       </div>
     );
+  } else if (route.page === 'friend') {
+    // Shown before any player exists too: the holder of the link first sees who invites them.
+    content = <FriendInvitePage key={route.token} identity={identity} token={route.token} onIdentity={setIdentity} onIdentityRejected={onIdentityRejected} />;
   } else if (!identity) {
     content = <Onboarding invited={route.page === 'join'} onDone={setIdentity} />;
   } else if (route.page === 'join') {

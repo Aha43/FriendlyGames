@@ -32,6 +32,13 @@ and unused ones break a tie. Finished tables are kept under *Yatzy results*, apa
 chess tallies. Having shared a table, any two of its players can start a chess game with each
 other.
 
+**Inviting a friend.** On *Your games*, *Invite a friend* gives you a link to send, without
+choosing a game or typing an email. One link is for one friend and works for 30 days. Your
+friend sees who invites them, enters their email if they are new, and accepts; no game is
+started. You then find each other under *Play with* for Chess, Fischer Random and Yatzy. Waiting
+invitations are listed with their dates, and a lost link is replaced (the old one stops
+working). Inviting someone to a particular chess game by email works as before.
+
 **Deleting a finished game.** On a finished Chess, Fischer Random or Yatzy game, anyone who
 played it can choose *Delete game…*. The confirmation names the game and says it disappears for
 everyone, including from history and results, and can't be undone. If it is the last game you

@@ -563,12 +563,21 @@ Errors are `{ "error": { "code", "message", … } }`:
 
 ## Web client
 
-- Routes are hash-based (`#/`, `#/game/<id>`, `#/join/<token>`, `#/local`). The part
+- Routes are hash-based (`#/`, `#/game/<id>`, `#/join/<token>`, `#/friend/<token>`, `#/local`). The part
   after `#` is never sent to a server, so invitation tokens stay out of hosting and
   server logs; after joining, the join URL is replaced in browser history.
 - The device credential and the creator's unredeemed invitation tokens live in
   `localStorage`; the app never logs them, and Playwright runs without traces,
   screenshots or HTML reports so they do not end up in test artifacts.
+- A friend link (`#/friend/<token>`, #111) has its own route, so it is never taken for a game
+  invitation; a site from before #111 opens the lobby for it. The page shows who invites
+  before anything else (the preview needs no player), then the usual email entry for a new
+  visitor, then waits for an explicit *Accept*. The token is sent in request bodies only. A
+  friend link is shown once, when made or replaced, and is not kept in `localStorage`:
+  only its hash exists on the server, so a lost link is replaced, not shown again. Creation
+  keeps its request ID until it is confirmed; replacement and acceptance are simply repeated.
+  The picker asks for friends without a shared game (`friends=1`) and shows "No games
+  together yet" for them.
 - A shared game polls every 4 seconds while visible and refreshes on return to the page.
   A move shows as "saving" until the server confirms it. On a network or server failure
   the outcome is unknown: the page says it couldn't confirm whether the move was saved,
@@ -577,7 +586,8 @@ Errors are `{ "error": { "code", "message", … } }`:
   the same way.
 - Momentary server failures are repeated automatically, at most twice (after 0.4 s and
   1.2 s), only for requests the server deduplicates or that change nothing: reads, actions
-  (request ID), game creation (request ID), joining, rematch, invitation renewal and email
+  (request ID), game creation (request ID), joining, rematch, invitation renewal, friend
+  invitations (creation by request ID; replacement and acceptance by design) and email
   entry (a repeat reaches the same player), after network errors and 500/502/503/504.
   Timeouts are not repeated.
 - When polling shows the server has moved past an unconfirmed action's revision, the page

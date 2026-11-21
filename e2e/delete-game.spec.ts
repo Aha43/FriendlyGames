@@ -101,7 +101,7 @@ test('a chess game: only when finished, cancelled first, then deleted by the pla
   await fits(harald.page, 320);
   await expect(harald.page.getByText('Looking for your games…')).toBeHidden();
   await expect(harald.page.getByRole('list', { name: `Finished games with ${LONG}` })).toHaveCount(0);
-  await expect(harald.page.getByText('Looking for people you’ve played with…')).toBeHidden();
+  await expect(harald.page.getByText('Looking for people you can play with…')).toBeHidden();
   await expect(harald.page.getByRole('group', { name: 'Play with' })).toHaveCount(0);
 
   // Arne, who started it, still has the old page open: after a refresh it is gone everywhere.
@@ -206,7 +206,7 @@ test('a Yatzy table deleted by a guest: gone from everyone’s results, naming o
   await expect(ask.getByText(`This is the last game you share with ${anna.name}. You won’t find them in Play with until you share another game.`)).toBeVisible();
   await ask.getByRole('button', { name: 'Delete game' }).click();
   await expect(ben.page.getByRole('status')).toHaveText(/^Deleted: Yatzy table with /);
-  await expect(ben.page.getByText('Looking for people you’ve played with…')).toBeHidden();
+  await expect(ben.page.getByText('Looking for people you can play with…')).toBeHidden();
   const picker = ben.page.getByRole('group', { name: 'Play with' });
   await expect(picker.getByRole('radio', { name: host.name, exact: true })).toBeVisible();
   await expect(picker.getByRole('radio', { name: anna.name, exact: true })).toHaveCount(0);

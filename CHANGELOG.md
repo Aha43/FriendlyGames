@@ -6,6 +6,23 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
+### Added
+
+- **Invite a friend** on *Your games*, without choosing a game or typing their email. You get
+  a link to send yourself. One link is for one friend and works for 30 days. Your friend sees
+  who invites them, enters their email if they are new, and accepts. You then find each other
+  under *Play with* and can start Chess, Fischer Random or Yatzy; accepting starts no game. A
+  friend you haven't played yet shows as "No games together yet" (#111).
+- Your waiting invitations are listed with when they were made and when they expire. A link is
+  shown only when it is made, so a lost one is replaced: you get a new link for the same
+  invitation, valid for 30 days, and the old link stops working. You can have 20 waiting at a
+  time (#111).
+
+### Changed
+
+- Game invitations by email work as before. A friend invitation has its own kind of link, and
+  pasting either under *Got an invitation?* opens the right page (#111).
+
 ### Development
 
 - Backend failures are traceable in CI: the function logs one safe line per unexpected error
