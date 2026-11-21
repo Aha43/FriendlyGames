@@ -73,6 +73,24 @@ help development but is supplementary; the current-head CI backend/e2e jobs on
 real Supabase are authoritative. Codex may verify on a real local stack too.
 Do not weaken real-stack CI or repeatedly retry a known inaccessible registry.
 
+**Backend failure evidence** (#120, for #116). A `500` the API did not mean to give is
+traceable in CI without publishing anything private:
+
+- The function logs one line per unexpected error: an `id`, the route pattern (`DELETE
+  /games/:id`, never IDs or the query), and the error's class, code (a Postgres SQLSTATE or a
+  driver code), severity, routine, table and constraint, with a reduced message. It never logs
+  bodies, headers, or an error's detail, hint or query. The same `errorId` is in the `500`
+  answer, so an answer without one did not come from the function's own error handling.
+- The backend test client prints one line for any `5xx`: method, route pattern, status, code,
+  `errorId`, and `handler=yes|no`. The test's own assertion still fails.
+- `make backend-errors` reads the runtime's whole log, not its last lines. CI runs it after
+  `make test-backend` whether or not the tests passed. It expects the one failure
+  `tests/backend/migrations/diagnostics.test.ts` makes on purpose, which shows on every run
+  that the evidence path works, and it fails the job on any other unexpected error, also when
+  every test passed. After the browser journeys it only reports, as a warning: the site repeats
+  a failed read, which would otherwise hide it.
+- Do not add retries to backend tests or widen expected statuses to get past such a failure.
+
 **PR tracking** (`.github/workflows/pr-tracking.yml`, #36) checks every pull request:
 exactly one primary closing reference (`Closes #N`, or GitHub's other closing words) to an
 issue in this repository, and that issue has a version milestone (`v0.1.1 — …`, not an old

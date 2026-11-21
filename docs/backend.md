@@ -558,6 +558,7 @@ Errors are `{ "error": { "code", "message", … } }`:
 | 409 | `stale_revision` (includes `game`), `not_your_turn`, `not_started`, `not_finished`, `deletion_changed` (includes `deletion`), `game_finished`, `invitation_used`, `already_participant`, `request_id_reused`, `friend_invitation_limit` (includes `limit`), `friend_invitation_accepted`, `own_friend_invitation` |
 | 410 | `game_deleted` (a creation retry for a game that has been deleted, #93), `friend_invitation_expired` (a creation retry for a friend link that has expired, #110) |
 | 413 | `too_large` |
+| 500 | `internal` (a failure the API did not expect; includes `errorId`, eight hex digits that match the function's log line for it, #120; nothing else about the error) |
 | 422 | `illegal_move`, `illegal_castle`, `use_castle_action` (Chess960), `unsupported_game` (a game this server or client cannot read) |
 
 ## Web client
