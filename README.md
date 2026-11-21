@@ -64,6 +64,7 @@ castle, select your king and use a castle button: king and rook end on g/f (king
 - [Sprint 8 — Finished game cleanup](docs/sprint-08.md) (v0.5.0)
 - [Sprint 9 — Invite friends before choosing a game](docs/sprint-09.md) (proposed v0.6.0)
 - [Game-type architecture plan](docs/game-types.md)
+- [How the app is opened, and where it starts](docs/launch-paths.md)
 - [Source publication](docs/source-publication.md)
 - [Changelog](CHANGELOG.md)
 - [Agent guidance](AGENTS.md)
