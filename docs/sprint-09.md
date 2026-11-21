@@ -8,10 +8,11 @@ Claude reviews this plan and the owner authorizes its merge before implementatio
 | Order | Issue | Outcome |
 | --- | --- | --- |
 | 1 | [#110](https://github.com/Aha43/FriendlyGames/issues/110) | Backend for game-independent friend invitations and durable connections. |
-| 2 | [#111](https://github.com/Aha43/FriendlyGames/issues/111) | Invite, onboard and connect from Your games, then choose a game. |
-| 3 | [#112](https://github.com/Aha43/FriendlyGames/issues/112) | Normal app entry opens Your games. |
-| 4 | [#113](https://github.com/Aha43/FriendlyGames/issues/113) | Player details and creator-visible recipient email on pending invitations. |
-| 5 | [#114](https://github.com/Aha43/FriendlyGames/issues/114) | Integrated qualification and v0.6.0 release preparation. |
+| 2 | [#116](https://github.com/Aha43/FriendlyGames/issues/116) | Preserve safe diagnostics for unexplained backend 500s before adding the invite UI. |
+| 3 | [#111](https://github.com/Aha43/FriendlyGames/issues/111) | Invite, onboard and connect from Your games, then choose a game. |
+| 4 | [#112](https://github.com/Aha43/FriendlyGames/issues/112) | Normal app entry opens Your games. |
+| 5 | [#113](https://github.com/Aha43/FriendlyGames/issues/113) | Player details and creator-visible recipient email on pending invitations. |
+| 6 | [#114](https://github.com/Aha43/FriendlyGames/issues/114) | Integrated qualification and v0.6.0 release preparation. |
 
 ## Connect before choosing a game
 
@@ -115,3 +116,12 @@ milestone. The historical first-game issue #11 remains separate.
 Direct Yatzy table invitations (#94), Yatzy scorecard polish, invitation
 withdrawal, multiplayer resignation, personal archives and table talk are later
 work. A reusable group invitation link and email sending are outside this scope.
+
+## Backend failure diagnostics (#116)
+
+Two real-Supabase CI requests returned an unexplained 500, one during deletion
+and one on a read. Capture useful safe runtime errors across the entire test run
+before #111. Verify the evidence path with a controlled failure, without exposing
+credentials, tokens or private contacts. Keep unexpected 500s failing CI. Record
+the diagnosis or leave #116 open with the remaining uncertainty. The failures may
+have different causes and a passed rerun does not explain them.
