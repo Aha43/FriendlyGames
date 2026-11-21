@@ -6,6 +6,14 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
+### Development
+
+- Backend for inviting a friend before choosing a game: single-use friend links that expire
+  after 30 days (at most 20 unused per player), a pending list with replacement, lasting
+  connections that count for *Play with*, direct starts, tables and the deletion warning, and
+  creator-only access to the recipient email of a pending game invitation. Nothing changes on
+  the site yet; older clients get the picker exactly as before (#110).
+
 ## v0.5.0 — Finished game cleanup (2026-11-20)
 
 Sprint 8. The release date is when this version was prepared; the `v0.5.0` tag marks the

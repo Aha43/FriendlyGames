@@ -173,6 +173,78 @@ who never joined is not one. There is no contact list, friend request or search.
   before merging the UI that uses it (#73). Rollback to the previous function is safe: games
   created directly are ordinary two-seat games every version reads.
 
+## Friends before games (#110)
+
+A player can invite a friend with a link, without choosing a game or typing an email.
+Accepting connects the two players for good and creates no game. The site for this comes with
+#111; the backend is deployed first.
+
+**Schema** (migration `20261121120000_friend_connections.sql`, additive):
+
+| Table | Holds |
+| --- | --- |
+| `friend_invitations` | one row per invitation: creator, creation request ID, token hash, created and expiry times, and who accepted it and when |
+| `player_connections` | one row per connected pair, smaller player ID first; independent of games |
+
+**Rules**
+
+- A link is for one friend. It works for 30 days from creation, until someone accepts it or it
+  is replaced. Only links nobody accepted expire: a connection and a started game never do.
+- A player may have at most 20 unused, unexpired links. Accepted and expired ones do not count.
+  Creations by one player run one at a time (their player row is locked), so the cap holds when
+  several arrive at once. Creating never cancels another link.
+- Accepting connects the accepter and the inviter in both directions. The same player accepting
+  again gets the same connection (`duplicate: true`). A different player, an expired link, a
+  replaced link and an unknown link all get `404 friend_invitation_unavailable`, which does not
+  say which. Your own link is `409 own_friend_invitation`. The invitation row is locked, so of
+  several players accepting at once exactly one gets it. If the two were already connected or
+  already share games, acceptance succeeds and uses the link up.
+- Tokens are stored as hashes, as for game invitations, so a link can never be shown again.
+  - A retried creation (same request ID) finds the same invitation and hands out a new link
+    for it; the lost link stops working and the expiry stays. It never takes a second slot.
+    After acceptance it gets `409 friend_invitation_accepted`; after expiry
+    `410 friend_invitation_expired`.
+  - Replacement gives a pending invitation a new link and a fresh 30 days, in the same slot,
+    also at the cap. The old link stops working at once. Repeating it after a lost answer
+    replaces again. Replacement and acceptance lock the same row: whichever comes first wins,
+    and one invitation never connects two people.
+- There is no way to remove a connection in this version.
+
+**Eligibility.** A player may start a game with someone they share a seat with (as before) or
+are connected to. This one rule is used by the picker, by direct starts, by Yatzy tables (the
+host and each guest), and by the deletion warning: a connected friend never appears in
+`removesFromPlayWith`. Joining or playing a game does not create a connection, so people who
+only share games still leave *Play with* when their last shared game is deleted.
+
+**Older clients.** A site from before #110 formats a "last shared game" date for every person
+in the picker. `GET /opponents` therefore returns friends who share no game only to a client
+that asks with `friends=1`. That client gets `connectedAt` on every entry (null when not
+connected) and, for a friend without a shared game, `sharedGames: 0` and
+`lastSharedGameUpdatedAt: null`. Without the flag the list and its fields are exactly as
+before. Starting a game with a connected friend is authorized for every client.
+
+**Who may read what**
+
+- The preview is for whoever holds the link, also before they have a player. It returns the
+  inviter's display name and a state: `open`, or for a signed-in viewer `own` (their own link)
+  or `accepted` (they accepted it). Nothing else about anyone.
+- The pending list is the creator's own: ID, created and expiry times. No tokens and no
+  recipients, since a link has none.
+- `GET /games/:id/invitation` gives the creator of a waiting game the recipient email they
+  typed, including for games made before this change. The invited player gets
+  `403 not_creator`, anyone else `404 game_not_found`, and once someone has joined it is
+  `409 invitation_used`. The email is in no game view, list or picker.
+
+Rollout and rollback:
+
+- `make deploy-backend` takes the backup, applies the migration, then deploys the function.
+  The new function needs the migration. Deploy before the #111 site is merged.
+- The migration changes no existing row
+  (`tests/backend/migrations/friend-connections.test.ts`).
+- The previous function (`8d4e13c`) works on the migrated schema and ignores the new tables.
+  After such a rollback, friends connected only by invitation leave *Play with* and cannot be
+  started with until rolled forward; their connections and any games they started are kept.
+
 ## Games and invitations
 
 - Creating a game seats the creator as White and returns an **invitation token** once.
@@ -426,6 +498,13 @@ endpoints accept the `types` query parameter described under Game types.
 | `POST /games` | `{ friendEmail, requestId?, type? }` | `201 { game, invitation: { token }, duplicate: false }`; a retry with the same `requestId` gets `200 { game, invitation, duplicate: true }` |
 | `POST /games` (previous opponent, #72) | `{ friendPlayerId, requestId?, type? }` | `201 { game, invitation: null, duplicate: false }`: an **active** game, creator White, opponent Black, White to move; a retry with the same `requestId` gets `200 { …, duplicate: true }`; `404 opponent_not_found` for yourself, an unknown ID or anyone you have no seated game with (one answer for all); `400` if both or neither target is given |
 | `GET /opponents` (#72) | | `200 { opponents: [{ id, displayName, sharedGames, lastSharedGameUpdatedAt }] }`, newest shared activity first |
+| `GET /opponents?friends=1` (#110) | | as above, plus `connectedAt` on each entry and friends connected by invitation who share no game (`sharedGames: 0`, `lastSharedGameUpdatedAt: null`) |
+| `POST /friend-invitations` (#110) | `{ requestId }` | `201 { invitation: { id, createdAt, expiresAt, token }, duplicate: false }`; a retry `200` with a new `token`, `duplicate: true`; `409 friend_invitation_limit` |
+| `GET /friend-invitations` (#110) | | `200 { invitations: [{ id, createdAt, expiresAt }], limit, validDays }`, the caller's pending ones, oldest first |
+| `POST /friend-invitations/:id/replacement` (#110) | | `200 { invitation: { id, createdAt, expiresAt, token } }`; `404 friend_invitation_not_found`; `409 friend_invitation_accepted` |
+| `POST /friend-invitations/preview` (#110, no credential needed) | `{ token }` | `200 { invitation: { inviter: { displayName }, state } }`; `404 friend_invitation_unavailable` |
+| `POST /friend-invitations/accept` (#110) | `{ token }` | `200 { friend: { id, displayName }, duplicate }`; `404 friend_invitation_unavailable`; `409 own_friend_invitation` |
+| `GET /games/:id/invitation` (#110) | | `200 { invitation: { gameId, invitedEmail, createdAt } }` for the creator of a waiting game; `403 not_creator`; `409 invitation_used` |
 | `POST /games/:id/invitation` | | `200 { game, invitation: { token } }` (creator only, game still waiting) |
 | `POST /invitations/redeem` | `{ token }` | `200 { game }` |
 | `GET /games` | | `200 { games: [game…] }` (newest activity first, at most 200) |
@@ -475,9 +554,9 @@ Errors are `{ "error": { "code", "message", … } }`:
 | 400 | `bad_request` (invalid body or fields, or an action of another game type), `unsupported_game_type` |
 | 401 | `unauthenticated` (missing or unknown credential) |
 | 403 | `not_creator` |
-| 404 | `not_found`, `player_not_found`, `game_not_found`, `invitation_not_found` |
-| 409 | `stale_revision` (includes `game`), `not_your_turn`, `not_started`, `not_finished`, `deletion_changed` (includes `deletion`), `game_finished`, `invitation_used`, `already_participant`, `request_id_reused` |
-| 410 | `game_deleted` (a creation retry for a game that has been deleted, #93) |
+| 404 | `not_found`, `player_not_found`, `game_not_found`, `invitation_not_found`, `friend_invitation_unavailable`, `friend_invitation_not_found` |
+| 409 | `stale_revision` (includes `game`), `not_your_turn`, `not_started`, `not_finished`, `deletion_changed` (includes `deletion`), `game_finished`, `invitation_used`, `already_participant`, `request_id_reused`, `friend_invitation_limit` (includes `limit`), `friend_invitation_accepted`, `own_friend_invitation` |
+| 410 | `game_deleted` (a creation retry for a game that has been deleted, #93), `friend_invitation_expired` (a creation retry for a friend link that has expired, #110) |
 | 413 | `too_large` |
 | 422 | `illegal_move`, `illegal_castle`, `use_castle_action` (Chess960), `unsupported_game` (a game this server or client cannot read) |
 
@@ -524,6 +603,8 @@ Migrations live in `supabase/migrations/`.
 | `game_invitations` | token hash, seat, invited email, redemption |
 | `game_actions` | every accepted move, castle, resignation, throw and score with request ID and resulting revision |
 | `deleted_game_requests` | creator and creation request ID of each deleted game, with the deletion time (#93); nothing else about the game |
+| `friend_invitations` | a friend link: creator, creation request ID, token hash, created and expiry times, who accepted and when (#110); no recipient |
+| `player_connections` | a lasting connection between two players, one row per pair (#110) |
 
 All tables have row level security enabled without policies, and privileges are
 revoked from `anon` and `authenticated`. The Supabase REST and GraphQL APIs therefore
