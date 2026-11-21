@@ -11,7 +11,8 @@ The app keeps no "last page". The address decides what opens:
 
 So a launch lands on an old game only when whatever launched it carries that game's address.
 The report behind #112 (phone launches landing on an old finished chess game) is that case.
-Which launch path the owner's phone used is **not yet observed**; see the last section.
+The owner's phone is an iPhone, and he thinks it was a Home Screen icon; that it was, and what
+the icon does now, is **not yet confirmed**. See the last section.
 
 ## Launch paths
 
@@ -70,9 +71,11 @@ knows you; and an invitation link tapped in Messages opens in Safari, not in the
 - **Not verified on a device:** the rule on a real iPhone icon; that iOS and Android use the
   manifest's `start_url` for a new icon on this site (taken from their documentation); and how
   iOS 26 treats `display: browser`.
-- **Still needed from the owner:** how the phone was opening the app when it landed on the old
-  game (Home Screen icon, a bookmark, or the browser's open tab), and what the same action does
-  after this change.
+- **From the owner (2026-11-21):** the phone is an iPhone, and the launches were probably from
+  a Home Screen icon (his words: "sorry if was home screen anomaly"). That is the case the
+  iPhone rule above is for.
+- **Still needed from the owner:** to confirm it was the Home Screen icon, and what tapping
+  that same icon opens after this change is live.
 
 Sources: [WebKit: features in Safari 26.0](https://webkit.org/blog/17333/webkit-features-in-safari-26-0/)
 (every site added to the Home Screen opens as a web app by default);
