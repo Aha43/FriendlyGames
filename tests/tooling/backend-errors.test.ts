@@ -69,23 +69,81 @@ describe('make backend-errors', () => {
     expect(run(serving(4), '--report-only').out).toContain('No unexplained backend errors.');
   });
 
-  it('shows other runtime trouble reduced, capped, and never the routine lines', () => {
+  it('shows other runtime trouble reduced, and never the routine lines', () => {
     const secret = 'SECRETcredential0123456789abcdefghijklmnopq';
     const trouble = [
       `worker boot error: failed to reach postgresql://postgres:hunter2@db.example.test:5432/postgres for "harald@example.test" ${secret}`,
       'event loop error: wall clock duration limit reached',
-      ...Array.from({ length: 100 }, (_, i) => `worker ${i} terminated`),
     ];
     const found = examine([serving(20), ...trouble, controlled].join('\n'));
-    expect(found.runtimeTotal).toBe(102);
-    expect(found.runtime).toHaveLength(60);
-    expect(found.runtime[0]).toBe('worker boot error: failed to reach … for "…" …');
-    expect(found.runtime[1]).toBe('event loop error: wall clock duration limit reached');
+    expect(found.runtime.map((m) => m.text)).toEqual(['worker boot error: failed to reach … for "…" …', 'event loop error: wall clock duration limit reached']);
     const { text, ok } = report(found, { expectControlled: true, reportOnly: false });
     expect(ok).toBe(true); // runtime lines inform; only the function's own errors decide
-    expect(text).toContain('Other runtime lines that mention trouble: 102 (first 60 shown)');
+    expect(text).toContain('Other runtime lines that mention trouble: 2, in 2 distinct message(s)');
     for (const leaked of [secret, 'hunter2', 'harald', 'serving the request']) expect(text).not.toContain(leaked);
-    expect(reduce(`x ${'a'.repeat(500)}`).length).toBeLessThanOrEqual(240);
+    expect(reduce(`x ${'a '.repeat(500)}`).length).toBeLessThanOrEqual(240);
+  });
+
+  it('takes single-quoted values and bare database addresses out of runtime lines (review of fa7a97a)', () => {
+    expect(reduce("password authentication failed for 'sample-pass' at db.example.test:6543")).toBe("password authentication failed for '…' at …");
+    const cases: [string, string[]][] = [
+      ["FATAL: password authentication failed for user 'postgres' (pass 'hunter2')", ['postgres', 'hunter2']],
+      ['connection error: connect ECONNREFUSED 10.0.0.12:5432', ['10.0.0.12', '5432']],
+      ['connection error: connect ECONNREFUSED [fd00::12]:5432', ['fd00', '5432']],
+      ['failed to connect to supabase_db_friendlygames:5432 after timeout', ['supabase_db_friendlygames', '5432']],
+      ['error reaching localhost:54322 and db:6543', ['54322', '6543', 'localhost']],
+      ['error: host aws-0-eu-north-1.pooler.supabase.com refused', ['pooler', 'supabase.com', 'eu-north']],
+      ["invalid input 'O''Brien' for harald@example.test", ['Brien', 'harald', 'example.test']],
+      ['2026-11-21T19:30:07.148123456Z error: token SECRETcredential0123456789abcdefghijklmnopq rejected', ['SECRETcredential']],
+    ];
+    for (const [line, secrets] of cases) {
+      const shown = reduce(line);
+      for (const secret of secrets) expect(shown, line).not.toContain(secret);
+      // The same line through the whole report.
+      const { text } = report(examine(line), { expectControlled: false, reportOnly: true });
+      for (const secret of secrets) expect(text, line).not.toContain(secret);
+    }
+    // The time is kept; fixed wording is kept.
+    expect(reduce('2026-11-21T19:30:07.148123456Z CPU time soft limit reached: isolate: 3f2b8c1e-5d47-4a6b-9c0d-1e2f3a4b5c6d')).toBe(
+      '2026-11-21T19:30:07.148Z CPU time soft limit reached: isolate: …',
+    );
+    // A line that claims to be the function's own but is not in its form is reduced too.
+    const forged = examine("game-api: unexpected error: failed for 'sample-pass' at db.example.test:6543").unexplained[0];
+    expect(forged).toBe("game-api: unexpected error: failed for '…' at …");
+  });
+
+  it('keeps a single different error that arrives after many repeated warnings (review of fa7a97a)', () => {
+    const stamp = (i: number) => `2026-11-21T19:30:${String(Math.floor(i / 10) % 60).padStart(2, '0')}.${String(i % 10)}00Z`;
+    const repeated = Array.from({ length: 300 }, (_, i) => [
+      `${stamp(i)} CPU time soft limit reached: isolate: 3f2b8c1e-5d47-4a6b-9c0d-${String(i).padStart(12, '0')}`,
+      `${stamp(i)} early termination has been triggered: isolate: 3f2b8c1e-5d47-4a6b-9c0d-${String(i).padStart(12, '0')}`,
+      `${stamp(i)} worker ${i} terminated`,
+    ]).flat();
+    const late = '2026-11-21T19:45:01.250Z connection error: Connection reset by peer (os error 104)';
+    const found = examine([...repeated, serving(2000), late, serving(2000), controlled].join('\n'));
+    expect(found.runtimeTotal).toBe(901);
+    expect(found.runtimeDistinct).toBe(4);
+    expect(found.runtime.map((m) => [m.text, m.count])).toEqual([
+      ['CPU time soft limit reached: isolate: …', 300],
+      ['early termination has been triggered: isolate: …', 300],
+      ['worker 0 terminated', 300],
+      ['connection error: Connection reset by peer (os error 104)', 1],
+    ]);
+    const { text } = report(found, { expectControlled: true, reportOnly: false });
+    expect(text).toContain('Other runtime lines that mention trouble: 901, in 4 distinct message(s), each shown once with its times');
+    expect(text).toContain('  connection error: Connection reset by peer (os error 104)\n    ×1 on 2026-11-21 at 19:45:01.250');
+    // Repeats are summarised with their times: the first forty, then the last.
+    expect(text).toMatch(/ {2}CPU time soft limit reached: isolate: …\n {4}×300 on 2026-11-21 at 19:30:00\.000, 19:30:00\.100, .*, … last 19:30:29\.900\n/);
+    expect(text.split('\n').length).toBeLessThan(30);
+    expect(text).not.toContain('NOT shown');
+  });
+
+  it('says so if there are more distinct messages than it shows, rather than dropping them silently', () => {
+    const many = Array.from({ length: 250 }, (_, i) => `error kind ${'abcdefghij'[i % 10]}${'klmnopqrst'[Math.floor(i / 10) % 10]}${'uvwxyzABCD'[Math.floor(i / 100)]} happened`);
+    const found = examine(many.join('\n'));
+    expect(found.runtimeDistinct).toBe(250);
+    expect(found.runtime).toHaveLength(200);
+    expect(report(found, { expectControlled: false, reportOnly: true }).text).toContain('… and 50 more distinct message(s) NOT shown: read the runtime log itself.');
   });
 
   it('keeps each line’s time when the log has them, so a failure can be set beside a runtime event', () => {
@@ -96,7 +154,7 @@ describe('make backend-errors', () => {
       `2026-11-21T19:20:40.5Z ${controlled}`,
     ].join('\n');
     const found = examine(log);
-    expect(found.runtime).toEqual(['2026-11-21T19:20:30.123Z CPU time soft limit reached: isolate: …']);
+    expect(found.runtime).toEqual([{ text: 'CPU time soft limit reached: isolate: …', count: 1, times: ['2026-11-21T19:20:30.123Z'] }]);
     expect(found.unexplained).toEqual([`2026-11-21T19:20:30.200Z ${deadlock}`]);
     expect(found.controlled).toEqual([`2026-11-21T19:20:40.5Z ${controlled}`]);
   });

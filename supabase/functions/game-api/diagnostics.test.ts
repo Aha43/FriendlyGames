@@ -35,6 +35,9 @@ describe('the reduced message', () => {
     );
     for (const secret of ['harald', 'example.test', CREDENTIAL, 'hunter2', 'postgresql', GAME, 'Brien', '1234567', '\n']) expect(worst).not.toContain(secret);
     expect(safeMessage('x'.repeat(10) + ' y'.repeat(400)).length).toBeLessThanOrEqual(160);
+    // Review of fa7a97a: single-quoted values and bare addresses, with or without a dot.
+    expect(safeMessage("password authentication failed for 'sample-pass' at db.example.test:6543")).toBe("password authentication failed for '…' at …");
+    expect(safeMessage('could not connect to supabase_db_friendlygames:5432 or localhost:54322 or [fd00::12]:5432')).toBe('could not connect to … or … or …');
     expect(safeMessage(undefined)).toBe('-');
     expect(safeMessage({ toString: () => CREDENTIAL })).toBe('-');
   });

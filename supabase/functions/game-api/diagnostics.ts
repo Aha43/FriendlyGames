@@ -30,13 +30,13 @@ export function newErrorId(): string {
 const short = (value: unknown, pattern: RegExp): string => (typeof value === 'string' && pattern.test(value) ? value : '-');
 
 /**
- * An error message with everything that could be data taken out: quoted values, emails, links and
- * hosts, IDs, tokens, long numbers. What stays is the fixed wording, e.g. `deadlock detected` or
- * `duplicate key value violates unique constraint "…"`.
+ * Text with everything that could be data taken out: quoted values (double or single), emails,
+ * links, hosts and addresses with or without a port, IDs, tokens and long numbers. What stays is
+ * the fixed wording, e.g. `deadlock detected` or `duplicate key value violates unique constraint "…"`.
+ * Also used for the runtime's own log lines before CI prints them (scripts/backend-errors.ts).
  */
-export function safeMessage(message: unknown): string {
-  if (typeof message !== 'string') return '-';
-  return message
+export function redact(text: string): string {
+  return text
     .replace(/[\r\n\t]+/g, ' ')
     .replace(/"[^"]*"/g, '"…"')
     .replace(/'[^']*'/g, "'…'")
@@ -45,10 +45,17 @@ export function safeMessage(message: unknown): string {
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '…')
     .replace(/[A-Za-z0-9_-]{24,}/g, '…')
     .replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g, '…')
-    .replace(/\b[\w.-]+\.[a-z]{2,}(?::\d+)?\b/gi, '…')
-    .replace(/\d{5,}/g, '…')
-    .slice(0, 160)
-    .trim();
+    .replace(/\[[0-9a-f:]*:[0-9a-f:]+\](?::\d+)?/gi, '…')
+    .replace(/\b[\w-]+(?:\.[\w-]+)*\.[a-z]{2,}(?::\d+)?\b/gi, '…')
+    .replace(/\b(?:localhost|[a-z][\w-]*):\d{2,5}\b/gi, '…')
+    .replace(/…:\d+/g, '…') // a port left behind by a host that was already taken out
+    .replace(/\d{5,}/g, '…');
+}
+
+/** An error message, reduced (see `redact`) and kept short. */
+export function safeMessage(message: unknown): string {
+  if (typeof message !== 'string') return '-';
+  return redact(message).slice(0, 160).trim();
 }
 
 /**
