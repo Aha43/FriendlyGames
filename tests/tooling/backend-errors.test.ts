@@ -28,6 +28,68 @@ function run(log: string, ...flags: string[]) {
   return { status: viaFile.status, out: viaFile.stdout + viaFile.stderr };
 }
 
+/** scripts/backend-errors.sh with stand-ins for `docker` and `node` first on PATH. */
+function collect(fakes: { docker: string; node?: string }, ...flags: string[]) {
+  const bin = mkdtempSync(join(dir, 'bin-'));
+  const realNode = process.execPath;
+  writeFileSync(join(bin, 'docker'), `#!/usr/bin/env bash\n${fakes.docker}\n`, { mode: 0o755 });
+  // By default the real checker; a test may put a crashing one in front of it.
+  writeFileSync(join(bin, 'node'), `#!/usr/bin/env bash\nREAL_NODE="${realNode}"\nCOUNT_FILE="${join(bin, 'runs')}"\n${fakes.node ?? 'exec "$REAL_NODE" "$@"'}\n`, { mode: 0o755 });
+  const ran = spawnSync('bash', ['scripts/backend-errors.sh', ...flags], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+  return { status: ran.status, out: ran.stdout + ran.stderr };
+}
+
+describe('scripts/backend-errors.sh: saving the log, then checking it (review of f1f4e92)', () => {
+  const logged = [serving(3), `2026-11-21T19:30:25.328Z ${controlled}`, serving(3)].join('\n');
+  const printLog = `[ "$1 $2 $3" = "logs -t supabase_edge_runtime_friendlygames" ] || { echo "unexpected: $*"; exit 9; }\ncat <<'LOG'\n${logged}\nLOG`;
+  // Dies as the checker once did in CI: an abort before it prints anything.
+  const crashOnce = `n=$(cat "$COUNT_FILE" 2>/dev/null || echo 0); echo $((n + 1)) > "$COUNT_FILE"\nif [ "$n" -lt CRASHES ]; then echo "malloc(): invalid size (unsorted)" >&2; kill -ABRT $$; fi\nexec "$REAL_NODE" "$@"`;
+
+  it('reads the saved log and gives the checker’s verdict', () => {
+    const { status, out } = collect({ docker: printLog }, '--expect-controlled');
+    expect(status).toBe(0);
+    expect(out).toContain('Backend runtime log: 7 lines read.');
+    expect(out).toContain('No unexplained backend errors.');
+    // And its failing verdict is passed on unchanged, without a second run.
+    const bad = collect({ docker: `cat <<'LOG'\n${deadlock}\n${controlled}\nLOG` }, '--expect-controlled');
+    expect(bad.status).toBe(1);
+    expect(bad.out.match(/Backend runtime log:/g)).toHaveLength(1);
+    expect(bad.out).toMatch(/FAIL {2}1 unexpected error\(s\) in the game API/);
+  });
+
+  it('when the checker itself is killed, says so, runs it once more on the same log, and uses that verdict', () => {
+    const { status, out } = collect({ docker: printLog, node: crashOnce.replace('CRASHES', '1') }, '--expect-controlled');
+    expect(out).toContain('malloc(): invalid size (unsorted)');
+    expect(out).toContain('The log check itself crashed (exit 134, attempt 1 of 2). That is a fault in the check, not evidence about the backend.');
+    expect(out).toContain('No unexplained backend errors.');
+    expect(status).toBe(0);
+    // A real unexpected error is still found after such a crash: the retry cannot hide it.
+    const bad = collect({ docker: `cat <<'LOG'\n${deadlock}\n${controlled}\nLOG`, node: crashOnce.replace('CRASHES', '1') }, '--expect-controlled');
+    expect(bad.status).toBe(1);
+    expect(bad.out).toMatch(/FAIL {2}1 unexpected error\(s\) in the game API/);
+  });
+
+  it('fails when the checker is killed twice, or the log cannot be read: nothing was checked', () => {
+    const twice = collect({ docker: printLog, node: crashOnce.replace('CRASHES', '2') }, '--expect-controlled');
+    expect(twice.status).toBe(1);
+    expect(twice.out).toContain('attempt 2 of 2');
+    expect(twice.out).toContain('FAIL  The log check crashed twice on the same saved log (last exit 134). Nothing was checked.');
+    const noLog = collect({ docker: 'echo "Error response from daemon: No such container"; exit 1' }, '--expect-controlled');
+    expect(noLog.status).toBe(1);
+    expect(noLog.out).toContain("FAIL  Could not read the runtime's log: 'docker logs supabase_edge_runtime_friendlygames' exited 1. Nothing was checked.");
+    expect(noLog.out).not.toContain('Backend runtime log:');
+  });
+
+  it('in the browser job, warns instead of failing for either', () => {
+    const twice = collect({ docker: printLog, node: crashOnce.replace('CRASHES', '2') }, '--report-only');
+    expect(twice.status).toBe(0);
+    expect(twice.out).toContain('::warning::The log check crashed twice on the same saved log');
+    const noLog = collect({ docker: 'exit 1' }, '--report-only');
+    expect(noLog.status).toBe(0);
+    expect(noLog.out).toContain("::warning::Could not read the runtime's log");
+  });
+});
+
 describe('make backend-errors', () => {
   it('finds an error logged early, under thousands of later lines, and fails on it', () => {
     const log = [serving(3), `\u001b[31m[Error]\u001b[0m ${deadlock}`, serving(5000), controlled, serving(5000)].join('\n');
@@ -165,7 +227,7 @@ describe('make backend-errors', () => {
     expect(ci).toMatch(/- run: make e2e\n(?: +#.*\n)+ +- if: \$\{\{ !cancelled\(\) \}\}\n +run: make backend-errors BACKEND_ERRORS_FLAGS=--report-only\n/);
     expect(ci).not.toMatch(/tail -100/);
     const makefile = readFileSync(join(ROOT, 'Makefile'), 'utf8');
-    expect(makefile).toMatch(/backend-errors:\n\t@docker logs -t supabase_edge_runtime_friendlygames 2>&1 \| node scripts\/backend-errors\.ts \$\(BACKEND_ERRORS_FLAGS\)\n/);
+    expect(makefile).toMatch(/backend-errors:\n\t@scripts\/backend-errors\.sh \$\(BACKEND_ERRORS_FLAGS\)\n/);
     // The deliberate failure the check expects is the one the backend suite makes.
     expect(readFileSync(join(ROOT, 'tests/backend/migrations/diagnostics.test.ts'), 'utf8')).toContain(`const CONTROLLED = '${CONTROLLED}';`);
   });

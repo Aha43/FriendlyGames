@@ -89,6 +89,12 @@ traceable in CI without publishing anything private:
   that the evidence path works, and it fails the job on any other unexpected error, also when
   every test passed. After the browser journeys it only reports, as a warning: the site repeats
   a failed read, which would otherwise hide it.
+- `make backend-errors` saves the runtime's log to a file first and checks that file
+  (`scripts/backend-errors.sh`). If the checker itself is killed (it once aborted in CI with a
+  memory error before printing anything), that is reported as a fault in the check, and it is
+  run once more on the same saved log. Reading a saved log again cannot hide a backend failure.
+  If the log cannot be read, or the checker dies twice, the backend job fails with "Nothing was
+  checked".
 - Do not add retries to backend tests or widen expected statuses to get past such a failure.
 
 **PR tracking** (`.github/workflows/pr-tracking.yml`, #36) checks every pull request:
