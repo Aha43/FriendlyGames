@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Color } from '@shared/chess/board.ts';
 import AboutChess960 from '../components/AboutChess960';
 import InvitationShare from '../components/InvitationShare';
+import InvitedEmail from '../components/InvitedEmail';
 import MoveList from '../components/MoveList';
 import PlayBoard from '../components/PlayBoard';
 import PlayerPlate, { type PlateBadge } from '../components/PlayerPlate';
@@ -339,6 +340,10 @@ export default function SharedGamePage({ identity, gameId, onIdentityRejected, o
           </div>
         )}
 
+        {/* Nobody has joined: remind the creator who they invited (#113). */}
+        {game.status === 'waiting' && game.players.white?.id === identity.playerId && (
+          <InvitedEmail identity={identity} gameId={game.id} onIdentityRejected={onIdentityRejected} />
+        )}
         {game.status === 'waiting' &&
           (token ? (
             <InvitationShare token={token} gameLabel={typeName} />

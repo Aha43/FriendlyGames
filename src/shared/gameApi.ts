@@ -407,6 +407,12 @@ export const gameApi = {
       undefined,
       'never',
     ),
+  /**
+   * The recipient email of the creator's own game that nobody has joined yet (#110, #113). For
+   * anyone else, or once someone has joined, the server refuses.
+   */
+  pendingInvitation: (credential: string, gameId: string) =>
+    request<{ invitation: { gameId: string; invitedEmail: string; createdAt: string } }>('GET', `/games/${encodeURIComponent(gameId)}/invitation`, credential),
   /** A new invitation link for the creator of a game nobody has joined; earlier links stop working. */
   renewInvitation: (credential: string, id: string) =>
     request<{ game: SharedGame; invitation: { token: string } }>(

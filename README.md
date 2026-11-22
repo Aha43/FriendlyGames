@@ -39,6 +39,11 @@ started. You then find each other under *Play with* for Chess, Fischer Random an
 invitations are listed with their dates, and a lost link is replaced (the old one stops
 working). Inviting someone to a particular chess game by email works as before.
 
+**Player details.** Your name in the top bar shows your own details with your email, which
+only you see. *Details* beside a name under *Play with* shows who that is to you: connected by
+invitation since when, and how many games you share, never their email. A game still waiting
+for someone you invited by email shows you, and only you, the address you invited.
+
 **Deleting a finished game.** On a finished Chess, Fischer Random or Yatzy game, anyone who
 played it can choose *Delete game…*. The confirmation names the game and says it disappears for
 everyone, including from history and results, and can't be undone. If it is the last game you

@@ -14,6 +14,8 @@ const SHORT_LIST = 6;
 
 interface NewTableProps {
   identity: Identity;
+  /** Open the details of a player in the list (#113). */
+  onDetails: (player: PreviousOpponent) => void;
   /** The game-type choice, shared with the chess form. */
   typePicker: ReactNode;
   /** Loading and failure notes for the list of previous opponents. */
@@ -51,6 +53,7 @@ export default function NewTable({
   onBusy,
   onCreated,
   onIdentityRejected,
+  onDetails,
 }: NewTableProps) {
   const [mode, setMode] = useState<'forced' | 'free'>('forced');
   // Guests in the order picked: that is the turn order after the host.
@@ -134,23 +137,28 @@ export default function NewTable({
             {(showAll ? known : known.slice(0, SHORT_LIST)).map((o) => {
               const place = roster.indexOf(o.id);
               return (
-                <label key={o.id} className="opponent-option">
-                  <input
-                    type="checkbox"
-                    name="guest"
-                    value={o.id}
-                    checked={place >= 0}
-                    disabled={place < 0 && full}
-                    onChange={() => toggle(o.id)}
-                    aria-labelledby={`guest-${o.id}-name`}
-                  />
-                  <span className="opponent-text">
-                    <span id={`guest-${o.id}-name`} className="opponent-name">
-                      {o.displayName}
+                <div key={o.id} className="opponent-row">
+                  <label className="opponent-option">
+                    <input
+                      type="checkbox"
+                      name="guest"
+                      value={o.id}
+                      checked={place >= 0}
+                      disabled={place < 0 && full}
+                      onChange={() => toggle(o.id)}
+                      aria-labelledby={`guest-${o.id}-name`}
+                    />
+                    <span className="opponent-text">
+                      <span id={`guest-${o.id}-name`} className="opponent-name">
+                        {o.displayName}
+                      </span>
+                      {place >= 0 && <span className="opponent-meta">Plays {['second', 'third', 'fourth'][place]}</span>}
                     </span>
-                    {place >= 0 && <span className="opponent-meta">Plays {['second', 'third', 'fourth'][place]}</span>}
-                  </span>
-                </label>
+                  </label>
+                  <button type="button" className="button button-quiet opponent-details" aria-label={`Details about ${o.displayName}`} onClick={() => onDetails(o)}>
+                    Details
+                  </button>
+                </div>
               );
             })}
             {!showAll && known.length > SHORT_LIST && (

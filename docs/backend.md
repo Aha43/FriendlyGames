@@ -581,6 +581,14 @@ Errors are `{ "error": { "code", "message", … } }`:
   keeps its request ID until it is confirmed; replacement and acceptance are simply repeated.
   The picker asks for friends without a shared game (`friends=1`) and shows "No games
   together yet" for them.
+- Player details (#113) need no endpoint of their own. Another player's details are drawn
+  from the caller's own `GET /opponents?friends=1` answer (name, `connectedAt`,
+  `sharedGames`, `lastSharedGameUpdatedAt`), so a player outside that list cannot be looked
+  up, and no response about another player carries an email. A player's own details read
+  their email from `GET /me` when opened. For a waiting chess-family game the creator's
+  client asks `GET /games/:id/invitation` and shows the invited email in the lobby list and
+  on the game page; any refusal (joined meanwhile, not the creator) shows nothing. Neither
+  email is kept in `localStorage`, put in an address or logged.
 - A shared game polls every 4 seconds while visible and refreshes on return to the page.
   A move shows as "saving" until the server confirms it. On a network or server failure
   the outcome is unknown: the page says it couldn't confirm whether the move was saved,

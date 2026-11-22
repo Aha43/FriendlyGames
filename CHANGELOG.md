@@ -17,6 +17,13 @@ versions live in `package.json`; actual deployments are recorded separately in
   shown only when it is made, so a lost one is replaced: you get a new link for the same
   invitation, valid for 30 days, and the old link stops working. You can have 20 waiting at a
   time (#111).
+- **Player details.** Your name in the top bar opens your own details, with the email you
+  entered; only you see it. *Details* beside a name under *Play with* shows that player's name,
+  whether you are connected by invitation and since when, and how many games you share. It
+  never shows another player's email (#113).
+- A game that is still waiting for the friend you invited by email now says who you invited,
+  in *Games in progress* and on the game's page. Only you, the game's creator, see it, also on
+  another device and for games created earlier; it goes away when someone joins (#113).
 
 ### Changed
 
