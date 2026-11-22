@@ -1,7 +1,8 @@
 // make backend-errors (#116): what the local backend's runtime logged about failures, over the
 // whole run rather than its last lines.
 //
-// Reads the Edge runtime's log on standard input (or `--file <path>`), and prints:
+// Reads the Edge runtime's log from `--file <path>` (as scripts/backend-errors.sh gives it) or
+// standard input, and prints:
 // 1. every `game-api: unexpected error` line. The function writes those itself and they hold only
 //    safe parts: an ID, the route pattern, the error's class, code and reduced message.
 // 2. other runtime lines that look like trouble (errors, limits, restarts), reduced by the same
@@ -137,12 +138,19 @@ export function report(found: Findings, mode: { expectControlled: boolean; repor
   return { text: out.join('\n'), ok: mode.reportOnly || problems.length === 0 };
 }
 
-function main(argv: string[]): number {
+/** Standard input, read as a stream. (Not `readFileSync(0)`: a synchronous read of a pipe that is still being written is fragile.) */
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+async function main(argv: string[]): Promise<number> {
   const fileAt = argv.indexOf('--file');
-  const log = readFileSync(fileAt >= 0 ? argv[fileAt + 1] : 0, 'utf8');
+  const log = fileAt >= 0 ? readFileSync(argv[fileAt + 1], 'utf8') : await readStdin();
   const { text, ok } = report(examine(log), { expectControlled: argv.includes('--expect-controlled'), reportOnly: argv.includes('--report-only') });
   console.log(text);
   return ok ? 0 : 1;
 }
 
-if (process.argv[1]?.endsWith('backend-errors.ts')) process.exit(main(process.argv.slice(2)));
+if (process.argv[1]?.endsWith('backend-errors.ts')) process.exitCode = await main(process.argv.slice(2));
