@@ -569,6 +569,9 @@ Errors are `{ "error": { "code", "message", … } }`:
 - The device credential and the creator's unredeemed invitation tokens live in
   `localStorage`; the app never logs them, and Playwright runs without traces,
   screenshots or HTML reports so they do not end up in test artifacts.
+- The app keeps no "last page": the address decides what opens, and the root opens *Your
+  games*. The one launch it redirects is an iPhone Home Screen icon cold-starting at a game
+  or invitation address ([launch-paths.md](launch-paths.md), #112).
 - A friend link (`#/friend/<token>`, #111) has its own route, so it is never taken for a game
   invitation; a site from before #111 opens the lobby for it. The page shows who invites
   before anything else (the preview needs no player), then the usual email entry for a new
