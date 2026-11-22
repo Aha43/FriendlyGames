@@ -117,6 +117,27 @@ describe('game types this client reads (#53)', () => {
   });
 });
 
+describe('who the creator invited (#113)', () => {
+  it('is a read of that one game, with the credential in a header and nothing in the address', async () => {
+    const invitation = { gameId: 'g1', invitedEmail: 'kari@example.test', createdAt: '2026-11-22T10:00:00Z' };
+    fetchMock.mockImplementationOnce(async () => reply(200, { invitation }));
+    expect(await settle(gameApi.pendingInvitation(CRED, 'g1'))).toEqual({ value: { invitation } });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new URL(url).pathname).toMatch(/\/games\/g1\/invitation$/);
+    expect(url).not.toContain(CRED);
+    expect(url).not.toContain('@');
+    expect(init.method).toBe('GET');
+    expect(init.body).toBeUndefined();
+  });
+
+  it('does not repeat a refusal', async () => {
+    fetchMock.mockImplementation(async () => reply(403, { error: { code: 'not_creator', message: 'x' } }));
+    const outcome = await settle(gameApi.pendingInvitation(CRED, 'g1'));
+    expect((outcome as { error: ApiError }).error.code).toBe('not_creator');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('deleting a finished game (#93)', () => {
   it('asks who is affected with a read, and deletes with one DELETE that is never repeated', async () => {
     fetchMock.mockImplementationOnce(async () => reply(200, { deletion: { gameId: 'g1', removesFromPlayWith: [] } }));

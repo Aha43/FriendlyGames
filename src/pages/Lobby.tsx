@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import ChessHistory from '../components/ChessHistory';
 import InvitationShare from '../components/InvitationShare';
+import InvitedEmail from '../components/InvitedEmail';
 import InviteFriend from '../components/InviteFriend';
+import PlayerDetails from '../components/PlayerDetails';
 import NewTable, { type UncertainTable } from '../components/NewTable';
 import YatzyHistory from '../components/YatzyHistory';
 import { CHESS960_CASTLING, CHESS960_SUMMARY, GAME_TYPES, tableView, typeLabel, type GameType } from '../games/registry';
@@ -91,7 +93,7 @@ export default function Lobby({ identity, onIdentityRejected }: LobbyProps) {
         {loadError && <p className="banner banner-warning">{loadError}</p>}
         {games === null && !loadError && <p className="muted">Looking for your games…</p>}
         {games !== null && ongoing.length === 0 && <p className="muted">No games in progress. Start one below.</p>}
-        {ongoing.length > 0 && <GameLinks games={ongoing} label="Games in progress" />}
+        {ongoing.length > 0 && <GameLinks games={ongoing} label="Games in progress" identity={identity} onIdentityRejected={onIdentityRejected} />}
       </section>
 
       {history && <ChessHistory history={history} />}
@@ -109,7 +111,17 @@ export default function Lobby({ identity, onIdentityRejected }: LobbyProps) {
   );
 }
 
-function GameLinks({ games, label }: { games: AnyGame[]; label: string }) {
+function GameLinks({
+  games,
+  label,
+  identity,
+  onIdentityRejected,
+}: {
+  games: AnyGame[];
+  label: string;
+  identity: Identity;
+  onIdentityRejected: () => void;
+}) {
   return (
     <ul className="game-links" aria-label={label}>
       {games.map((game) => {
@@ -140,6 +152,10 @@ function GameLinks({ games, label }: { games: AnyGame[]; label: string }) {
                 {game.yourSeat === 'white' ? 'White' : 'Black'} · {game.moveCount} moves
               </span>
             </a>
+            {/* Nobody has joined: remind the creator who they invited (#113). Outside the link, so it can be selected. */}
+            {game.status === 'waiting' && game.players.white?.id === identity.playerId && (
+              <InvitedEmail identity={identity} gameId={game.id} onIdentityRejected={onIdentityRejected} />
+            )}
           </li>
         );
       })}
@@ -174,6 +190,8 @@ function NewGame({
   // Nobody is chosen until the player picks someone (#73).
   const [choice, setChoice] = useState<Target | null>(null);
   const [opponents, setOpponents] = useState<PreviousOpponent[] | null>(null);
+  // Whose details are open, from the Details button beside a name (#113).
+  const [details, setDetails] = useState<PreviousOpponent | null>(null);
   const [opponentsFailed, setOpponentsFailed] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -295,6 +313,9 @@ function NewGame({
 
   return (
     <section className="card" aria-labelledby="new-game-title">
+      {details && (
+        <PlayerDetails identity={identity} subject={{ kind: 'other', player: details }} onClose={() => setDetails(null)} onIdentityRejected={onIdentityRejected} />
+      )}
       <h2 id="new-game-title">Start a game</h2>
       {type === 'yatzy' ? (
         <NewTable
@@ -307,6 +328,7 @@ function NewGame({
           onBusy={setTableBusy}
           onCreated={onCreated}
           onIdentityRejected={onIdentityRejected}
+          onDetails={setDetails}
         />
       ) : created ? (
         <>
@@ -342,25 +364,31 @@ function NewGame({
             <fieldset className="opponent-picker">
               <legend>Play with</legend>
               {(showAll ? opponents : opponents.slice(0, SHORT_LIST)).map((o) => (
-                <label key={o.id} className="opponent-option">
-                  <input
-                    type="radio"
-                    name="opponent"
-                    value={o.id}
-                    checked={mode === 'player' && choice?.kind === 'player' && choice.playerId === o.id}
-                    onChange={() => setChoice({ kind: 'player', playerId: o.id })}
-                    aria-labelledby={`opponent-${o.id}-name`}
-                    aria-describedby={`opponent-${o.id}-meta`}
-                  />
-                  <span className="opponent-text">
-                    <span id={`opponent-${o.id}-name`} className="opponent-name">
-                      {o.displayName}
+                <div key={o.id} className="opponent-row">
+                  <label className="opponent-option">
+                    <input
+                      type="radio"
+                      name="opponent"
+                      value={o.id}
+                      checked={mode === 'player' && choice?.kind === 'player' && choice.playerId === o.id}
+                      onChange={() => setChoice({ kind: 'player', playerId: o.id })}
+                      aria-labelledby={`opponent-${o.id}-name`}
+                      aria-describedby={`opponent-${o.id}-meta`}
+                    />
+                    <span className="opponent-text">
+                      <span id={`opponent-${o.id}-name`} className="opponent-name">
+                        {o.displayName}
+                      </span>
+                      <span id={`opponent-${o.id}-meta`} className="opponent-meta">
+                        {sharedSummary(o)}
+                      </span>
                     </span>
-                    <span id={`opponent-${o.id}-meta`} className="opponent-meta">
-                      {sharedSummary(o)}
-                    </span>
-                  </span>
-                </label>
+                  </label>
+                  {/* Beside the name, not inside its label: a second control (#113). */}
+                  <button type="button" className="button button-quiet opponent-details" aria-label={`Details about ${o.displayName}`} onClick={() => setDetails(o)}>
+                    Details
+                  </button>
+                </div>
               ))}
               {!showAll && opponents.length > SHORT_LIST && (
                 <button type="button" className="text-button show-all" onClick={() => setShowAll(true)}>

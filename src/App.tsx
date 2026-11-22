@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import ParkBackdrop from './components/ParkBackdrop';
 import { PIECE_SET_CREDIT, PIECE_SET_LICENSE_URL } from './components/pieceSet';
+import PlayerDetails from './components/PlayerDetails';
 import FriendInvitePage from './pages/FriendInvitePage';
 import JoinPage from './pages/JoinPage';
 import LocalPage from './pages/LocalPage';
@@ -29,6 +30,8 @@ export default function App() {
   const [identity, setIdentity] = useState<Identity | null>(loadIdentity);
   const [rejected, setRejected] = useState(false);
   const onIdentityRejected = useCallback(() => setRejected(true), []);
+  // The player's own details, opened from their name in the top bar (#113).
+  const [showMe, setShowMe] = useState(false);
 
   let content;
   if (route.page === 'local') {
@@ -80,9 +83,17 @@ export default function App() {
         <span className="topbar-game">Chess &amp; Yatzy</span>
         <nav className="topbar-nav" aria-label="Main">
           {route.page === 'local' ? <a href="#/">Your games</a> : <a href="#/local">Play on one device</a>}
-          {identity && route.page !== 'local' && <span className="topbar-player">{identity.displayName}</span>}
+          {identity && route.page !== 'local' && (
+            <button type="button" className="topbar-player" aria-label={`Your details, ${identity.displayName}`} onClick={() => setShowMe(true)}>
+              {identity.displayName}
+            </button>
+          )}
         </nav>
       </header>
+
+      {identity && showMe && (
+        <PlayerDetails identity={identity} subject={{ kind: 'self' }} onClose={() => setShowMe(false)} onIdentityRejected={onIdentityRejected} />
+      )}
 
       <main className={route.page === 'local' || route.page === 'game' ? 'layout' : 'layout layout-single'}>
         {content}

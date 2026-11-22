@@ -728,6 +728,61 @@ h2 {
 
 .confirm span { flex-basis: 100%; }
 
+/* ---------- player details and the invited email (#113) ---------- */
+
+.details-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(43, 29, 16, 0.55);
+}
+
+.details-card {
+  background: var(--paper);
+  border-radius: 14px;
+  padding: 1.1rem 1.2rem;
+  width: min(100%, 24rem);
+  max-height: 100%;
+  overflow: auto;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  overflow-wrap: anywhere;
+}
+
+.details-kicker { margin: 0; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); }
+.details-card h2 { font-size: 1.3rem; margin: 0 0 0.6rem; }
+.details-list { margin: 0 0 0.9rem; display: grid; gap: 0.55rem; }
+.details-list dt { font-size: 0.8rem; color: var(--ink-soft); }
+.details-list dd { margin: 0; font-weight: 600; }
+.details-note { margin: 0; font-size: 0.85rem; color: var(--ink-soft); }
+
+/* The top-bar name opens the player's own details: a button that reads as the name it was. */
+button.topbar-player {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0.15rem 0.3rem;
+  margin: -0.15rem -0.3rem;
+  border-radius: 6px;
+  cursor: pointer;
+  min-width: 0;
+  max-width: 100%;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+button.topbar-player:hover { background: rgba(217, 162, 58, 0.18); }
+button.topbar-player:focus-visible { outline: 3px solid #2f6fd6; outline-offset: 1px; }
+
+/* A name in Play with, and beside it the button to its details. */
+.form .opponent-row { display: flex; align-items: stretch; gap: 0.35rem; min-width: 0; }
+.form .opponent-row .opponent-option { flex: 1 1 auto; min-width: 0; }
+.form .opponent-details { flex: none; align-self: center; padding-inline: 0.5rem; font-size: 0.85rem; }
+
+.invited-email { margin: 0.25rem 0.2rem 0; font-size: 0.85rem; overflow-wrap: anywhere; }
+.invited-address { user-select: all; }
+
 /* ---------- inviting a friend (#111) ---------- */
 
 .invite-friend h3 { font-size: 1rem; margin: 1.1rem 0 0.25rem; }
