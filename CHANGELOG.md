@@ -6,6 +6,11 @@ versions live in `package.json`; actual deployments are recorded separately in
 
 ## Unreleased
 
+## v0.6.0 — Invite friends before choosing a game (2026-11-22)
+
+Sprint 9. The release date is when this version was prepared; the `v0.6.0` tag marks the
+accepted commit, published with `make release`.
+
 ### Added
 
 - **Invite a friend** on *Your games*, without choosing a game or typing their email. You get
@@ -47,6 +52,23 @@ versions live in `package.json`; actual deployments are recorded separately in
   connections that count for *Play with*, direct starts, tables and the deletion warning, and
   creator-only access to the recipient email of a pending game invitation. Nothing changes on
   the site yet; older clients get the picker exactly as before (#110).
+
+### Known limitations
+
+- Identity is still the prototype's: entering an email opens that player, with no proof that
+  the email is yours. Your email is shown only to you, and an invited email only to the game's
+  creator, but anyone who enters your email sees what you see.
+- A friend invitation link works for whoever opens it first. It is not tied to an email, and
+  no email is sent; you send the link yourself.
+- A connection made by accepting an invitation cannot be removed, and a waiting invitation
+  cannot be withdrawn, only replaced or left to expire.
+- Player details open from *Play with* only, not from names on game cards or the board.
+- An Android Home Screen shortcut made on a game page still opens that game until it is
+  removed and added again. The iPhone change was confirmed on one iPhone; Android and
+  `display: browser` on iOS 26 were not checked on a device.
+- In CI the local backend has answered a single request with an error three times without a
+  known cause (#116). Nothing like it has been observed on the live site, and whether it can
+  happen there is not known.
 
 ## v0.5.0 — Finished game cleanup (2026-11-20)
 
