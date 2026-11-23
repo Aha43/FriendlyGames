@@ -11,8 +11,9 @@ The app keeps no "last page". The address decides what opens:
 
 So a launch lands on an old game only when whatever launched it carries that game's address.
 The report behind #112 (phone launches landing on an old finished chess game) is that case.
-The owner's phone is an iPhone, and he thinks it was a Home Screen icon; that it was, and what
-the icon does now, is **not yet confirmed**. See the last section.
+The owner's phone is an iPhone and the app is opened from a Home Screen icon. After the change
+went live he confirmed that the icon opens *Your games* and no longer the old game. See the
+last section.
 
 ## Launch paths
 
@@ -68,14 +69,15 @@ knows you; and an invitation link tapped in Messages opens in Safari, not in the
 - Verified by tests in a desktop browser and an emulated phone: root entry, explicit game and
   invitation links, reload, return from the background, and the Home Screen rule with
   `navigator.standalone` set by the test.
-- **Not verified on a device:** the rule on a real iPhone icon; that iOS and Android use the
-  manifest's `start_url` for a new icon on this site (taken from their documentation); and how
-  iOS 26 treats `display: browser`.
-- **From the owner (2026-11-21):** the phone is an iPhone, and the launches were probably from
-  a Home Screen icon (his words: "sorry if was home screen anomaly"). That is the case the
-  iPhone rule above is for.
-- **Still needed from the owner:** to confirm it was the Home Screen icon, and what tapping
-  that same icon opens after this change is live.
+- **Observed by the owner on his iPhone (2026-11-22, site at `9525a76`):** opening the app
+  from the Home Screen no longer goes to the old game; it opens the game list. Before the
+  change (2026-11-21) he had said the phone is an iPhone and that it was probably the Home
+  Screen icon.
+- **Not stated in that observation:** whether it was the same icon as before or a newly added
+  one, and whether the app had been closed first. Both cases are meant to open *Your games*:
+  an existing icon through the rule above, a new one through the manifest as well.
+- **Still not verified on a device:** that Android uses the manifest's `start_url` for a new
+  icon on this site (taken from its documentation), and how iOS 26 treats `display: browser`.
 
 Sources: [WebKit: features in Safari 26.0](https://webkit.org/blog/17333/webkit-features-in-safari-26-0/)
 (every site added to the Home Screen opens as a web app by default);
