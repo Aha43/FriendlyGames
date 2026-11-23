@@ -214,5 +214,11 @@ re-running it on the saved log in #124; its 66 journeys had passed.
 stand-in database; CI on real Supabase is the authoritative result. Android launch
 behavior and iOS 26 `display: browser` were not checked on a device.
 
-Owner acceptance, `make release` and closing the milestone remain the owner's. #11 stays
-open.
+**Released (2026-11-23):** Codex approved the release PR and asked the owner to try a friend
+invitation through to choosing a game, the email on a pending invitation and player details.
+The owner answered "Looks good, merge", without saying which he tried; those three live
+checks therefore stay recorded as not reported. He then deployed the backend, so production
+has the #120 diagnostics and site and backend both run `b145194`, and ran `make release`:
+tag `v0.6.0` at `b145194`, published 08:50 UTC. The details are in
+[deployment.md](deployment.md). #116 stays open: the two earlier failures are unexplained.
+Closing the milestone is the owner's. #11 stays open.
