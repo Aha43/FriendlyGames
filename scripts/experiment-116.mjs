@@ -47,6 +47,13 @@ async function worker() {
       const key = `${kind} ${response.status} ${shape}`;
       note(key);
       if (failures.length < 40) failures.push(`${new Date().toISOString()} ${key}`);
+      // The exact start of the trace, and the body's keys: what a client could recognise it by.
+      if (failures.length <= 3) {
+        try {
+          const body = JSON.parse(text);
+          console.log(`shape: keys=${Object.keys(body).join(',')} code=${JSON.stringify(body.code)} message=${JSON.stringify(body.message)} trace[0..200]=${JSON.stringify(String(body.trace).slice(0, 200))}`);
+        } catch { console.log(`shape: not JSON, ${text.length} chars`); }
+      }
     } catch (error) {
       note(`${kind} fetch failed: ${error?.cause?.code ?? error?.name}`);
     }
