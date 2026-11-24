@@ -10,31 +10,73 @@ export interface ApiResponse<T = any> {
   body: T;
 }
 
+/**
+ * True only for the one answer the Supabase CLI's local function server gives when a request
+ * reaches a function worker in the moment it retires (#116, #130): the CLI's main service turns
+ * the runtime's `WorkerAlreadyRetired` into its generic `500`, with the error's stack as `trace`.
+ * The runtime refuses such a request before the function runs, so nothing was done. Everything
+ * is required: status 500, the main service's own body and no `error` object (the game API's
+ * answers always have one), and a trace that starts with exactly this error.
+ */
+export function isRetiredWorkerRefusal(status: number, body: unknown): boolean {
+  if (status !== 500 || typeof body !== 'object' || body === null || 'error' in body) return false;
+  const { code, trace } = body as { code?: unknown; trace?: unknown };
+  return (
+    code === 'Internal Server Error' &&
+    typeof trace === 'string' &&
+    /^"?WorkerAlreadyRetired: request cannot be handled because the worker has already retired(\\n|\n|"|$)/.test(trace)
+  );
+}
+
+let repeated = 0;
+/** How many requests this test file repeated after such a refusal. */
+export const repeatedRequests = () => repeated;
+
 export async function call<T = any>(
   method: 'GET' | 'POST' | 'DELETE',
   path: string,
   { credential, body }: { credential?: string; body?: unknown } = {},
 ): Promise<ApiResponse<T>> {
-  const response = await fetch(`${API_URL}${path}`, {
+  // Built once: a repeat sends the very same method, headers and bytes, request ID included.
+  const request = {
     method,
     headers: {
       ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       ...(credential ? { 'x-device-credential': credential } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  };
+  const send = async () => {
+    const response = await fetch(`${API_URL}${path}`, request);
+    const text = await response.text();
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = undefined;
+    }
+    return { status: response.status, parsed };
+  };
+
+  let answer = await send();
+  // Once, and only for that refusal. Whatever comes back the second time stands: another
+  // refusal, any other 5xx and every error of the game API itself reach the test and fail it.
+  if (isRetiredWorkerRefusal(answer.status, answer.parsed)) {
+    repeated += 1;
+    console.error(retiredWorkerLine(method, path, repeated));
+    answer = await send();
+  }
+  const { status, parsed } = answer;
   // A server failure the API did not mean to give (#116): say which request, safely. The
   // assertion that follows still fails; this only makes the failure traceable to the server log.
-  const text = await response.text();
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    parsed = undefined;
-  }
-  if (response.status >= 500) console.error(unexpectedStatusLine(method, path, response.status, parsed));
-  if (parsed === undefined) throw new Error(`${method} ${routeOf(path)} answered HTTP ${response.status} without a JSON body`);
-  return { status: response.status, body: parsed as T };
+  if (status >= 500) console.error(unexpectedStatusLine(method, path, status, parsed));
+  if (parsed === undefined) throw new Error(`${method} ${routeOf(path)} answered HTTP ${status} without a JSON body`);
+  return { status, body: parsed as T };
+}
+
+/** The line for a repeat: method and route pattern only, its number in this test file, and when. */
+export function retiredWorkerLine(method: string, path: string, count: number, at = new Date()): string {
+  return `[backend test] runtime refused the request because its worker had retired; repeated once: ${method} ${routeOf(path)} repeat=${count} in this test file at=${at.toISOString()}`;
 }
 
 const ROUTE_WORDS = new Set([
