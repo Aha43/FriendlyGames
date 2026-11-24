@@ -96,6 +96,17 @@ traceable in CI without publishing anything private:
   If the log cannot be read, or the checker dies twice, the backend job fails with "Nothing was
   checked".
 - Do not add retries to backend tests or widen expected statuses to get past such a failure.
+  There is exactly one repeat, in the test client itself (#130): the Supabase CLI's local
+  function server recycles a function worker after one second of accumulated CPU time, and
+  answers `500` to a request that reaches the worker in that moment, before the function runs
+  (#116 has the sources and a reproduction). The client recognises that one answer (the main
+  service's generic `500`, no `error` object, a `trace` that starts with
+  `WorkerAlreadyRetired: request cannot be handled because the worker has already retired`),
+  sends the same request once more, byte for byte, and prints
+  `[backend test] runtime refused the request because its worker had retired; repeated once: …`
+  with a running count. A second refusal, any other `500`, a `503` and every error of the game
+  API itself still fail the test. The runtime's own "already retired" lines stay in the
+  `make backend-errors` report. The browser journeys are not changed.
 
 **PR tracking** (`.github/workflows/pr-tracking.yml`, #36) checks every pull request:
 exactly one primary closing reference (`Closes #N`, or GitHub's other closing words) to an
