@@ -1,0 +1,35 @@
+# Experiment for #116 on a draft branch only. Never merge.
+name: experiment-116
+on:
+  pull_request:
+jobs:
+  load:
+    if: github.head_ref == 'experiment-116-worker-retirement'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { cli: 2.105.0, policy: per_worker }
+          - { cli: 2.105.0, policy: oneshot }
+          - { cli: 3.3.0, policy: per_worker }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - uses: supabase/setup-cli@v1
+        with:
+          version: ${{ matrix.cli }}
+      - run: sed -i 's/^policy = "per_worker"/policy = "${{ matrix.policy }}"/' supabase/config.toml && grep -n '^policy' supabase/config.toml
+      - run: supabase start
+      - run: docker ps --format '{{.Image}}' | sort
+      - run: node scripts/experiment-116.mjs
+        env:
+          EXP_REQUESTS: ${{ matrix.policy == 'oneshot' && '6000' || '30000' }}
+      - if: ${{ !cancelled() }}
+        run: |
+          docker logs supabase_edge_runtime_friendlygames > runtime.log 2>&1 || true
+          for needle in 'CPU time soft limit reached' 'CPU time hard limit reached' 'early termination has been triggered' 'already retired' 'connection aborted' 'request has been cancelled by supervisor' 'failed to notify the fence'; do
+            echo "$(grep -c "$needle" runtime.log)  $needle"
+          done
